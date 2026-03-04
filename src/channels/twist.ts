@@ -59,16 +59,25 @@ async function sendMessage(id: number, text: string, isThread: boolean) {
     ? { thread_id: id, content: text }
     : { channel_id: id, content: text };
 
-  const res = await fetch(`${API_URL}/${endpoint}`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${token}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(payload),
-  });
-  if (!res.ok) {
-    const body = await res.text().catch(() => "");
-    throw new Error(`Twist send failed (${res.status}): ${body.slice(0, 300)}`);
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 10_000);
+  try {
+    const res = await fetch(`${API_URL}/${endpoint}`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(payload),
+      signal: controller.signal,
+    });
+    if (!res.ok) {
+      const body = await res.text().catch(() => "");
+      throw new Error(
+        `Twist send failed (${res.status}): ${body.slice(0, 300)}`,
+      );
+    }
+  } finally {
+    clearTimeout(timer);
   }
 }

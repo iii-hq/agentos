@@ -34,7 +34,8 @@ registerFunction(
     });
 
     if (!response?.content) {
-      return { status_code: 200, body: { ok: true } };
+      console.warn("signal: agent returned empty response", { channelKey });
+      return { status_code: 500, body: { error: "Empty agent response" } };
     }
 
     await sendMessage(source, response.content, groupId);

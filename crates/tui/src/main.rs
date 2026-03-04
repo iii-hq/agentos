@@ -560,7 +560,7 @@ fn draw(f: &mut Frame, app: &App) {
 
     let title = Block::default()
         .borders(Borders::ALL)
-        .title(" agentos ")
+        .title(" AgentOS ")
         .title_alignment(Alignment::Center)
         .border_style(Style::default().fg(Color::Cyan));
 

@@ -347,8 +347,7 @@ describe("channel::messenger::webhook", () => {
         "hub.challenge": "challenge-xyz",
       },
     });
-    expect(result.status_code).toBe(200);
-    expect(result.body).not.toBe("challenge-xyz");
+    expect(result.status_code).toBe(403);
   });
 
   it("ignores messages without text", async () => {

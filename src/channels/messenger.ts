@@ -34,11 +34,11 @@ registerFunction(
         body: { error: "Verify token not configured" },
       };
     }
-    if (
-      body["hub.mode"] === "subscribe" &&
-      safeCompare(body["hub.verify_token"], verifyToken)
-    ) {
-      return { status_code: 200, body: body["hub.challenge"] };
+    if (body["hub.mode"] === "subscribe") {
+      if (safeCompare(body["hub.verify_token"], verifyToken)) {
+        return { status_code: 200, body: body["hub.challenge"] };
+      }
+      return { status_code: 403, body: "Forbidden" };
     }
 
     const entry = body.entry?.[0];

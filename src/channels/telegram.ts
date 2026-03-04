@@ -16,8 +16,11 @@ registerFunction(
   { id: "channel::telegram::webhook", description: "Handle Telegram webhook" },
   async (req) => {
     const secretToken = await getSecret("TELEGRAM_SECRET_TOKEN");
-    if (secretToken && !verifyTelegramUpdate(secretToken, req)) {
-      return { status_code: 401, body: { error: "Invalid webhook signature" } };
+    if (!secretToken || !verifyTelegramUpdate(secretToken, req)) {
+      return {
+        status_code: 401,
+        body: { error: "Missing or invalid webhook signature" },
+      };
     }
 
     const update = req.body || req;

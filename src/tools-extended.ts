@@ -358,6 +358,10 @@ registerFunction(
         headers: { "User-Agent": "AgentOS/0.0.1" },
       });
 
+      if (!resp.ok) {
+        return { downloaded: false, error: "HTTP " + resp.status };
+      }
+
       const contentLength = parseInt(resp.headers.get("content-length") || "0");
       const limit = maxSize || 50_000_000;
       if (contentLength > limit) {
@@ -1829,42 +1833,45 @@ registerFunction(
         const controller = new AbortController();
         const timer = setTimeout(() => controller.abort(), timeoutMs);
 
-        const opts: RequestInit = {
-          method: httpMethod,
-          headers: {
-            "User-Agent": "AgentOS/0.0.1",
-            ...(headers || {}),
-          },
-          signal: controller.signal,
-        };
+        try {
+          const opts: RequestInit = {
+            method: httpMethod,
+            headers: {
+              "User-Agent": "AgentOS/0.0.1",
+              ...(headers || {}),
+            },
+            signal: controller.signal,
+          };
 
-        if (body && httpMethod !== "GET" && httpMethod !== "HEAD") {
-          opts.body = typeof body === "string" ? body : JSON.stringify(body);
-          if (!headers?.["Content-Type"]) {
-            (opts.headers as Record<string, string>)["Content-Type"] =
-              "application/json";
+          if (body && httpMethod !== "GET" && httpMethod !== "HEAD") {
+            opts.body = typeof body === "string" ? body : JSON.stringify(body);
+            if (!headers?.["Content-Type"]) {
+              (opts.headers as Record<string, string>)["Content-Type"] =
+                "application/json";
+            }
           }
+
+          const response = await fetch(url, opts);
+
+          const contentType = response.headers.get("content-type") || "";
+          let responseBody: unknown;
+          if (contentType.includes("application/json")) {
+            responseBody = await response.json();
+          } else {
+            const text = await response.text();
+            responseBody = text.slice(0, 100000);
+          }
+
+          return {
+            status: response.status,
+            statusText: response.statusText,
+            headers: Object.fromEntries(response.headers.entries()),
+            body: responseBody,
+            attempt: attempt + 1,
+          };
+        } finally {
+          clearTimeout(timer);
         }
-
-        const response = await fetch(url, opts);
-        clearTimeout(timer);
-
-        const contentType = response.headers.get("content-type") || "";
-        let responseBody: unknown;
-        if (contentType.includes("application/json")) {
-          responseBody = await response.json();
-        } else {
-          const text = await response.text();
-          responseBody = text.slice(0, 100000);
-        }
-
-        return {
-          status: response.status,
-          statusText: response.statusText,
-          headers: Object.fromEntries(response.headers.entries()),
-          body: responseBody,
-          attempt: attempt + 1,
-        };
       } catch (e: any) {
         lastError = e.message;
         if (attempt < maxRetries) {

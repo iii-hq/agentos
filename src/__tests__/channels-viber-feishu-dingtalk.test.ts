@@ -45,7 +45,7 @@ const mockFetch = vi.fn(
   async () =>
     ({
       ok: true,
-      json: async () => ({ tenant_access_token: "mock-tenant-token" }),
+      json: async () => ({ code: 0, tenant_access_token: "mock-tenant-token" }),
     }) as any,
 );
 vi.stubGlobal("fetch", mockFetch);
@@ -64,7 +64,10 @@ beforeEach(() => {
     async () =>
       ({
         ok: true,
-        json: async () => ({ tenant_access_token: "mock-tenant-token" }),
+        json: async () => ({
+          code: 0,
+          tenant_access_token: "mock-tenant-token",
+        }),
       }) as any,
   );
 });

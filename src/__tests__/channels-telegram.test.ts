@@ -3,6 +3,10 @@ import { describe, it, expect, vi, beforeEach, beforeAll } from "vitest";
 
 const mockTrigger = vi.fn(async (fnId: string, data?: any): Promise<any> => {
   if (fnId === "agent::chat") return { content: "Telegram reply" };
+  if (fnId === "vault::get" && data?.key === "TELEGRAM_SECRET_TOKEN")
+    return { value: "test-secret" };
+  if (fnId === "vault::get" && data?.key === "TELEGRAM_BOT_TOKEN")
+    return { value: "test-tg-token" };
   return null;
 });
 const mockTriggerVoid = vi.fn();
@@ -10,7 +14,9 @@ const mockTriggerVoid = vi.fn();
 const handlers: Record<string, Function> = {};
 vi.mock("iii-sdk", () => ({
   init: () => ({
-    registerFunction: (config: any, handler: Function) => { handlers[config.id] = handler; },
+    registerFunction: (config: any, handler: Function) => {
+      handlers[config.id] = handler;
+    },
     registerTrigger: vi.fn(),
     trigger: mockTrigger,
     triggerVoid: mockTriggerVoid,
@@ -20,7 +26,8 @@ vi.mock("iii-sdk", () => ({
 vi.mock("../shared/utils.js", () => ({
   splitMessage: vi.fn((text: string, limit: number) => {
     const chunks: string[] = [];
-    for (let i = 0; i < text.length; i += limit) chunks.push(text.slice(i, i + limit));
+    for (let i = 0; i < text.length; i += limit)
+      chunks.push(text.slice(i, i + limit));
     return chunks.length ? chunks : [text];
   }),
   resolveAgent: vi.fn(async () => "default-agent"),
@@ -32,10 +39,16 @@ vi.stubGlobal("fetch", mockFetch);
 
 beforeEach(() => {
   mockTrigger.mockReset();
-  mockTrigger.mockImplementation(async (fnId: string): Promise<any> => {
-    if (fnId === "agent::chat") return { content: "Telegram reply" };
-    return null;
-  });
+  mockTrigger.mockImplementation(
+    async (fnId: string, data?: any): Promise<any> => {
+      if (fnId === "agent::chat") return { content: "Telegram reply" };
+      if (fnId === "vault::get" && data?.key === "TELEGRAM_SECRET_TOKEN")
+        return { value: "test-secret" };
+      if (fnId === "vault::get" && data?.key === "TELEGRAM_BOT_TOKEN")
+        return { value: "test-tg-token" };
+      return null;
+    },
+  );
   mockTriggerVoid.mockClear();
   mockFetch.mockClear();
 });
@@ -73,7 +86,9 @@ describe("channel::telegram::webhook", () => {
         message: { text: "Test", chat: { id: 999 }, from: { id: 2 } },
       },
     });
-    const chatCalls = mockTrigger.mock.calls.filter(c => c[0] === "agent::chat");
+    const chatCalls = mockTrigger.mock.calls.filter(
+      (c) => c[0] === "agent::chat",
+    );
     expect(chatCalls.length).toBe(1);
     expect(chatCalls[0][1].message).toBe("Test");
   });
@@ -84,18 +99,26 @@ describe("channel::telegram::webhook", () => {
         message: { text: "Session", chat: { id: 555 }, from: { id: 3 } },
       },
     });
-    const chatCalls = mockTrigger.mock.calls.filter(c => c[0] === "agent::chat");
+    const chatCalls = mockTrigger.mock.calls.filter(
+      (c) => c[0] === "agent::chat",
+    );
     expect(chatCalls[0][1].sessionId).toBe("telegram:555");
   });
 
   it("handles edited_message", async () => {
     const result = await call("channel::telegram::webhook", {
       body: {
-        edited_message: { text: "Edited msg", chat: { id: 777 }, from: { id: 4 } },
+        edited_message: {
+          text: "Edited msg",
+          chat: { id: 777 },
+          from: { id: 4 },
+        },
       },
     });
     expect(result.status_code).toBe(200);
-    const chatCalls = mockTrigger.mock.calls.filter(c => c[0] === "agent::chat");
+    const chatCalls = mockTrigger.mock.calls.filter(
+      (c) => c[0] === "agent::chat",
+    );
     expect(chatCalls.length).toBe(1);
   });
 
@@ -106,7 +129,9 @@ describe("channel::telegram::webhook", () => {
       },
     });
     expect(result.status_code).toBe(200);
-    const chatCalls = mockTrigger.mock.calls.filter(c => c[0] === "agent::chat");
+    const chatCalls = mockTrigger.mock.calls.filter(
+      (c) => c[0] === "agent::chat",
+    );
     expect(chatCalls.length).toBe(0);
   });
 
@@ -115,7 +140,9 @@ describe("channel::telegram::webhook", () => {
       body: { callback_query: { id: "cb1" } },
     });
     expect(result.status_code).toBe(200);
-    const chatCalls = mockTrigger.mock.calls.filter(c => c[0] === "agent::chat");
+    const chatCalls = mockTrigger.mock.calls.filter(
+      (c) => c[0] === "agent::chat",
+    );
     expect(chatCalls.length).toBe(0);
   });
 
@@ -149,9 +176,13 @@ describe("channel::telegram::webhook", () => {
         message: { text: "Audit", chat: { id: 444 }, from: { id: 8 } },
       },
     });
-    const auditCalls = mockTriggerVoid.mock.calls.filter(c => c[0] === "security::audit");
-    expect(auditCalls.some(c => c[1].type === "channel_message")).toBe(true);
-    expect(auditCalls.some(c => c[1].detail.channel === "telegram")).toBe(true);
+    const auditCalls = mockTriggerVoid.mock.calls.filter(
+      (c) => c[0] === "security::audit",
+    );
+    expect(auditCalls.some((c) => c[1].type === "channel_message")).toBe(true);
+    expect(auditCalls.some((c) => c[1].detail.channel === "telegram")).toBe(
+      true,
+    );
   });
 
   it("returns 401 when signature verification fails", async () => {

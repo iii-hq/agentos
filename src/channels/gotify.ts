@@ -55,23 +55,30 @@ async function sendMessage(text: string) {
   const normalizedUrl = baseUrl.replace(/\/+$/, "");
   const chunks = splitMessage(text, 4096);
   for (const chunk of chunks) {
-    const res = await fetch(
-      `${normalizedUrl}/message?token=${encodeURIComponent(token)}`,
-      {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 10_000);
+    try {
+      const res = await fetch(`${normalizedUrl}/message`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          "X-Gotify-Key": token,
+        },
         body: JSON.stringify({
           title: "AgentOS",
           message: chunk,
           priority: 5,
         }),
-      },
-    );
-    if (!res.ok) {
-      const body = await res.text().catch(() => "");
-      throw new Error(
-        `Gotify send failed (${res.status}): ${body.slice(0, 300)}`,
-      );
+        signal: controller.signal,
+      });
+      if (!res.ok) {
+        const body = await res.text().catch(() => "");
+        throw new Error(
+          `Gotify send failed (${res.status}): ${body.slice(0, 300)}`,
+        );
+      }
+    } finally {
+      clearTimeout(timer);
     }
   }
 }

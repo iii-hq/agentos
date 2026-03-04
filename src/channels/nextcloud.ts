@@ -46,11 +46,11 @@ registerTrigger({
 });
 
 async function sendMessage(roomToken: string, text: string) {
-  const token = await getSecret("NEXTCLOUD_TOKEN");
+  const token = (await getSecret("NEXTCLOUD_TOKEN")).trim();
   if (!token) {
     throw new Error("NEXTCLOUD_TOKEN not configured");
   }
-  const baseUrl = await getSecret("NEXTCLOUD_URL");
+  const baseUrl = (await getSecret("NEXTCLOUD_URL")).trim();
   if (!baseUrl) {
     throw new Error("NEXTCLOUD_URL not configured");
   }

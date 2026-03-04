@@ -12,6 +12,7 @@ const API_URL = "https://open.feishu.cn/open-apis";
 
 let tenantToken = "";
 let tenantTokenExpiry = 0;
+let tenantTokenPromise: Promise<string> | null = null;
 
 registerFunction(
   {
@@ -61,6 +62,16 @@ registerTrigger({
 
 async function getTenantToken(): Promise<string> {
   if (tenantToken && Date.now() < tenantTokenExpiry) return tenantToken;
+  if (tenantTokenPromise) return tenantTokenPromise;
+  tenantTokenPromise = refreshTenantToken();
+  try {
+    return await tenantTokenPromise;
+  } finally {
+    tenantTokenPromise = null;
+  }
+}
+
+async function refreshTenantToken(): Promise<string> {
   const appId = await getSecret("FEISHU_APP_ID");
   if (!appId) {
     throw new Error("FEISHU_APP_ID not configured");
@@ -81,7 +92,19 @@ async function getTenantToken(): Promise<string> {
         `Feishu token fetch failed (${res.status}): ${body.slice(0, 300)}`,
       );
     }
-    const data = (await res.json()) as { tenant_access_token: string };
+    const data = (await res.json()) as {
+      code?: number;
+      msg?: string;
+      tenant_access_token?: string;
+    };
+    if (data.code !== 0) {
+      throw new Error(
+        `Feishu token API error (code=${data.code}): ${data.msg || "unknown"}`,
+      );
+    }
+    if (!data.tenant_access_token) {
+      throw new Error("Feishu token response missing tenant_access_token");
+    }
     tenantToken = data.tenant_access_token;
     tenantTokenExpiry = Date.now() + 5400_000;
     return tenantToken;
@@ -115,6 +138,12 @@ async function sendMessage(chatId: string, text: string) {
       const body = await res.text().catch(() => "");
       throw new Error(
         `Feishu send failed (${res.status}): ${body.slice(0, 300)}`,
+      );
+    }
+    const resData = (await res.json()) as { code?: number; msg?: string };
+    if (resData.code !== 0) {
+      throw new Error(
+        `Feishu send API error (code=${resData.code}): ${resData.msg || "unknown"}`,
       );
     }
   }

@@ -245,6 +245,7 @@ enum MigrateCmd {
 async fn main() -> Result<()> {
     let cli = Cli::parse();
     let client = reqwest::Client::new();
+    let api_base = get_api_url();
 
     match cli.command {
         Commands::Init { quick } => {
@@ -278,7 +279,7 @@ async fn main() -> Result<()> {
         }
 
         Commands::Status { json: is_json } => {
-            let resp: Value = client.get(format!("{}/api/health", API_BASE))
+            let resp: Value = client.get(format!("{}/api/health", api_base))
                 .send().await?.json().await?;
             if is_json {
                 println!("{}", serde_json::to_string_pretty(&resp)?);
@@ -291,7 +292,7 @@ async fn main() -> Result<()> {
         }
 
         Commands::Health { json: is_json } => {
-            let resp: Value = client.get(format!("{}/api/health", API_BASE))
+            let resp: Value = client.get(format!("{}/api/health", api_base))
                 .send().await?.json().await?;
             if is_json {
                 println!("{}", serde_json::to_string_pretty(&resp)?);
@@ -304,7 +305,7 @@ async fn main() -> Result<()> {
 
         Commands::Agent(cmd) => match cmd {
             AgentCmd::List => {
-                let resp: Value = client.get(format!("{}/api/agents", API_BASE))
+                let resp: Value = client.get(format!("{}/api/agents", api_base))
                     .send().await?.json().await?;
                 if let Some(agents) = resp.as_array() {
                     println!("{:<20} {:<15} {:<30}", "ID".bold(), "STATUS".bold(), "NAME".bold());
@@ -318,7 +319,7 @@ async fn main() -> Result<()> {
             }
             AgentCmd::New { template } => {
                 let tmpl = template.unwrap_or_else(|| "assistant".into());
-                let resp: Value = client.post(format!("{}/api/agents", API_BASE))
+                let resp: Value = client.post(format!("{}/api/agents", api_base))
                     .json(&json!({ "name": tmpl, "tags": ["template"] }))
                     .send().await?.json().await?;
                 println!("{} Created agent: {}", "✓".green(),
@@ -336,7 +337,7 @@ async fn main() -> Result<()> {
                     let input = input.trim();
                     if input == "exit" || input == "quit" { break; }
 
-                    let resp: Value = client.post(format!("{}/api/agents/{}/message", API_BASE, agent))
+                    let resp: Value = client.post(format!("{}/api/agents/{}/message", api_base, agent))
                         .json(&json!({ "message": input }))
                         .send().await?.json().await?;
                     println!("\n{} {}\n",
@@ -346,11 +347,11 @@ async fn main() -> Result<()> {
             }
             AgentCmd::Kill { agent } => {
                 let agent = validate_id(&agent)?;
-                client.delete(format!("{}/api/agents/{}", API_BASE, agent)).send().await?;
+                client.delete(format!("{}/api/agents/{}", api_base, agent)).send().await?;
                 println!("{} Agent {} terminated", "✓".green(), agent);
             }
             AgentCmd::Spawn { template } => {
-                let resp: Value = client.post(format!("{}/api/agents", API_BASE))
+                let resp: Value = client.post(format!("{}/api/agents", api_base))
                     .json(&json!({ "name": template, "tags": ["spawned"] }))
                     .send().await?.json().await?;
                 println!("{} Spawned: {}", "✓".green(),
@@ -360,20 +361,20 @@ async fn main() -> Result<()> {
 
         Commands::Workflow(cmd) => match cmd {
             WorkflowCmd::List => {
-                let resp: Value = client.get(format!("{}/api/workflows", API_BASE))
+                let resp: Value = client.get(format!("{}/api/workflows", api_base))
                     .send().await?.json().await?;
                 println!("{}", serde_json::to_string_pretty(&resp)?);
             }
             WorkflowCmd::Create { file } => {
                 let content = std::fs::read_to_string(&file)?;
                 let workflow: Value = serde_json::from_str(&content)?;
-                let resp: Value = client.post(format!("{}/api/workflows", API_BASE))
+                let resp: Value = client.post(format!("{}/api/workflows", api_base))
                     .json(&workflow).send().await?.json().await?;
                 println!("{} Created workflow: {}", "✓".green(),
                     resp["id"].as_str().unwrap_or("unknown"));
             }
             WorkflowCmd::Run { id } => {
-                let resp: Value = client.post(format!("{}/api/workflows/run", API_BASE))
+                let resp: Value = client.post(format!("{}/api/workflows/run", api_base))
                     .json(&json!({ "workflowId": id }))
                     .send().await?.json().await?;
                 println!("{}", serde_json::to_string_pretty(&resp)?);
@@ -382,7 +383,7 @@ async fn main() -> Result<()> {
 
         Commands::Skill(cmd) => match cmd {
             SkillCmd::List => {
-                let resp: Value = client.get(format!("{}/api/skills", API_BASE))
+                let resp: Value = client.get(format!("{}/api/skills", api_base))
                     .send().await?.json().await?;
                 if let Some(skills) = resp.as_array() {
                     println!("{:<20} {:<15} {:<40}", "ID".bold(), "CATEGORY".bold(), "NAME".bold());
@@ -396,7 +397,7 @@ async fn main() -> Result<()> {
             }
             SkillCmd::Install { path } => {
                 let content = std::fs::read_to_string(&path)?;
-                let resp: Value = client.post(format!("{}/api/skills", API_BASE))
+                let resp: Value = client.post(format!("{}/api/skills", api_base))
                     .json(&json!({ "content": content }))
                     .send().await?.json().await?;
                 println!("{} Installed skill: {}", "✓".green(),
@@ -404,11 +405,11 @@ async fn main() -> Result<()> {
             }
             SkillCmd::Remove { id } => {
                 let id = validate_id(&id)?;
-                client.delete(format!("{}/api/skills/{}", API_BASE, id)).send().await?;
+                client.delete(format!("{}/api/skills/{}", api_base, id)).send().await?;
                 println!("{} Removed skill: {}", "✓".green(), id);
             }
             SkillCmd::Search { query } => {
-                let resp: Value = client.get(format!("{}/api/skills/search?query={}", API_BASE, urlencoding::encode(&query)))
+                let resp: Value = client.get(format!("{}/api/skills/search?query={}", api_base, urlencoding::encode(&query)))
                     .send().await?.json().await?;
                 println!("{}", serde_json::to_string_pretty(&resp)?);
             }
@@ -419,7 +420,7 @@ async fn main() -> Result<()> {
 
         Commands::Models(cmd) => match cmd {
             ModelsCmd::List => {
-                let resp: Value = client.get(format!("{}/api/models", API_BASE))
+                let resp: Value = client.get(format!("{}/api/models", api_base))
                     .send().await?.json().await?;
                 if let Some(models) = resp.as_array() {
                     println!("{:<25} {:<15} {:<12} {:<10} {}", "MODEL".bold(), "PROVIDER".bold(), "TIER".bold(), "CONTEXT".bold(), "PRICE (in/out)".bold());
@@ -435,7 +436,7 @@ async fn main() -> Result<()> {
                 }
             }
             ModelsCmd::Aliases => {
-                let resp: Value = client.get(format!("{}/api/models/aliases", API_BASE))
+                let resp: Value = client.get(format!("{}/api/models/aliases", api_base))
                     .send().await?.json().await?;
                 if let Some(obj) = resp.as_object() {
                     for (alias, model) in obj {
@@ -444,7 +445,7 @@ async fn main() -> Result<()> {
                 }
             }
             ModelsCmd::Providers => {
-                let resp: Value = client.get(format!("{}/api/providers", API_BASE))
+                let resp: Value = client.get(format!("{}/api/providers", api_base))
                     .send().await?.json().await?;
                 if let Some(providers) = resp.as_array() {
                     for p in providers {
@@ -457,7 +458,7 @@ async fn main() -> Result<()> {
                 }
             }
             ModelsCmd::Describe { model } => {
-                let resp: Value = client.get(format!("{}/api/models", API_BASE))
+                let resp: Value = client.get(format!("{}/api/models", api_base))
                     .send().await?.json().await?;
                 if let Some(models) = resp.as_array() {
                     if let Some(m) = models.iter().find(|m| m["id"].as_str() == Some(&model)) {
@@ -472,7 +473,7 @@ async fn main() -> Result<()> {
         Commands::Security(cmd) => match cmd {
             SecurityCmd::Audit => {
                 println!("{} Fetching audit trail...", "→".blue());
-                let resp: Value = client.get(format!("{}/security/audit/verify", API_BASE))
+                let resp: Value = client.get(format!("{}/security/audit/verify", api_base))
                     .send().await?.json().await?;
                 let valid = resp["valid"].as_bool().unwrap_or(false);
                 let icon = if valid { "✓".green() } else { "✗".red() };
@@ -482,12 +483,12 @@ async fn main() -> Result<()> {
                     resp["entries"].as_u64().unwrap_or(0));
             }
             SecurityCmd::Verify => {
-                let resp: Value = client.get(format!("{}/security/audit/verify", API_BASE))
+                let resp: Value = client.get(format!("{}/security/audit/verify", api_base))
                     .send().await?.json().await?;
                 println!("{}", serde_json::to_string_pretty(&resp)?);
             }
             SecurityCmd::Scan { text } => {
-                let resp: Value = client.post(format!("{}/security/scan", API_BASE))
+                let resp: Value = client.post(format!("{}/security/scan", api_base))
                     .json(&json!({ "text": text }))
                     .send().await?.json().await?;
                 let safe = resp["safe"].as_bool().unwrap_or(false);
@@ -500,18 +501,18 @@ async fn main() -> Result<()> {
 
         Commands::Approvals(cmd) => match cmd {
             ApprovalsCmd::List => {
-                let resp: Value = client.get(format!("{}/api/approvals", API_BASE))
+                let resp: Value = client.get(format!("{}/api/approvals", api_base))
                     .send().await?.json().await?;
                 println!("{}", serde_json::to_string_pretty(&resp)?);
             }
             ApprovalsCmd::Approve { id } => {
-                client.post(format!("{}/api/approvals/decide", API_BASE))
+                client.post(format!("{}/api/approvals/decide", api_base))
                     .json(&json!({ "requestId": id, "decision": "approve" }))
                     .send().await?;
                 println!("{} Approved: {}", "✓".green(), id);
             }
             ApprovalsCmd::Reject { id } => {
-                client.post(format!("{}/api/approvals/decide", API_BASE))
+                client.post(format!("{}/api/approvals/decide", api_base))
                     .json(&json!({ "requestId": id, "decision": "deny" }))
                     .send().await?;
                 println!("{} Rejected: {}", "✓".green(), id);
@@ -531,7 +532,7 @@ async fn main() -> Result<()> {
                 let input = input.trim();
                 if input == "exit" || input == "quit" { break; }
 
-                let resp: Value = client.post(format!("{}/api/agents/{}/message", API_BASE, agent_id))
+                let resp: Value = client.post(format!("{}/api/agents/{}/message", api_base, agent_id))
                     .json(&json!({ "message": input }))
                     .send().await?.json().await?;
                 println!("\n{} {}\n", "agent>".blue().bold(),
@@ -541,7 +542,7 @@ async fn main() -> Result<()> {
 
         Commands::Message { agent, text, json: is_json } => {
             let agent = validate_id(&agent)?;
-            let resp: Value = client.post(format!("{}/api/agents/{}/message", API_BASE, agent))
+            let resp: Value = client.post(format!("{}/api/agents/{}/message", api_base, agent))
                 .json(&json!({ "message": text }))
                 .send().await?.json().await?;
             if is_json {
@@ -560,7 +561,7 @@ async fn main() -> Result<()> {
 
         Commands::Doctor { json: is_json, repair } => {
             let checks = vec![
-                ("Engine", client.get(format!("{}/api/health", API_BASE)).send().await.is_ok()),
+                ("Engine", client.get(format!("{}/api/health", api_base)).send().await.is_ok()),
                 ("Workers", true),
                 ("State", true),
                 ("Config", dirs::home_dir().map(|h| h.join(".agentos").exists()).unwrap_or(false)),
@@ -681,9 +682,7 @@ async fn main() -> Result<()> {
 
         Commands::Config(cmd) => match cmd {
             ConfigCmd::Show => {
-                let config_path = dirs::home_dir()
-                    .ok_or_else(|| anyhow::anyhow!("Cannot determine home directory"))?
-                    .join(".agentos/config.toml");
+                let config_path = agentos_config_path()?;
                 if config_path.exists() {
                     let content = std::fs::read_to_string(&config_path)?;
                     println!("{}", content);
@@ -692,9 +691,7 @@ async fn main() -> Result<()> {
                 }
             }
             ConfigCmd::Get { key } => {
-                let config_path = dirs::home_dir()
-                    .ok_or_else(|| anyhow::anyhow!("Cannot determine home directory"))?
-                    .join(".agentos/config.toml");
+                let config_path = agentos_config_path()?;
                 if config_path.exists() {
                     let content = std::fs::read_to_string(&config_path)?;
                     let table: toml::Table = content.parse()?;
@@ -708,9 +705,7 @@ async fn main() -> Result<()> {
                 }
             }
             ConfigCmd::Set { key, value } => {
-                let config_path = dirs::home_dir()
-                    .ok_or_else(|| anyhow::anyhow!("Cannot determine home directory"))?
-                    .join(".agentos/config.toml");
+                let config_path = agentos_config_path()?;
                 let mut table: toml::Table = if config_path.exists() {
                     std::fs::read_to_string(&config_path)?.parse()?
                 } else {
@@ -721,9 +716,7 @@ async fn main() -> Result<()> {
                 println!("{} Set {} = {}", "✓".green(), key.cyan(), value);
             }
             ConfigCmd::Unset { key } => {
-                let config_path = dirs::home_dir()
-                    .ok_or_else(|| anyhow::anyhow!("Cannot determine home directory"))?
-                    .join(".agentos/config.toml");
+                let config_path = agentos_config_path()?;
                 if config_path.exists() {
                     let content = std::fs::read_to_string(&config_path)?;
                     let mut table: toml::Table = content.parse()?;
@@ -738,9 +731,7 @@ async fn main() -> Result<()> {
                 }
             }
             ConfigCmd::SetKey { provider, key } => {
-                let config_path = dirs::home_dir()
-                    .ok_or_else(|| anyhow::anyhow!("Cannot determine home directory"))?
-                    .join(".agentos/config.toml");
+                let config_path = agentos_config_path()?;
                 let mut table: toml::Table = if config_path.exists() {
                     std::fs::read_to_string(&config_path)?.parse()?
                 } else {
@@ -755,9 +746,7 @@ async fn main() -> Result<()> {
                 println!("{} API key set for {}", "✓".green(), provider.cyan());
             }
             ConfigCmd::Keys => {
-                let config_path = dirs::home_dir()
-                    .ok_or_else(|| anyhow::anyhow!("Cannot determine home directory"))?
-                    .join(".agentos/config.toml");
+                let config_path = agentos_config_path()?;
                 if config_path.exists() {
                     let content = std::fs::read_to_string(&config_path)?;
                     let table: toml::Table = content.parse()?;
@@ -1245,6 +1234,12 @@ async fn main() -> Result<()> {
     Ok(())
 }
 
+fn agentos_config_path() -> Result<std::path::PathBuf> {
+    Ok(dirs::home_dir()
+        .ok_or_else(|| anyhow::anyhow!("Cannot determine home directory"))?
+        .join(".agentos/config.toml"))
+}
+
 fn get_api_url() -> String {
     std::env::var("AGENTOS_API_URL").unwrap_or_else(|_| API_BASE.to_string())
 }
@@ -1281,6 +1276,9 @@ fn print_log_entry(entry: &Value) {
 mod tests {
     use super::*;
     use clap::CommandFactory;
+    use std::sync::Mutex;
+
+    static ENV_LOCK: Mutex<()> = Mutex::new(());
 
     #[test]
     fn test_validate_id_valid_alphanumeric() {
@@ -1357,15 +1355,26 @@ mod tests {
 
     #[test]
     fn test_get_api_url_default() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        let prev = std::env::var("AGENTOS_API_URL").ok();
         unsafe { std::env::remove_var("AGENTOS_API_URL"); }
-        assert_eq!(get_api_url(), "http://localhost:3111");
+        let result = get_api_url();
+        if let Some(val) = prev {
+            unsafe { std::env::set_var("AGENTOS_API_URL", val); }
+        }
+        assert_eq!(result, "http://localhost:3111");
     }
 
     #[test]
     fn test_get_api_url_custom() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        let prev = std::env::var("AGENTOS_API_URL").ok();
         unsafe { std::env::set_var("AGENTOS_API_URL", "http://custom:8080"); }
         let url = get_api_url();
-        unsafe { std::env::remove_var("AGENTOS_API_URL"); }
+        match prev {
+            Some(val) => unsafe { std::env::set_var("AGENTOS_API_URL", val); },
+            None => unsafe { std::env::remove_var("AGENTOS_API_URL"); },
+        }
         assert_eq!(url, "http://custom:8080");
     }
 

@@ -47,6 +47,14 @@ async function validateRequest(
     return earlyResponse("Service is shutting down. Please retry later.");
   }
 
+  if (
+    !input.agentId ||
+    typeof input.agentId !== "string" ||
+    input.agentId.trim() === ""
+  ) {
+    return earlyResponse("Missing or invalid agentId.");
+  }
+
   const { agentId } = input;
 
   const agentRate: any = await safeCall(
