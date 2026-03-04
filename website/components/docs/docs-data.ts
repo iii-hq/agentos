@@ -36,7 +36,7 @@ We recommend reviewing the script before running it.
 Or build from source:
 
 \`\`\`bash
-git clone https://github.com/rohitg00/agentos
+git clone https://github.com/iii-hq/agentos
 cd agentos
 cargo build --release
 \`\`\`

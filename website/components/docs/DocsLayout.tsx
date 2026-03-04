@@ -36,7 +36,7 @@ export default function DocsLayout() {
             </div>
             <div className="flex items-center gap-3">
               <a
-                href="https://github.com/rohitg00/agentos"
+                href="https://github.com/iii-hq/agentos"
                 target="_blank"
                 rel="noopener noreferrer"
                 aria-label="GitHub repository"

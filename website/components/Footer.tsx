@@ -8,7 +8,7 @@ export default function Footer() {
           </span>
           <div className="flex items-center gap-6">
             <a
-              href="https://github.com/rohitg00/agentos"
+              href="https://github.com/iii-hq/agentos"
               target="_blank"
               rel="noopener noreferrer"
               aria-label="GitHub (opens in new tab)"

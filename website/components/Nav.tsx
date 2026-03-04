@@ -76,7 +76,7 @@ export default function Nav() {
 
           <div className="hidden lg:flex items-center gap-3 shrink-0">
             <a
-              href="https://github.com/rohitg00/agentos"
+              href="https://github.com/iii-hq/agentos"
               target="_blank"
               rel="noopener noreferrer"
               aria-label="GitHub repository"
@@ -136,7 +136,7 @@ export default function Nav() {
             ))}
             <div className="flex items-center gap-3 mt-3 pt-3 border-t border-white/6">
               <a
-                href="https://github.com/rohitg00/agentos"
+                href="https://github.com/iii-hq/agentos"
                 target="_blank"
                 rel="noopener noreferrer"
                 aria-label="GitHub repository"

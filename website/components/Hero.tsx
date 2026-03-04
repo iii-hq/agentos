@@ -142,7 +142,7 @@ export default function Hero() {
                   Get Started <ArrowRight size={16} />
                 </a>
                 <a
-                  href="https://github.com/rohitg00/agentos"
+                  href="https://github.com/iii-hq/agentos"
                   target="_blank"
                   rel="noopener noreferrer"
                   className="border border-white/20 hover:border-primary/40 text-white rounded-lg px-6 py-3 font-mono font-medium transition-colors"
