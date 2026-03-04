@@ -50,12 +50,16 @@ registerTrigger({
 });
 
 async function sendMessage(channelId: string, text: string) {
+  const token = await getSecret("REVOLT_TOKEN");
+  if (!token) {
+    throw new Error("REVOLT_TOKEN not configured");
+  }
   const chunks = splitMessage(text, 2000);
   for (const chunk of chunks) {
     await fetch(`${API_URL}/channels/${channelId}/messages`, {
       method: "POST",
       headers: {
-        "x-bot-token": await getSecret("REVOLT_TOKEN"),
+        "x-bot-token": token,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({ content: chunk }),

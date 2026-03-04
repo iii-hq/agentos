@@ -53,6 +53,9 @@ registerTrigger({
 
 async function sendMessage(receiverId: string, text: string) {
   const token = await getSecret("VIBER_TOKEN");
+  if (!token) {
+    throw new Error("VIBER_TOKEN not configured");
+  }
   const chunks = splitMessage(text, 7000);
   for (const chunk of chunks) {
     await fetch(API_URL, {

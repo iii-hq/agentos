@@ -80,9 +80,9 @@ export async function resolveAgent(
 }
 
 export function requireAuth(req: any): void {
-  const expected = process.env.AGENTSOS_API_KEY;
+  const expected = process.env.AGENTOS_API_KEY;
   if (!expected) {
-    throw Object.assign(new Error("AGENTSOS_API_KEY not configured"), {
+    throw Object.assign(new Error("AGENTOS_API_KEY not configured"), {
       statusCode: 500,
     });
   }

@@ -142,7 +142,7 @@ beforeEach(() => {
       return null;
     },
   );
-  process.env.AGENTSOS_API_KEY = "test-key";
+  process.env.AGENTOS_API_KEY = "test-key";
 });
 
 beforeAll(async () => {

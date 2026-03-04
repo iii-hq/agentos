@@ -75,7 +75,7 @@ export default function DocsHome() {
       <div className="bg-card border border-white/6 rounded-xl p-4 mb-12">
         <p className="font-mono text-xs text-muted mb-2">Quick install</p>
         <code className="font-mono text-sm text-primary">
-          curl -fsSL https://agentsos.dev/install -o install.sh && sh install.sh
+          curl -fsSL https://agentos.dev/install -o install.sh && sh install.sh
         </code>
       </div>
 

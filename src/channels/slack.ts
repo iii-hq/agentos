@@ -21,7 +21,7 @@ registerFunction(
       return { status_code: 200, body: { challenge: event.challenge } };
     }
 
-    const signingSecret = process.env.SLACK_SIGNING_SECRET || "";
+    const signingSecret = await getSecret("SLACK_SIGNING_SECRET");
     if (!signingSecret) {
       return {
         status_code: 500,

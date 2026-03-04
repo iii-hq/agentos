@@ -2,7 +2,7 @@ import { realpathSync } from "node:fs";
 import { isAbsolute, relative, resolve } from "node:path";
 
 export const ENGINE_URL = process.env.III_ENGINE_URL || "ws://localhost:49134";
-export const WORKSPACE_ROOT = process.env.AGENTSOS_WORKSPACE || process.cwd();
+export const WORKSPACE_ROOT = process.env.AGENTOS_WORKSPACE || process.cwd();
 
 export function assertPathContained(resolved: string) {
   let real: string;

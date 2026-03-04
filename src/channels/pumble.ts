@@ -54,6 +54,9 @@ registerTrigger({
 
 async function sendMessage(channelId: string, text: string) {
   const token = await getSecret("PUMBLE_TOKEN");
+  if (!token) {
+    throw new Error("PUMBLE_TOKEN not configured");
+  }
   const chunks = splitMessage(text, 4000);
   for (const chunk of chunks) {
     await fetch(`${API_URL}/messages`, {

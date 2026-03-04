@@ -60,6 +60,9 @@ registerTrigger({
 
 async function sendMessage(threadId: string, text: string) {
   const token = await getSecret("LINKEDIN_TOKEN");
+  if (!token) {
+    throw new Error("LINKEDIN_TOKEN not configured");
+  }
   const chunks = splitMessage(text, 4096);
   for (const chunk of chunks) {
     await fetch(`${API_URL}/messages`, {

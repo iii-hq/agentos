@@ -168,48 +168,48 @@ describe("resolveAgent", () => {
 });
 
 describe("requireAuth", () => {
-  const originalEnv = process.env.AGENTSOS_API_KEY;
+  const originalEnv = process.env.AGENTOS_API_KEY;
 
   afterEach(() => {
     if (originalEnv !== undefined) {
-      process.env.AGENTSOS_API_KEY = originalEnv;
+      process.env.AGENTOS_API_KEY = originalEnv;
     } else {
-      delete process.env.AGENTSOS_API_KEY;
+      delete process.env.AGENTOS_API_KEY;
     }
   });
 
-  it("throws 500 when AGENTSOS_API_KEY not set", () => {
-    delete process.env.AGENTSOS_API_KEY;
+  it("throws 500 when AGENTOS_API_KEY not set", () => {
+    delete process.env.AGENTOS_API_KEY;
     const req = { headers: { authorization: "Bearer test" } };
-    expect(() => requireAuth(req)).toThrow("AGENTSOS_API_KEY not configured");
+    expect(() => requireAuth(req)).toThrow("AGENTOS_API_KEY not configured");
   });
 
   it("throws 401 when no authorization header", () => {
-    process.env.AGENTSOS_API_KEY = "secret123";
+    process.env.AGENTOS_API_KEY = "secret123";
     const req = { headers: {} };
     expect(() => requireAuth(req)).toThrow("Unauthorized");
   });
 
   it("throws 401 when token is wrong", () => {
-    process.env.AGENTSOS_API_KEY = "secret123";
+    process.env.AGENTOS_API_KEY = "secret123";
     const req = { headers: { authorization: "Bearer wrong" } };
     expect(() => requireAuth(req)).toThrow("Unauthorized");
   });
 
   it("passes when token matches", () => {
-    process.env.AGENTSOS_API_KEY = "secret123";
+    process.env.AGENTOS_API_KEY = "secret123";
     const req = { headers: { authorization: "Bearer secret123" } };
     expect(() => requireAuth(req)).not.toThrow();
   });
 
   it("handles Bearer prefix case-insensitively", () => {
-    process.env.AGENTSOS_API_KEY = "mykey";
+    process.env.AGENTOS_API_KEY = "mykey";
     const req = { headers: { authorization: "bearer mykey" } };
     expect(() => requireAuth(req)).not.toThrow();
   });
 
   it("sets statusCode 500 on missing key error", () => {
-    delete process.env.AGENTSOS_API_KEY;
+    delete process.env.AGENTOS_API_KEY;
     try {
       requireAuth({ headers: {} });
     } catch (e: any) {
@@ -218,7 +218,7 @@ describe("requireAuth", () => {
   });
 
   it("sets statusCode 401 on auth failure", () => {
-    process.env.AGENTSOS_API_KEY = "key";
+    process.env.AGENTOS_API_KEY = "key";
     try {
       requireAuth({ headers: { authorization: "Bearer bad" } });
     } catch (e: any) {
@@ -366,14 +366,14 @@ describe("stripSecretsFromEnv", () => {
   });
 
   it("excludes API keys", () => {
-    const original = process.env.AGENTSOS_API_KEY;
-    process.env.AGENTSOS_API_KEY = "secret";
+    const original = process.env.AGENTOS_API_KEY;
+    process.env.AGENTOS_API_KEY = "secret";
     const result = stripSecretsFromEnv();
-    expect(result.AGENTSOS_API_KEY).toBeUndefined();
+    expect(result.AGENTOS_API_KEY).toBeUndefined();
     if (original !== undefined) {
-      process.env.AGENTSOS_API_KEY = original;
+      process.env.AGENTOS_API_KEY = original;
     } else {
-      delete process.env.AGENTSOS_API_KEY;
+      delete process.env.AGENTOS_API_KEY;
     }
   });
 

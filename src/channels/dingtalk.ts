@@ -31,6 +31,9 @@ registerFunction(
       sessionId: `dingtalk:${conversationId}`,
     });
 
+    if (!response?.content) {
+      return { status_code: 200, body: { ok: true } };
+    }
     await sendMessage(response.content);
 
     triggerVoid("security::audit", {

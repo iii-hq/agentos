@@ -47,8 +47,10 @@ registerTrigger({
 });
 
 async function sendMessage(channel: string, text: string) {
-  const bridgeUrl =
-    (await getSecret("MUMBLE_BRIDGE_URL")) || "http://localhost:6502";
+  const bridgeUrl = await getSecret("MUMBLE_BRIDGE_URL");
+  if (!bridgeUrl) {
+    throw new Error("MUMBLE_BRIDGE_URL not configured");
+  }
   const chunks = splitMessage(text, 4096);
   for (const chunk of chunks) {
     await fetch(`${bridgeUrl}/send`, {

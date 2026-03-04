@@ -11,6 +11,7 @@ const getSecret = createSecretGetter(trigger);
 const API_URL = "https://open.feishu.cn/open-apis";
 
 let tenantToken = "";
+let tenantTokenExpiry = 0;
 
 registerFunction(
   {
@@ -59,7 +60,7 @@ registerTrigger({
 });
 
 async function getTenantToken(): Promise<string> {
-  if (tenantToken) return tenantToken;
+  if (tenantToken && Date.now() < tenantTokenExpiry) return tenantToken;
   const appId = await getSecret("FEISHU_APP_ID");
   if (!appId) {
     throw new Error("FEISHU_APP_ID not configured");
@@ -68,14 +69,21 @@ async function getTenantToken(): Promise<string> {
   if (!appSecret) {
     throw new Error("FEISHU_APP_SECRET not configured");
   }
-  const res = await fetch(`${API_URL}/auth/v3/tenant_access_token/internal`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ app_id: appId, app_secret: appSecret }),
-  });
-  const data = (await res.json()) as { tenant_access_token: string };
-  tenantToken = data.tenant_access_token;
-  return tenantToken;
+  try {
+    const res = await fetch(`${API_URL}/auth/v3/tenant_access_token/internal`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ app_id: appId, app_secret: appSecret }),
+    });
+    const data = (await res.json()) as { tenant_access_token: string };
+    tenantToken = data.tenant_access_token;
+    tenantTokenExpiry = Date.now() + 5400_000;
+    return tenantToken;
+  } catch (err) {
+    tenantToken = "";
+    tenantTokenExpiry = 0;
+    throw err;
+  }
 }
 
 async function sendMessage(chatId: string, text: string) {

@@ -19,8 +19,11 @@ registerFunction(
 
     const expectedToken = await getSecret("GOOGLE_CHAT_TOKEN");
     if (expectedToken) {
-      const authHeader =
+      const rawHeader =
         headers["authorization"] || headers["Authorization"] || "";
+      const authHeader = Array.isArray(rawHeader)
+        ? rawHeader[0] || ""
+        : String(rawHeader);
       const bearer = authHeader.replace(/^Bearer\s+/i, "");
       if (!bearer || bearer !== expectedToken) {
         return { status_code: 401, body: { error: "Unauthorized" } };

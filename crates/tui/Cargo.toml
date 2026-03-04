@@ -1,11 +1,11 @@
 [package]
-name = "agentsos-tui"
+name = "agentos-tui"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 
 [[bin]]
-name = "agentsos-tui"
+name = "agentos-tui"
 path = "src/main.rs"
 
 [dependencies]

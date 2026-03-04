@@ -51,6 +51,9 @@ registerTrigger({
 
 async function sendMessage(id: number, text: string, isThread: boolean) {
   const token = await getSecret("TWIST_TOKEN");
+  if (!token) {
+    throw new Error("TWIST_TOKEN not configured");
+  }
   const endpoint = isThread ? "comments/add" : "thread_messages/add";
   const payload = isThread
     ? { thread_id: id, content: text }

@@ -1,6 +1,19 @@
-export const PRICING: Record<string, { input: number; output: number; cacheRead?: number; cacheWrite?: number }> = {
-  "claude-opus-4-6": { input: 15, output: 75, cacheRead: 1.5, cacheWrite: 18.75 },
-  "claude-sonnet-4-6": { input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75 },
+export const PRICING: Record<
+  string,
+  { input: number; output: number; cacheRead?: number; cacheWrite?: number }
+> = {
+  "claude-opus-4-6": {
+    input: 15,
+    output: 75,
+    cacheRead: 1.5,
+    cacheWrite: 18.75,
+  },
+  "claude-sonnet-4-6": {
+    input: 3,
+    output: 15,
+    cacheRead: 0.3,
+    cacheWrite: 3.75,
+  },
   "claude-haiku-4-5": { input: 0.8, output: 4, cacheRead: 0.08, cacheWrite: 1 },
   "gpt-4o": { input: 2.5, output: 10 },
   "gpt-4.1": { input: 2, output: 8 },

@@ -28,7 +28,7 @@ const DEFAULT_NETWORK_MODE: &str = "none";
 const DEFAULT_TIMEOUT_SECS: u64 = 30;
 
 const ALLOWED_IMAGES: &[&str] = &[
-    "agentsos-sandbox",
+    "agentos-sandbox",
     "node:20-slim",
     "python:3.12-slim",
     "rust:1-slim",
@@ -66,7 +66,7 @@ mod tests {
         assert!(ALLOWED_IMAGES.contains(&"python:3.12-slim"));
         assert!(ALLOWED_IMAGES.contains(&"node:20-slim"));
         assert!(ALLOWED_IMAGES.contains(&"rust:1-slim"));
-        assert!(ALLOWED_IMAGES.contains(&"agentsos-sandbox"));
+        assert!(ALLOWED_IMAGES.contains(&"agentos-sandbox"));
     }
 
     #[test]
@@ -498,7 +498,7 @@ async fn docker_exec(input: Value) -> Result<Value, IIIError> {
     let timeout_secs = req.timeout_secs.unwrap_or(DEFAULT_TIMEOUT_SECS);
 
     let id = uuid::Uuid::new_v4().to_string();
-    let container_name = format!("agentsos-sandbox-{}", &id[..8]);
+    let container_name = format!("agentos-sandbox-{}", &id[..8]);
 
     let mut args = vec![
         "run".to_string(),

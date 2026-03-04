@@ -52,13 +52,16 @@ async function getSession(agentId: string): Promise<BrowserSession> {
     key: agentId,
   });
   if (!session) throw new Error(`No browser session for agent: ${agentId}`);
+  return session;
+}
+
+async function touchSession(agentId: string, session: BrowserSession) {
   session.lastActivity = Date.now();
   await triggerVoid("state::set", {
     scope: "browser_sessions",
     key: agentId,
     value: session,
   });
-  return session;
 }
 
 async function runBrowserScript(
@@ -271,6 +274,7 @@ registerFunction(
     const { agentId, url } = req.body || req;
     await assertNoSsrf(url);
     const session = await getSession(agentId);
+    await touchSession(agentId, session);
 
     const result = (await runBrowserScript(session, "navigate", {
       url,
@@ -292,6 +296,7 @@ registerFunction(
     requireAuth(req);
     const { agentId, selector } = req.body || req;
     const session = await getSession(agentId);
+    await touchSession(agentId, session);
     const result = (await runBrowserScript(session, "click", {
       selector,
       currentUrl: session.currentUrl,
@@ -319,6 +324,7 @@ registerFunction(
     requireAuth(req);
     const { agentId, selector, text } = req.body || req;
     const session = await getSession(agentId);
+    await touchSession(agentId, session);
     await runBrowserScript(session, "type", {
       selector,
       text,
@@ -338,6 +344,7 @@ registerFunction(
     requireAuth(req);
     const { agentId, fullPage } = req.body || req;
     const session = await getSession(agentId);
+    await touchSession(agentId, session);
     const savePath = join(
       tmpdir(),
       `screenshot-${session.id}-${Date.now()}.png`,
@@ -359,6 +366,7 @@ registerFunction(
     requireAuth(req);
     const { agentId } = req.body || req;
     const session = await getSession(agentId);
+    await touchSession(agentId, session);
     const result = (await runBrowserScript(session, "read", {
       currentUrl: session.currentUrl,
     })) as any;

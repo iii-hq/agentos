@@ -560,7 +560,7 @@ fn draw(f: &mut Frame, app: &App) {
 
     let title = Block::default()
         .borders(Borders::ALL)
-        .title(" agentsos ")
+        .title(" agentos ")
         .title_alignment(Alignment::Center)
         .border_style(Style::default().fg(Color::Cyan));
 
@@ -1177,7 +1177,7 @@ fn draw_wizard(f: &mut Frame, app: &App, area: Rect) {
         .border_style(Style::default().fg(Color::Cyan));
 
     let mut lines: Vec<Line> = vec![
-        Line::from(Span::styled("AgentSOS Setup Wizard", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))),
+        Line::from(Span::styled("AgentOS Setup Wizard", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))),
         Line::from(""),
     ];
 

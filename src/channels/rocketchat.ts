@@ -51,8 +51,17 @@ registerTrigger({
 
 async function sendMessage(roomId: string, text: string, tmid?: string) {
   const token = await getSecret("ROCKETCHAT_TOKEN");
+  if (!token) {
+    throw new Error("ROCKETCHAT_TOKEN not configured");
+  }
   const baseUrl = await getSecret("ROCKETCHAT_URL");
+  if (!baseUrl) {
+    throw new Error("ROCKETCHAT_URL not configured");
+  }
   const userId = await getSecret("ROCKETCHAT_USER_ID");
+  if (!userId) {
+    throw new Error("ROCKETCHAT_USER_ID not configured");
+  }
   const chunks = splitMessage(text, 4000);
   for (const chunk of chunks) {
     await fetch(`${baseUrl}/api/v1/chat.sendMessage`, {

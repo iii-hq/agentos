@@ -1,5 +1,5 @@
 [package]
-name = "agentsos-core"
+name = "agentos-core"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

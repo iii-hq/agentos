@@ -199,7 +199,7 @@ function buildDashboardHtml(): string {
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>AgentSOS Dashboard</title>
+<title>AgentOS Dashboard</title>
 <script src="https://cdn.tailwindcss.com"></script>
 <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
 <script>
@@ -224,7 +224,7 @@ tailwind.config = {
 
   <aside class="w-56 bg-surface-100 border-r border-surface-300 flex flex-col">
     <div class="px-4 py-4 border-b border-surface-300">
-      <h1 class="text-lg font-bold text-accent">AgentSOS</h1>
+      <h1 class="text-lg font-bold text-accent">AgentOS</h1>
       <p class="text-xs text-zinc-500 mt-0.5">Agent Operating System</p>
     </div>
     <nav class="flex-1 py-2">

@@ -47,7 +47,13 @@ registerTrigger({
 
 async function sendMessage(roomToken: string, text: string) {
   const token = await getSecret("NEXTCLOUD_TOKEN");
+  if (!token) {
+    throw new Error("NEXTCLOUD_TOKEN not configured");
+  }
   const baseUrl = await getSecret("NEXTCLOUD_URL");
+  if (!baseUrl) {
+    throw new Error("NEXTCLOUD_URL not configured");
+  }
   const chunks = splitMessage(text, 4096);
   for (const chunk of chunks) {
     await fetch(`${baseUrl}/ocs/v2.php/apps/spreed/api/v1/chat/${roomToken}`, {

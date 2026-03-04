@@ -7,13 +7,24 @@ export default function Footer() {
             agents<span className="text-primary">_</span>os
           </span>
           <div className="flex items-center gap-6">
-            <a href="https://github.com/rohitg00/agentsos" target="_blank" rel="noopener noreferrer" className="text-muted text-xs font-mono hover:text-white transition-colors">
+            <a
+              href="https://github.com/rohitg00/agentos"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-muted text-xs font-mono hover:text-white transition-colors"
+            >
               GitHub
             </a>
-            <a href="#docs" className="text-muted text-xs font-mono hover:text-white transition-colors">
+            <a
+              href="#docs"
+              className="text-muted text-xs font-mono hover:text-white transition-colors"
+            >
               Docs
             </a>
-            <a href="#compare" className="text-muted text-xs font-mono hover:text-white transition-colors">
+            <a
+              href="#compare"
+              className="text-muted text-xs font-mono hover:text-white transition-colors"
+            >
               Benchmarks
             </a>
           </div>

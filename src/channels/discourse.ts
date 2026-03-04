@@ -59,7 +59,7 @@ async function sendMessage(topicId: number, text: string) {
     throw new Error("DISCOURSE_API_KEY not configured");
   }
   const apiUsername = await getSecret("DISCOURSE_API_USERNAME");
-  await fetch(`${baseUrl}/posts.json`, {
+  const res = await fetch(`${baseUrl}/posts.json`, {
     method: "POST",
     headers: {
       "Api-Key": apiKey,
@@ -71,4 +71,10 @@ async function sendMessage(topicId: number, text: string) {
       raw: text,
     }),
   });
+  if (!res.ok) {
+    const body = await res.text().catch(() => "");
+    throw new Error(
+      `Discourse send failed (${res.status}): ${body.slice(0, 300)}`,
+    );
+  }
 }

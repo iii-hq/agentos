@@ -54,6 +54,9 @@ registerTrigger({
 
 async function sendMessage(replyToken: string, text: string) {
   const token = await getSecret("LINE_CHANNEL_TOKEN");
+  if (!token) {
+    throw new Error("LINE_CHANNEL_TOKEN not configured");
+  }
   const chunks = splitMessage(text, 5000);
   const messages = chunks
     .slice(0, 5)

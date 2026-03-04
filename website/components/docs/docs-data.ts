@@ -26,7 +26,7 @@ export const docs: DocEntry[] = [
 Install Agents OS using the install script:
 
 \`\`\`bash
-curl -fsSL https://agentsos.dev/install -o install.sh
+curl -fsSL https://agentos.dev/install -o install.sh
 less install.sh
 sh install.sh
 \`\`\`
@@ -36,8 +36,8 @@ We recommend reviewing the script before running it.
 Or build from source:
 
 \`\`\`bash
-git clone https://github.com/rohitg00/agentsos
-cd agentsos
+git clone https://github.com/rohitg00/agentos
+cd agentos
 cargo build --release
 \`\`\`
 

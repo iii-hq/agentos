@@ -78,6 +78,9 @@ registerTrigger({
 
 async function sendMessage(recipientId: string, text: string) {
   const pageToken = await getSecret("MESSENGER_PAGE_TOKEN");
+  if (!pageToken) {
+    throw new Error("MESSENGER_PAGE_TOKEN not configured");
+  }
   const chunks = splitMessage(text, 2000);
   for (const chunk of chunks) {
     await fetch(`${API_URL}?access_token=${pageToken}`, {

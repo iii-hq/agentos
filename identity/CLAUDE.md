@@ -1,6 +1,6 @@
 # Identity Directory
 
-This directory contains identity template files for the AgentSOS system.
+This directory contains identity template files for the AgentOS system.
 
 ## File Index
 

@@ -54,11 +54,11 @@ async function sendMessage(text: string) {
   }
   const chunks = splitMessage(text, 4096);
   for (const chunk of chunks) {
-    await fetch(`${baseUrl}/message?token=${token}`, {
+    await fetch(`${baseUrl}/message?token=${encodeURIComponent(token)}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        title: "AgentSOS",
+        title: "AgentOS",
         message: chunk,
         priority: 5,
       }),

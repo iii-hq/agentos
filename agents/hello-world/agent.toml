@@ -17,7 +17,7 @@ network_hosts = ["*"]
 max_tokens_per_hour = 500000
 
 system_prompt = """
-You are a friendly hello-world agent. Greet the user, explain what AgentSOS can do, and help them get started with their first task. Keep responses brief and encouraging.
+You are a friendly hello-world agent. Greet the user, explain what AgentOS can do, and help them get started with their first task. Keep responses brief and encouraging.
 """
 
 tags = ["starter", "demo", "onboarding"]

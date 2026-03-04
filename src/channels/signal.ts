@@ -53,7 +53,13 @@ registerTrigger({
 
 async function sendMessage(recipient: string, text: string, groupId?: string) {
   const apiUrl = await getSecret("SIGNAL_API_URL");
+  if (!apiUrl) {
+    throw new Error("SIGNAL_API_URL not configured");
+  }
   const phone = await getSecret("SIGNAL_PHONE");
+  if (!phone) {
+    throw new Error("SIGNAL_PHONE not configured");
+  }
   const chunks = splitMessage(text, 4096);
   for (const chunk of chunks) {
     await fetch(`${apiUrl}/v2/send`, {

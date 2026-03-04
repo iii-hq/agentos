@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { ArrowRight } from "lucide-react";
 import FadeIn from "./shared/FadeIn";
 import SectionHeader from "./shared/SectionHeader";
@@ -69,6 +69,12 @@ const flow = [
 
 export default function CodeExamples() {
   const [active, setActive] = useState(0);
+  const tabRefs = useRef<(HTMLButtonElement | null)[]>([]);
+
+  const selectTab = (index: number) => {
+    setActive(index);
+    tabRefs.current[index]?.focus();
+  };
 
   return (
     <section id="code" className="py-24">
@@ -84,6 +90,9 @@ export default function CodeExamples() {
             {tabs.map((tab, i) => (
               <button
                 key={tab.label}
+                ref={(el) => {
+                  tabRefs.current[i] = el;
+                }}
                 role="tab"
                 aria-selected={active === i}
                 aria-controls={`tabpanel-${i}`}
@@ -91,9 +100,9 @@ export default function CodeExamples() {
                 onClick={() => setActive(i)}
                 onKeyDown={(e) => {
                   if (e.key === "ArrowRight") {
-                    setActive((active + 1) % tabs.length);
+                    selectTab((active + 1) % tabs.length);
                   } else if (e.key === "ArrowLeft") {
-                    setActive((active - 1 + tabs.length) % tabs.length);
+                    selectTab((active - 1 + tabs.length) % tabs.length);
                   }
                 }}
                 className={`px-4 py-2 text-sm font-mono transition-colors rounded-t-lg ${

@@ -59,15 +59,22 @@ async function sendMessage(to: string, text: string, type: string) {
   }
   const chunks = splitMessage(text, 4096);
   for (const chunk of chunks) {
-    await fetch(`${bridgeUrl}/send`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        from: jid,
-        to,
-        body: chunk,
-        type: type || "chat",
-      }),
-    });
+    try {
+      const res = await fetch(`${bridgeUrl}/send`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          from: jid,
+          to,
+          body: chunk,
+          type: type || "chat",
+        }),
+      });
+      if (!res.ok) {
+        console.error(`XMPP send failed: ${res.status}`);
+      }
+    } catch (err: any) {
+      console.error(`XMPP send error: ${err.message}`);
+    }
   }
 }

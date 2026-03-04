@@ -7,6 +7,8 @@ export function createRecordMetric(triggerVoid: TriggerVoidFn) {
     labels: Record<string, string>,
     type: "counter" | "histogram" | "gauge" = "counter",
   ) {
-    triggerVoid("telemetry::record", { name, value, labels, type });
+    try {
+      triggerVoid("telemetry::record", { name, value, labels, type });
+    } catch {}
   };
 }

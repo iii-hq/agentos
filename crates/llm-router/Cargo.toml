@@ -1,11 +1,11 @@
 [package]
-name = "agentsos-llm-router"
+name = "agentos-llm-router"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 
 [[bin]]
-name = "agentsos-llm-router"
+name = "agentos-llm-router"
 path = "src/main.rs"
 
 [dependencies]

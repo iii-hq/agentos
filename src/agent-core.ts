@@ -251,25 +251,17 @@ async function handleCodeAgent(
       content: `Code execution result:\n${execResult.stdout ? `stdout: ${execResult.stdout}\n` : ""}result: ${JSON.stringify(execResult.result)}`,
     });
 
-    const llmRetry = Date.now();
-    currentResponse = await triggerFn("llm::complete", {
+    currentResponse = await executeLlmCall(
       model,
-      systemPrompt,
       messages,
       tools,
-    });
-    triggerVoidFn("replay::record", {
-      sessionId: replaySessionId,
+      systemPrompt,
       agentId,
-      action: "llm_call",
-      data: {
-        model: currentResponse.model,
-        usage: currentResponse.usage,
-        afterCodeExec: true,
-      },
-      durationMs: Date.now() - llmRetry,
-      iteration: 0,
-    });
+      replaySessionId,
+      triggerFn,
+      triggerVoidFn,
+      0,
+    );
   }
 
   return currentResponse;
@@ -358,25 +350,32 @@ async function executeToolCall(
       { action: "deny" },
       { agentId, operation: "policy_check" },
     );
-    if (policyResult.action === "approve") {
-      const approval: any = await safeCall(
-        () =>
-          triggerFn("approval::check", {
-            agentId,
-            toolId: tc.id,
-            arguments: tc.arguments,
-          }),
-        { approved: false, reason: "Approval timeout" },
-        { agentId, operation: "approval_check" },
-      );
-      if (!approval.approved) {
-        return {
-          toolCallId: tc.callId,
-          output: {
-            error: `Tool ${tc.id} requires approval: ${approval.reason || "not approved"}`,
-          },
-        };
-      }
+    if (policyResult.action !== "approve") {
+      return {
+        toolCallId: tc.callId,
+        output: {
+          error: `Tool ${tc.id} blocked by policy: ${policyResult.reason || "denied"}`,
+        },
+      };
+    }
+
+    const approval: any = await safeCall(
+      () =>
+        triggerFn("approval::check", {
+          agentId,
+          toolId: tc.id,
+          arguments: tc.arguments,
+        }),
+      { approved: false, reason: "Approval timeout" },
+      { agentId, operation: "approval_check" },
+    );
+    if (!approval.approved) {
+      return {
+        toolCallId: tc.callId,
+        output: {
+          error: `Tool ${tc.id} requires approval: ${approval.reason || "not approved"}`,
+        },
+      };
     }
 
     await triggerFn("security::check_capability", {
@@ -468,15 +467,17 @@ async function toolLoop(
   while (currentResponse.toolCalls?.length && iterations < MAX_ITERATIONS) {
     iterations++;
 
-    await triggerVoidFn("publish", {
-      topic: "audit",
-      data: {
-        type: "tool_execution",
-        agentId,
-        tools: currentResponse.toolCalls.map((tc: ToolCall) => tc.id),
-        iteration: iterations,
-      },
-    });
+    try {
+      await triggerVoidFn("publish", {
+        topic: "audit",
+        data: {
+          type: "tool_execution",
+          agentId,
+          tools: currentResponse.toolCalls.map((tc: ToolCall) => tc.id),
+          iteration: iterations,
+        },
+      });
+    } catch {}
 
     const toolResults: { toolCallId: string; output: unknown }[] = [];
     for (const tc of currentResponse.toolCalls as ToolCall[]) {

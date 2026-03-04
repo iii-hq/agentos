@@ -110,7 +110,7 @@ registerFunction(
     for (
       let d = new Date(startDate);
       d <= endDate;
-      d.setDate(d.getDate() + 1)
+      d = new Date(d.getTime() + 86_400_000)
     ) {
       const dateStr = d.toISOString().slice(0, 10);
       const prefix = input.agentId ? `${dateStr}:${input.agentId}` : dateStr;

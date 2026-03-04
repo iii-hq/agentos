@@ -66,7 +66,7 @@ vi.mock("../security-headers.js", () => ({
   SECURITY_HEADERS: { "X-Frame-Options": "DENY" },
 }));
 
-const ENV_KEY = process.env.AGENTSOS_API_KEY;
+const ENV_KEY = process.env.AGENTOS_API_KEY;
 const defaultMockImpl = async (fnId: string, data?: any): Promise<any> => {
   if (fnId === "state::get") return getScope(data.scope).get(data.key) ?? null;
   if (fnId === "state::set") {
@@ -108,7 +108,7 @@ beforeEach(() => {
   mockTrigger.mockReset();
   mockTrigger.mockImplementation(defaultMockImpl);
   mockTriggerVoid.mockClear();
-  process.env.AGENTSOS_API_KEY = "test-key";
+  process.env.AGENTOS_API_KEY = "test-key";
 });
 
 beforeAll(async () => {
@@ -128,9 +128,9 @@ describe("dashboard::page", () => {
     expect(result.contentType).toBe("text/html");
   });
 
-  it("contains AgentSOS title", async () => {
+  it("contains AgentOS title", async () => {
     const result = await call("dashboard::page", {});
-    expect(result.html).toContain("<title>AgentSOS Dashboard</title>");
+    expect(result.html).toContain("<title>AgentOS Dashboard</title>");
   });
 
   it("includes Tailwind CSS", async () => {

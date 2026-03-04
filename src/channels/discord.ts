@@ -44,6 +44,9 @@ registerTrigger({
 
 async function sendMessage(channelId: string, content: string) {
   const botToken = await getSecret("DISCORD_BOT_TOKEN");
+  if (!botToken) {
+    throw new Error("DISCORD_BOT_TOKEN not configured");
+  }
   const chunks = splitMessage(content, 2000);
   for (const chunk of chunks) {
     await fetch(`${DISCORD_API}/channels/${channelId}/messages`, {

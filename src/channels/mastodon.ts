@@ -67,7 +67,13 @@ async function sendMessage(text: string, inReplyToId?: string) {
         ...(replyId ? { in_reply_to_id: replyId } : {}),
       }),
     });
+    if (!res.ok) {
+      throw new Error(`Mastodon post failed: ${res.status}`);
+    }
     const data = (await res.json()) as { id: string };
+    if (!data.id) {
+      throw new Error("Mastodon response missing status id");
+    }
     replyId = data.id;
   }
 }

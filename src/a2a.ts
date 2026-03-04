@@ -167,7 +167,7 @@ registerFunction(
         .catch(() => []));
 
     const card: AgentCard = {
-      name: name || "agentsos",
+      name: name || "agentos",
       description:
         description ||
         "AI agent operating system with multi-agent orchestration",
@@ -260,9 +260,14 @@ registerFunction(
         key: taskId,
         value: task,
       });
-      const order = await getTaskOrder();
-      order.push(taskId);
-      await setTaskOrder(order);
+      try {
+        const order = await getTaskOrder();
+        order.push(taskId);
+        await setTaskOrder(order);
+      } catch (err) {
+        await triggerVoid("state::delete", { scope: "a2a_tasks", key: taskId });
+        throw err;
+      }
 
       return task;
     } finally {
@@ -352,9 +357,14 @@ registerFunction(
         key: tid,
         value: task,
       });
-      const order = await getTaskOrder();
-      order.push(tid);
-      await setTaskOrder(order);
+      try {
+        const order = await getTaskOrder();
+        order.push(tid);
+        await setTaskOrder(order);
+      } catch (err) {
+        await triggerVoid("state::delete", { scope: "a2a_tasks", key: tid });
+        throw err;
+      }
 
       const userText = message.parts
         .filter((p: Part) => p.type === "text")

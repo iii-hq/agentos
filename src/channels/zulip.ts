@@ -53,8 +53,17 @@ async function sendMessage(
   content: string,
 ) {
   const email = await getSecret("ZULIP_EMAIL");
+  if (!email) {
+    throw new Error("ZULIP_EMAIL not configured");
+  }
   const apiKey = await getSecret("ZULIP_API_KEY");
+  if (!apiKey) {
+    throw new Error("ZULIP_API_KEY not configured");
+  }
   const site = await getSecret("ZULIP_SITE");
+  if (!site) {
+    throw new Error("ZULIP_SITE not configured");
+  }
   const auth = Buffer.from(`${email}:${apiKey}`).toString("base64");
   const chunks = splitMessage(content, 10000);
   for (const chunk of chunks) {

@@ -51,7 +51,7 @@ registerFunction(
       sessionId: `webex:${roomId}`,
     });
 
-    await sendMessage(roomId, response.content);
+    await sendMessage(roomId, response.content, webexToken);
 
     triggerVoid("security::audit", {
       type: "channel_message",
@@ -69,11 +69,7 @@ registerTrigger({
   config: { api_path: "webhook/webex", http_method: "POST" },
 });
 
-async function sendMessage(roomId: string, text: string) {
-  const token = await getSecret("WEBEX_TOKEN");
-  if (!token) {
-    throw new Error("WEBEX_TOKEN not configured");
-  }
+async function sendMessage(roomId: string, text: string, token: string) {
   const chunks = splitMessage(text, 7439);
   for (const chunk of chunks) {
     await fetch(`${API_URL}/messages`, {

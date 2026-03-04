@@ -4,10 +4,9 @@ import { createLogger } from "./shared/logger.js";
 
 const log = createLogger("telemetry");
 
-const { registerFunction, registerTrigger, trigger } = init(
-  ENGINE_URL,
-  { workerName: "telemetry" },
-);
+const { registerFunction, registerTrigger, trigger } = init(ENGINE_URL, {
+  workerName: "telemetry",
+});
 
 interface MetricEvent {
   name: string;
@@ -185,7 +184,7 @@ registerFunction(
 
     const sections: string[] = [];
 
-    sections.push("=== AgentSOS Metrics Dashboard ===\n");
+    sections.push("=== AgentOS Metrics Dashboard ===\n");
 
     if (Object.keys(summary.counters).length > 0) {
       sections.push("-- Counters --");

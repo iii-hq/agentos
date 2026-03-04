@@ -51,11 +51,11 @@ async function sendMessage(text: string) {
   const baseUrl = (await getSecret("NTFY_URL")) || "https://ntfy.sh";
   const chunks = splitMessage(text, 4096);
   for (const chunk of chunks) {
-    await fetch(`${baseUrl}/${ntfyTopic}`, {
+    await fetch(`${baseUrl}/${encodeURIComponent(ntfyTopic)}`, {
       method: "POST",
       headers: {
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        Title: "AgentSOS",
+        Title: "AgentOS",
       },
       body: chunk,
     });

@@ -2,7 +2,7 @@
 
 ## Prerequisites
 
-Before initializing AgentSOS, ensure you have:
+Before initializing AgentOS, ensure you have:
 - Node.js 20+ installed
 - An Anthropic API key (ANTHROPIC_API_KEY environment variable)
 - The iii-engine runtime running (`iii --config config.yaml`)
@@ -13,8 +13,8 @@ Set required environment variables:
 
 ```
 ANTHROPIC_API_KEY=sk-ant-...
-AGENTSOS_HOME=~/agentsos
-AGENTSOS_DATA_DIR=~/agentsos/data
+AGENTOS_HOME=~/agentos
+AGENTOS_DATA_DIR=~/agentos/data
 ```
 
 ## Step 2: Agent Discovery
@@ -87,4 +87,4 @@ Check that `agents/*/agent.toml` files exist and are valid TOML.
 Run `migrate::scan` to verify integration configs. Check that API keys are set in environment.
 
 ### Memory not persisting
-Ensure `AGENTSOS_DATA_DIR` is writable and has sufficient disk space.
+Ensure `AGENTOS_DATA_DIR` is writable and has sufficient disk space.

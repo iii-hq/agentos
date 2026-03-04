@@ -47,6 +47,9 @@ registerTrigger({
 
 async function sendMessage(to: string, text: string) {
   const token = await getSecret("FLOCK_TOKEN");
+  if (!token) {
+    throw new Error("FLOCK_TOKEN not configured");
+  }
   const chunks = splitMessage(text, 4096);
   for (const chunk of chunks) {
     await fetch(API_URL, {

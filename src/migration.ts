@@ -485,8 +485,7 @@ registerFunction(
 registerFunction(
   {
     id: "migrate::langchain",
-    description:
-      "Parse LangChain Python configs and migrate to agentsos format",
+    description: "Parse LangChain Python configs and migrate to agentos format",
   },
   async (input: { dryRun?: boolean; configDir?: string }) => {
     const dryRun = input.dryRun ?? false;
@@ -977,7 +976,7 @@ registerFunction(
     }
 
     const lines = [
-      "# AgentSOS Migration Report",
+      "# AgentOS Migration Report",
       "",
       `Generated: ${new Date().toISOString()}`,
       `Total Migration Runs: ${reports.length}`,

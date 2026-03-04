@@ -1,4 +1,4 @@
-# agentsos
+# AgentOS
 
 Agent Operating System built on three primitives: **Worker**, **Function**, **Trigger**.
 
@@ -39,11 +39,11 @@ Every capability — agents, memory, security, LLM routing, workflows, tools, sw
 iii --config config.yaml
 
 # 2. Start Rust workers (hot path)
-cargo run --release -p agentsos-core &
-cargo run --release -p agentsos-security &
-cargo run --release -p agentsos-memory &
-cargo run --release -p agentsos-llm-router &
-cargo run --release -p agentsos-wasm-sandbox &
+cargo run --release -p agentos-core &
+cargo run --release -p agentos-security &
+cargo run --release -p agentos-memory &
+cargo run --release -p agentos-llm-router &
+cargo run --release -p agentos-wasm-sandbox &
 
 # 3. Start TypeScript workers
 npx tsx src/api.ts &
@@ -55,15 +55,15 @@ npx tsx src/workflow.ts &
 python workers/embedding/main.py &
 
 # 5. Chat with an agent
-cargo run -p agentsos-cli -- chat default
+cargo run -p agentos-cli -- chat default
 ```
 
 Or use the CLI:
 
 ```bash
-cargo run -p agentsos-cli -- init --quick
-cargo run -p agentsos-cli -- start
-cargo run -p agentsos-cli -- message default "What can you do?"
+cargo run -p agentos-cli -- init --quick
+cargo run -p agentos-cli -- start
+cargo run -p agentos-cli -- message default "What can you do?"
 ```
 
 ## Architecture
@@ -190,9 +190,9 @@ Strategies: `parallel`, `sequential`, `consensus`, `hierarchical`.
 Entity-relation graph for structured knowledge:
 
 ```typescript
-trigger("kg::add_entity", { type: "project", name: "agentsos", properties: { ... } })
-trigger("kg::add_relation", { from: "agentsos", to: "iii-engine", type: "built_on" })
-trigger("kg::query", { entity: "agentsos", depth: 2 })
+trigger("kg::add_entity", { type: "project", name: "agentos", properties: { ... } })
+trigger("kg::add_relation", { from: "agentos", to: "iii-engine", type: "built_on" })
+trigger("kg::query", { entity: "agentos", depth: 2 })
 ```
 
 ## Session Replay
@@ -208,87 +208,87 @@ trigger("replay::summary", { sessionId })
 ## CLI Commands
 
 ```
-agentsos init [--quick]          Initialize project
-agentsos start                   Start all workers
-agentsos stop                    Stop all workers
-agentsos status [--json]         Show system status
-agentsos health [--json]         Health check
-agentsos doctor [--json] [--repair]  Diagnose issues
+agentos init [--quick]          Initialize project
+agentos start                   Start all workers
+agentos stop                    Stop all workers
+agentos status [--json]         Show system status
+agentos health [--json]         Health check
+agentos doctor [--json] [--repair]  Diagnose issues
 
-agentsos agent new [template]    Create agent from template
-agentsos agent list              List all agents
-agentsos agent chat <id>         Interactive chat
-agentsos agent kill <id>         Stop an agent
-agentsos agent spawn <template>  Spawn from template
+agentos agent new [template]    Create agent from template
+agentos agent list              List all agents
+agentos agent chat <id>         Interactive chat
+agentos agent kill <id>         Stop an agent
+agentos agent spawn <template>  Spawn from template
 
-agentsos chat [agent]            Quick chat
-agentsos message <agent> <text>  Send single message
+agentos chat [agent]            Quick chat
+agentos message <agent> <text>  Send single message
 
-agentsos workflow list           List workflows
-agentsos workflow create <file>  Create workflow
-agentsos workflow run <id>       Execute workflow
+agentos workflow list           List workflows
+agentos workflow create <file>  Create workflow
+agentos workflow run <id>       Execute workflow
 
-agentsos trigger list            List triggers
-agentsos trigger create <fn> <type>  Create trigger
-agentsos trigger delete <id>     Delete trigger
+agentos trigger list            List triggers
+agentos trigger create <fn> <type>  Create trigger
+agentos trigger delete <id>     Delete trigger
 
-agentsos skill list              List skills
-agentsos skill install <path>    Install skill
-agentsos skill remove <id>       Remove skill
-agentsos skill search <query>    Search skills
-agentsos skill create <name>     Scaffold new skill
+agentos skill list              List skills
+agentos skill install <path>    Install skill
+agentos skill remove <id>       Remove skill
+agentos skill search <query>    Search skills
+agentos skill create <name>     Scaffold new skill
 
-agentsos channel list            List channels
-agentsos channel setup <name>    Configure channel
-agentsos channel test <name>     Test channel
-agentsos channel enable <name>   Enable channel
-agentsos channel disable <name>  Disable channel
+agentos channel list            List channels
+agentos channel setup <name>    Configure channel
+agentos channel test <name>     Test channel
+agentos channel enable <name>   Enable channel
+agentos channel disable <name>  Disable channel
 
-agentsos config show             Show configuration
-agentsos config get <key>        Get config value
-agentsos config set <k> <v>      Set config value
-agentsos config set-key <p> <k>  Set API key
-agentsos config keys             List API keys
+agentos config show             Show configuration
+agentos config get <key>        Get config value
+agentos config set <k> <v>      Set config value
+agentos config set-key <p> <k>  Set API key
+agentos config keys             List API keys
 
-agentsos models list             List available models
-agentsos models test <model>     Test a model
+agentos models list             List available models
+agentos models test <model>     Test a model
 
-agentsos memory query <text>     Query memory
-agentsos memory list             List memories
-agentsos memory clear [agent]    Clear memory
+agentos memory query <text>     Query memory
+agentos memory list             List memories
+agentos memory clear [agent]    Clear memory
 
-agentsos security audit          View audit log
-agentsos security verify         Verify audit chain
-agentsos security scan <text>    Scan for injection
-agentsos security caps <agent>   View capabilities
+agentos security audit          View audit log
+agentos security verify         Verify audit chain
+agentos security scan <text>    Scan for injection
+agentos security caps <agent>   View capabilities
 
-agentsos approvals list          List pending approvals
-agentsos approvals approve <id>  Approve action
-agentsos approvals deny <id>     Deny action
+agentos approvals list          List pending approvals
+agentos approvals approve <id>  Approve action
+agentos approvals deny <id>     Deny action
 
-agentsos sessions list           List sessions
-agentsos sessions get <id>       Get session details
+agentos sessions list           List sessions
+agentos sessions get <id>       Get session details
 
-agentsos vault set <k> <v>       Store secret
-agentsos vault get <k>           Retrieve secret
-agentsos vault list              List secrets
+agentos vault set <k> <v>       Store secret
+agentos vault get <k>           Retrieve secret
+agentos vault list              List secrets
 
-agentsos cron list               List cron jobs
-agentsos cron create <expr> <fn> Create cron job
-agentsos cron delete <id>        Delete cron job
+agentos cron list               List cron jobs
+agentos cron create <expr> <fn> Create cron job
+agentos cron delete <id>        Delete cron job
 
-agentsos migrate run <target>    Run migration
+agentos migrate run <target>    Run migration
 
-agentsos logs [--lines N] [--follow]  View logs
-agentsos integrations [query]    Browse integrations
-agentsos add <name> [--key K]    Add integration
-agentsos remove <name>           Remove integration
-agentsos mcp                     MCP server mode
-agentsos onboard [--quick]       Interactive onboarding
-agentsos reset [--confirm]       Factory reset
-agentsos completion <shell>      Shell completions
-agentsos tui                     Launch terminal UI
-agentsos dashboard               Open web dashboard
+agentos logs [--lines N] [--follow]  View logs
+agentos integrations [query]    Browse integrations
+agentos add <name> [--key K]    Add integration
+agentos remove <name>           Remove integration
+agentos mcp                     MCP server mode
+agentos onboard [--quick]       Interactive onboarding
+agentos reset [--confirm]       Factory reset
+agentos completion <shell>      Shell completions
+agentos tui                     Launch terminal UI
+agentos dashboard               Open web dashboard
 ```
 
 ## TUI Dashboard
@@ -375,8 +375,8 @@ Telegram, Discord, Slack, WhatsApp, Email, Teams, Google Chat, IRC, Matrix, Matt
 Access 15,000+ skills from the SkillKit marketplace:
 
 ```bash
-agentsos skill search "code review"
-agentsos skill install pro-workflow
+agentos skill search "code review"
+agentos skill install pro-workflow
 ```
 
 Built-in bridge to [agenstskills.com](https://agenstskills.com) for skill discovery, installation, and AI-powered recommendations.
@@ -400,7 +400,7 @@ Built-in bridge to [agenstskills.com](https://agenstskills.com) for skill discov
 ## Project Structure
 
 ```
-agentsos/
+agentos/
 ├── Cargo.toml              Rust workspace
 ├── package.json            Node.js package
 ├── config.yaml             iii-engine configuration

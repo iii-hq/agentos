@@ -355,7 +355,7 @@ registerFunction(
     try {
       const resp = await fetch(url, {
         signal: controller.signal,
-        headers: { "User-Agent": "agentsos/0.1" },
+        headers: { "User-Agent": "agentos/0.1" },
       });
 
       const contentLength = parseInt(resp.headers.get("content-length") || "0");
@@ -1832,7 +1832,7 @@ registerFunction(
         const opts: RequestInit = {
           method: httpMethod,
           headers: {
-            "User-Agent": "AgentSOS/1.0",
+            "User-Agent": "AgentOS/1.0",
             ...(headers || {}),
           },
           signal: controller.signal,

@@ -2,10 +2,9 @@ import { init } from "iii-sdk";
 import { ENGINE_URL } from "./shared/config.js";
 import { requireAuth } from "./shared/utils.js";
 
-const { registerFunction, registerTrigger, trigger } = init(
-  ENGINE_URL,
-  { workerName: "a2a-cards" },
-);
+const { registerFunction, registerTrigger, trigger } = init(ENGINE_URL, {
+  workerName: "a2a-cards",
+});
 
 interface A2aAgentCard {
   name: string;
@@ -22,7 +21,7 @@ interface A2aAgentCard {
   defaultOutputModes: string[];
 }
 
-const API_URL = process.env.AGENTSOS_API_URL || "http://localhost:3111";
+const API_URL = process.env.AGENTOS_API_URL || "http://localhost:3111";
 
 registerFunction(
   {
@@ -123,7 +122,7 @@ registerFunction(
     if (cached) return cached;
 
     const card: A2aAgentCard = {
-      name: "agentsos",
+      name: "agentos",
       description: "AI agent operating system with multi-agent orchestration",
       url: `${API_URL}/api/a2a/agents/orchestrator`,
       capabilities: {

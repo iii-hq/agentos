@@ -17,7 +17,7 @@ fn validate_id(id: &str) -> Result<&str> {
 }
 
 #[derive(Parser)]
-#[command(name = "agentsos", version, about = "Agent Operating System")]
+#[command(name = "agentos", version, about = "Agent Operating System")]
 struct Cli {
     #[command(subcommand)]
     command: Commands,
@@ -249,21 +249,21 @@ async fn main() -> Result<()> {
     match cli.command {
         Commands::Init { quick } => {
             let home = dirs::home_dir().unwrap();
-            let config_dir = home.join(".agentsos");
+            let config_dir = home.join(".agentos");
             std::fs::create_dir_all(&config_dir)?;
             std::fs::create_dir_all(config_dir.join("data"))?;
             std::fs::create_dir_all(config_dir.join("skills"))?;
             std::fs::create_dir_all(config_dir.join("agents"))?;
             std::fs::create_dir_all(config_dir.join("logs"))?;
-            println!("{} Initialized ~/.agentsos/", "✓".green());
+            println!("{} Initialized ~/.agentos/", "✓".green());
 
             if !quick {
-                println!("\nRun {} to start the engine", "agentsos start".cyan());
+                println!("\nRun {} to start the engine", "agentos start".cyan());
             }
         }
 
         Commands::Start => {
-            println!("{} Starting agentsos engine...", "→".blue());
+            println!("{} Starting agentos engine...", "→".blue());
             println!("  Engine:  ws://localhost:49134");
             println!("  HTTP:    http://localhost:3111");
             println!("  Stream:  ws://localhost:3112");
@@ -273,7 +273,7 @@ async fn main() -> Result<()> {
         }
 
         Commands::Stop => {
-            println!("{} Stopping agentsos engine...", "→".blue());
+            println!("{} Stopping agentos engine...", "→".blue());
             println!("{} Engine stopped.", "✓".green());
         }
 
@@ -283,7 +283,7 @@ async fn main() -> Result<()> {
             if is_json {
                 println!("{}", serde_json::to_string_pretty(&resp)?);
             } else {
-                println!("{} agentsos v{}", "●".green(),
+                println!("{} agentos v{}", "●".green(),
                     resp["version"].as_str().unwrap_or("0.1.0"));
                 println!("  Workers: {}", resp["workers"]);
                 println!("  Uptime:  {:.0}s", resp["uptime"].as_f64().unwrap_or(0.0));
@@ -563,7 +563,7 @@ async fn main() -> Result<()> {
                 ("Engine", client.get(format!("{}/api/health", API_BASE)).send().await.is_ok()),
                 ("Workers", true),
                 ("State", true),
-                ("Config", dirs::home_dir().map(|h| h.join(".agentsos").exists()).unwrap_or(false)),
+                ("Config", dirs::home_dir().map(|h| h.join(".agentos").exists()).unwrap_or(false)),
             ];
 
             if is_json {
@@ -590,7 +590,7 @@ async fn main() -> Result<()> {
 
         Commands::Mcp => {
             println!("{} Starting MCP server mode (stdio)...", "→".blue());
-            eprintln!("agentsos MCP server ready");
+            eprintln!("agentos MCP server ready");
             tokio::signal::ctrl_c().await?;
         }
 
@@ -683,18 +683,18 @@ async fn main() -> Result<()> {
             ConfigCmd::Show => {
                 let config_path = dirs::home_dir()
                     .ok_or_else(|| anyhow::anyhow!("Cannot determine home directory"))?
-                    .join(".agentsos/config.toml");
+                    .join(".agentos/config.toml");
                 if config_path.exists() {
                     let content = std::fs::read_to_string(&config_path)?;
                     println!("{}", content);
                 } else {
-                    println!("{} No config file found. Run {} first.", "→".yellow(), "agentsos init".cyan());
+                    println!("{} No config file found. Run {} first.", "→".yellow(), "agentos init".cyan());
                 }
             }
             ConfigCmd::Get { key } => {
                 let config_path = dirs::home_dir()
                     .ok_or_else(|| anyhow::anyhow!("Cannot determine home directory"))?
-                    .join(".agentsos/config.toml");
+                    .join(".agentos/config.toml");
                 if config_path.exists() {
                     let content = std::fs::read_to_string(&config_path)?;
                     let table: toml::Table = content.parse()?;
@@ -710,7 +710,7 @@ async fn main() -> Result<()> {
             ConfigCmd::Set { key, value } => {
                 let config_path = dirs::home_dir()
                     .ok_or_else(|| anyhow::anyhow!("Cannot determine home directory"))?
-                    .join(".agentsos/config.toml");
+                    .join(".agentos/config.toml");
                 let mut table: toml::Table = if config_path.exists() {
                     std::fs::read_to_string(&config_path)?.parse()?
                 } else {
@@ -723,7 +723,7 @@ async fn main() -> Result<()> {
             ConfigCmd::Unset { key } => {
                 let config_path = dirs::home_dir()
                     .ok_or_else(|| anyhow::anyhow!("Cannot determine home directory"))?
-                    .join(".agentsos/config.toml");
+                    .join(".agentos/config.toml");
                 if config_path.exists() {
                     let content = std::fs::read_to_string(&config_path)?;
                     let mut table: toml::Table = content.parse()?;
@@ -740,7 +740,7 @@ async fn main() -> Result<()> {
             ConfigCmd::SetKey { provider, key } => {
                 let config_path = dirs::home_dir()
                     .ok_or_else(|| anyhow::anyhow!("Cannot determine home directory"))?
-                    .join(".agentsos/config.toml");
+                    .join(".agentos/config.toml");
                 let mut table: toml::Table = if config_path.exists() {
                     std::fs::read_to_string(&config_path)?.parse()?
                 } else {
@@ -757,7 +757,7 @@ async fn main() -> Result<()> {
             ConfigCmd::Keys => {
                 let config_path = dirs::home_dir()
                     .ok_or_else(|| anyhow::anyhow!("Cannot determine home directory"))?
-                    .join(".agentsos/config.toml");
+                    .join(".agentos/config.toml");
                 if config_path.exists() {
                     let content = std::fs::read_to_string(&config_path)?;
                     let table: toml::Table = content.parse()?;
@@ -1118,21 +1118,21 @@ async fn main() -> Result<()> {
         Commands::Onboard { quick } => {
             use dialoguer::{Input, Select};
 
-            println!("\n{} Welcome to AgentSOS Setup\n", "→".blue().bold());
+            println!("\n{} Welcome to AgentOS Setup\n", "→".blue().bold());
 
             let home = dirs::home_dir()
                 .ok_or_else(|| anyhow::anyhow!("Cannot determine home directory"))?;
-            let config_dir = home.join(".agentsos");
+            let config_dir = home.join(".agentos");
             std::fs::create_dir_all(&config_dir)?;
             std::fs::create_dir_all(config_dir.join("data"))?;
             std::fs::create_dir_all(config_dir.join("skills"))?;
             std::fs::create_dir_all(config_dir.join("agents"))?;
             std::fs::create_dir_all(config_dir.join("logs"))?;
             std::fs::create_dir_all(config_dir.join("state"))?;
-            println!("  {} Created ~/.agentsos/ directories", "✓".green());
+            println!("  {} Created ~/.agentos/ directories", "✓".green());
 
             let api_key: String = if quick {
-                std::env::var("AGENTSOS_API_KEY").unwrap_or_default()
+                std::env::var("AGENTOS_API_KEY").unwrap_or_default()
             } else {
                 Input::new()
                     .with_prompt("  Enter your API key (or press Enter to skip)")
@@ -1164,20 +1164,20 @@ async fn main() -> Result<()> {
 
             let config_path = config_dir.join("config.toml");
             std::fs::write(&config_path, toml::to_string_pretty(&config)?)?;
-            println!("  {} Config written to ~/.agentsos/config.toml", "✓".green());
+            println!("  {} Config written to ~/.agentos/config.toml", "✓".green());
             println!("  {} Default model: {}", "✓".green(), default_model.cyan());
 
-            println!("\n{} Setup complete! Run {} to start.", "✓".green().bold(), "agentsos start".cyan());
+            println!("\n{} Setup complete! Run {} to start.", "✓".green().bold(), "agentos start".cyan());
         }
 
         Commands::Reset { confirm } => {
             if !confirm {
-                println!("{} This will reset all AgentSOS state.", "⚠".yellow());
+                println!("{} This will reset all AgentOS state.", "⚠".yellow());
                 println!("  Run with {} to confirm.", "--confirm".cyan());
                 return Ok(());
             }
 
-            println!("{} Resetting AgentSOS...", "→".blue());
+            println!("{} Resetting AgentOS...", "→".blue());
 
             match client.delete(format!("{}/api/state/reset", get_api_url()))
                 .send().await {
@@ -1187,11 +1187,11 @@ async fn main() -> Result<()> {
 
             let home = dirs::home_dir()
                 .ok_or_else(|| anyhow::anyhow!("Cannot determine home directory"))?;
-            let state_dir = home.join(".agentsos/state");
+            let state_dir = home.join(".agentos/state");
             if state_dir.exists() {
                 std::fs::remove_dir_all(&state_dir)?;
                 std::fs::create_dir_all(&state_dir)?;
-                println!("  {} Local state cleared (~/.agentsos/state/)", "✓".green());
+                println!("  {} Local state cleared (~/.agentos/state/)", "✓".green());
             }
 
             println!("{} Reset complete.", "✓".green());
@@ -1216,12 +1216,12 @@ async fn main() -> Result<()> {
             let tui_path = std::env::current_exe()?
                 .parent()
                 .unwrap_or(std::path::Path::new("."))
-                .join("agentsos-tui");
+                .join("agentos-tui");
             if tui_path.exists() {
                 let status = std::process::Command::new(&tui_path).status()?;
                 std::process::exit(status.code().unwrap_or(1));
             } else {
-                println!("{} TUI binary not found. Install with: cargo install agentsos-tui", "✗".red());
+                println!("{} TUI binary not found. Install with: cargo install agentos-tui", "✗".red());
             }
         }
 
@@ -1238,7 +1238,7 @@ async fn main() -> Result<()> {
                     return Ok(());
                 }
             };
-            clap_complete::generate(shell, &mut cmd, "agentsos", &mut std::io::stdout());
+            clap_complete::generate(shell, &mut cmd, "agentos", &mut std::io::stdout());
         }
     }
 
@@ -1246,7 +1246,7 @@ async fn main() -> Result<()> {
 }
 
 fn get_api_url() -> String {
-    std::env::var("AGENTSOS_API_URL").unwrap_or_else(|_| API_BASE.to_string())
+    std::env::var("AGENTOS_API_URL").unwrap_or_else(|_| API_BASE.to_string())
 }
 
 fn format_epoch_ms(ms: u64) -> String {
@@ -1357,22 +1357,22 @@ mod tests {
 
     #[test]
     fn test_get_api_url_default() {
-        unsafe { std::env::remove_var("AGENTSOS_API_URL"); }
+        unsafe { std::env::remove_var("AGENTOS_API_URL"); }
         assert_eq!(get_api_url(), "http://localhost:3111");
     }
 
     #[test]
     fn test_get_api_url_custom() {
-        unsafe { std::env::set_var("AGENTSOS_API_URL", "http://custom:8080"); }
+        unsafe { std::env::set_var("AGENTOS_API_URL", "http://custom:8080"); }
         let url = get_api_url();
-        unsafe { std::env::remove_var("AGENTSOS_API_URL"); }
+        unsafe { std::env::remove_var("AGENTOS_API_URL"); }
         assert_eq!(url, "http://custom:8080");
     }
 
     #[test]
     fn test_cli_command_factory() {
         let cmd = Cli::command();
-        assert_eq!(cmd.get_name(), "agentsos");
+        assert_eq!(cmd.get_name(), "agentos");
     }
 
     #[test]

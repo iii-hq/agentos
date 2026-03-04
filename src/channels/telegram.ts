@@ -15,7 +15,7 @@ const getSecret = createSecretGetter(trigger);
 registerFunction(
   { id: "channel::telegram::webhook", description: "Handle Telegram webhook" },
   async (req) => {
-    const secretToken = process.env.TELEGRAM_SECRET_TOKEN || "";
+    const secretToken = await getSecret("TELEGRAM_SECRET_TOKEN");
     if (secretToken && !verifyTelegramUpdate(secretToken, req)) {
       return { status_code: 401, body: { error: "Invalid webhook signature" } };
     }
@@ -57,6 +57,9 @@ registerTrigger({
 
 async function sendMessage(chatId: number, text: string) {
   const botToken = await getSecret("TELEGRAM_BOT_TOKEN");
+  if (!botToken) {
+    throw new Error("TELEGRAM_BOT_TOKEN not configured");
+  }
   const chunks = splitMessage(text, 4096);
   for (const chunk of chunks) {
     await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {

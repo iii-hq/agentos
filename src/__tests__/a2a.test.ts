@@ -120,7 +120,7 @@ describe("a2a::agent_card", () => {
     const result = await call("a2a::agent_card", {
       baseUrl: "https://example.com",
     });
-    expect(result.name).toBe("agentsos");
+    expect(result.name).toBe("agentos");
     expect(result.url).toBe("https://example.com");
     expect(result.version).toBe("0.1.0");
   });
