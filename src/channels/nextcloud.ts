@@ -1,13 +1,12 @@
 import { init } from "iii-sdk";
+import { ENGINE_URL, createSecretGetter } from "../shared/config.js";
 import { splitMessage, resolveAgent } from "../shared/utils.js";
 
 const { registerFunction, registerTrigger, trigger, triggerVoid } = init(
-  "ws://localhost:49134",
+  ENGINE_URL,
   { workerName: "channel-nextcloud" },
 );
-
-const BASE_URL = process.env.NEXTCLOUD_URL || "";
-const TOKEN = process.env.NEXTCLOUD_TOKEN || "";
+const getSecret = createSecretGetter(trigger);
 
 registerFunction(
   {
@@ -47,12 +46,14 @@ registerTrigger({
 });
 
 async function sendMessage(roomToken: string, text: string) {
+  const token = await getSecret("NEXTCLOUD_TOKEN");
+  const baseUrl = await getSecret("NEXTCLOUD_URL");
   const chunks = splitMessage(text, 4096);
   for (const chunk of chunks) {
-    await fetch(`${BASE_URL}/ocs/v2.php/apps/spreed/api/v1/chat/${roomToken}`, {
+    await fetch(`${baseUrl}/ocs/v2.php/apps/spreed/api/v1/chat/${roomToken}`, {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${TOKEN}`,
+        Authorization: `Bearer ${token}`,
         "Content-Type": "application/json",
         "OCS-APIRequest": "true",
       },

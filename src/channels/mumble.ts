@@ -1,14 +1,12 @@
 import { init } from "iii-sdk";
+import { ENGINE_URL, createSecretGetter } from "../shared/config.js";
 import { splitMessage, resolveAgent } from "../shared/utils.js";
 
 const { registerFunction, registerTrigger, trigger, triggerVoid } = init(
-  "ws://localhost:49134",
+  ENGINE_URL,
   { workerName: "channel-mumble" },
 );
-
-const SERVER = process.env.MUMBLE_SERVER || "";
-const PASSWORD = process.env.MUMBLE_PASSWORD || "";
-const BRIDGE_URL = process.env.MUMBLE_BRIDGE_URL || "http://localhost:6502";
+const getSecret = createSecretGetter(trigger);
 
 registerFunction(
   {
@@ -49,9 +47,11 @@ registerTrigger({
 });
 
 async function sendMessage(channel: string, text: string) {
+  const bridgeUrl =
+    (await getSecret("MUMBLE_BRIDGE_URL")) || "http://localhost:6502";
   const chunks = splitMessage(text, 4096);
   for (const chunk of chunks) {
-    await fetch(`${BRIDGE_URL}/send`, {
+    await fetch(`${bridgeUrl}/send`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ channel, message: chunk }),

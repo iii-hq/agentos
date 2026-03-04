@@ -1,4 +1,9 @@
 import { init } from "iii-sdk";
+import {
+  ENGINE_URL,
+  WORKSPACE_ROOT,
+  assertPathContained,
+} from "./shared/config.js";
 import { readFile } from "fs/promises";
 import { realpathSync } from "node:fs";
 import path, { resolve, relative } from "path";
@@ -12,11 +17,9 @@ import { safeCall } from "./shared/errors.js";
 const execFileAsync = promisify(execFile);
 
 const { registerFunction, registerTrigger, trigger, triggerVoid } = init(
-  "ws://localhost:49134",
+  ENGINE_URL,
   { workerName: "tools-extended" },
 );
-
-const WORKSPACE_ROOT = process.env.AGENTSOS_WORKSPACE || process.cwd();
 
 const TAINT_ENV_ALLOWLIST = new Set([
   "PATH",
@@ -28,20 +31,6 @@ const TAINT_ENV_ALLOWLIST = new Set([
   "SHELL",
   "LC_ALL",
 ]);
-
-function assertPathContained(resolved: string) {
-  let real: string;
-  try {
-    real = realpathSync(resolved);
-  } catch {
-    real = resolved;
-  }
-  const workspaceReal = realpathSync(WORKSPACE_ROOT);
-  const rel = relative(workspaceReal, real);
-  if (rel.startsWith("..") || path.isAbsolute(rel)) {
-    throw new Error(`Path traversal denied: ${resolved}`);
-  }
-}
 
 function safeEnv(): Record<string, string> {
   const env: Record<string, string> = {};

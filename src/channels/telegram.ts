@@ -1,4 +1,5 @@
 import { init } from "iii-sdk";
+import { ENGINE_URL, createSecretGetter } from "../shared/config.js";
 import {
   splitMessage,
   resolveAgent,
@@ -6,12 +7,10 @@ import {
 } from "../shared/utils.js";
 
 const { registerFunction, registerTrigger, trigger, triggerVoid } = init(
-  "ws://localhost:49134",
+  ENGINE_URL,
   { workerName: "channel-telegram" },
 );
-
-const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || "";
-const TELEGRAM_API = `https://api.telegram.org/bot${BOT_TOKEN}`;
+const getSecret = createSecretGetter(trigger);
 
 registerFunction(
   { id: "channel::telegram::webhook", description: "Handle Telegram webhook" },
@@ -57,9 +56,10 @@ registerTrigger({
 });
 
 async function sendMessage(chatId: number, text: string) {
+  const botToken = await getSecret("TELEGRAM_BOT_TOKEN");
   const chunks = splitMessage(text, 4096);
   for (const chunk of chunks) {
-    await fetch(`${TELEGRAM_API}/sendMessage`, {
+    await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({

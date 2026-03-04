@@ -1,6 +1,7 @@
 import { init } from "iii-sdk";
+import { ENGINE_URL } from "./shared/config.js";
 
-const { registerFunction, registerTrigger } = init("ws://localhost:49134", {
+const { registerFunction, registerTrigger } = init(ENGINE_URL, {
   workerName: "security-headers",
 });
 

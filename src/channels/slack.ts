@@ -1,4 +1,5 @@
 import { init } from "iii-sdk";
+import { ENGINE_URL, createSecretGetter } from "../shared/config.js";
 import {
   splitMessage,
   resolveAgent,
@@ -6,11 +7,10 @@ import {
 } from "../shared/utils.js";
 
 const { registerFunction, registerTrigger, trigger, triggerVoid } = init(
-  "ws://localhost:49134",
+  ENGINE_URL,
   { workerName: "channel-slack" },
 );
-
-const BOT_TOKEN = process.env.SLACK_BOT_TOKEN || "";
+const getSecret = createSecretGetter(trigger);
 
 registerFunction(
   { id: "channel::slack::events", description: "Handle Slack Events API" },
@@ -22,18 +22,16 @@ registerFunction(
     }
 
     const signingSecret = process.env.SLACK_SIGNING_SECRET || "";
-    if (!signingSecret && event.type !== "url_verification") {
+    if (!signingSecret) {
       return {
         status_code: 500,
         body: { error: "SLACK_SIGNING_SECRET not configured" },
       };
     }
-    if (signingSecret && event.type !== "url_verification") {
-      try {
-        verifySlackSignature(req, signingSecret);
-      } catch (e: any) {
-        return { status_code: 401, body: { error: e.message } };
-      }
+    try {
+      verifySlackSignature(req, signingSecret);
+    } catch (e: any) {
+      return { status_code: 401, body: { error: e.message } };
     }
 
     if (event.event?.type === "message" && !event.event.bot_id) {
@@ -60,12 +58,16 @@ registerTrigger({
 });
 
 async function sendMessage(channel: string, text: string, threadTs?: string) {
+  const botToken = await getSecret("SLACK_BOT_TOKEN");
+  if (!botToken) {
+    throw new Error("SLACK_BOT_TOKEN not configured");
+  }
   const chunks = splitMessage(text, 4000);
   for (const chunk of chunks) {
     await fetch("https://slack.com/api/chat.postMessage", {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${BOT_TOKEN}`,
+        Authorization: `Bearer ${botToken}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({

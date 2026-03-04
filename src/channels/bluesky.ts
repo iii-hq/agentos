@@ -1,13 +1,13 @@
 import { init } from "iii-sdk";
+import { ENGINE_URL, createSecretGetter } from "../shared/config.js";
 import { splitMessage, resolveAgent } from "../shared/utils.js";
 
 const { registerFunction, registerTrigger, trigger, triggerVoid } = init(
-  "ws://localhost:49134",
+  ENGINE_URL,
   { workerName: "channel-bluesky" },
 );
+const getSecret = createSecretGetter(trigger);
 
-const HANDLE = process.env.BLUESKY_HANDLE || "";
-const PASSWORD = process.env.BLUESKY_PASSWORD || "";
 const API_URL = "https://bsky.social/xrpc";
 
 let session: { accessJwt: string; did: string } | null = null;
@@ -51,11 +51,22 @@ registerTrigger({
 });
 
 async function authenticate() {
+  const handle = await getSecret("BLUESKY_HANDLE");
+  if (!handle) {
+    throw new Error("BLUESKY_HANDLE not configured");
+  }
+  const password = await getSecret("BLUESKY_PASSWORD");
+  if (!password) {
+    throw new Error("BLUESKY_PASSWORD not configured");
+  }
   const res = await fetch(`${API_URL}/com.atproto.server.createSession`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ identifier: HANDLE, password: PASSWORD }),
+    body: JSON.stringify({ identifier: handle, password }),
   });
+  if (!res.ok) {
+    throw new Error(`Bluesky authentication failed: ${res.status}`);
+  }
   session = (await res.json()) as { accessJwt: string; did: string };
 }
 

@@ -1,12 +1,13 @@
 import { init } from "iii-sdk";
+import { ENGINE_URL, createSecretGetter } from "../shared/config.js";
 import { splitMessage, resolveAgent } from "../shared/utils.js";
 
 const { registerFunction, registerTrigger, trigger, triggerVoid } = init(
-  "ws://localhost:49134",
+  ENGINE_URL,
   { workerName: "channel-flock" },
 );
+const getSecret = createSecretGetter(trigger);
 
-const TOKEN = process.env.FLOCK_TOKEN || "";
 const API_URL = "https://api.flock.com/v2/chat.sendMessage";
 
 registerFunction(
@@ -45,6 +46,7 @@ registerTrigger({
 });
 
 async function sendMessage(to: string, text: string) {
+  const token = await getSecret("FLOCK_TOKEN");
   const chunks = splitMessage(text, 4096);
   for (const chunk of chunks) {
     await fetch(API_URL, {
@@ -53,7 +55,7 @@ async function sendMessage(to: string, text: string) {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        token: TOKEN,
+        token,
         to,
         text: chunk,
       }),

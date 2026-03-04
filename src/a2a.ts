@@ -1,8 +1,9 @@
 import { init } from "iii-sdk";
+import { ENGINE_URL } from "./shared/config.js";
 import { assertNoSsrf, requireAuth } from "./shared/utils.js";
 
-const { registerFunction, registerTrigger, trigger } = init(
-  "ws://localhost:49134",
+const { registerFunction, registerTrigger, trigger, triggerVoid } = init(
+  ENGINE_URL,
   { workerName: "a2a" },
 );
 
@@ -67,15 +68,33 @@ interface AgentCard {
   defaultOutputModes: string[];
 }
 
-const taskStore = new Map<string, A2aTask>();
-const taskOrder: string[] = [];
 const MAX_TASKS = 1000;
 
-function evictOldTasks() {
-  while (taskStore.size >= MAX_TASKS && taskOrder.length > 0) {
-    const oldest = taskOrder.shift()!;
-    taskStore.delete(oldest);
+async function getTaskOrder(): Promise<string[]> {
+  return (
+    (await trigger("state::get", { scope: "a2a_tasks", key: "_order" })) || []
+  );
+}
+
+async function setTaskOrder(order: string[]): Promise<void> {
+  await triggerVoid("state::set", {
+    scope: "a2a_tasks",
+    key: "_order",
+    value: order,
+  });
+}
+
+async function evictOldTasks(): Promise<void> {
+  const order = await getTaskOrder();
+  while (order.length >= MAX_TASKS) {
+    const oldest = order.shift()!;
+    await triggerVoid("state::set", {
+      scope: "a2a_tasks",
+      key: oldest,
+      value: null,
+    });
   }
+  await setTaskOrder(order);
 }
 
 function createTaskId(): string {
@@ -235,9 +254,15 @@ registerFunction(
         createdAt: Date.now(),
       };
 
-      evictOldTasks();
-      taskStore.set(taskId, task);
-      taskOrder.push(taskId);
+      await evictOldTasks();
+      await triggerVoid("state::set", {
+        scope: "a2a_tasks",
+        key: taskId,
+        value: task,
+      });
+      const order = await getTaskOrder();
+      order.push(taskId);
+      await setTaskOrder(order);
 
       return task;
     } finally {
@@ -253,7 +278,10 @@ registerFunction(
       return rpcCall(agentUrl, "tasks/get", { id: taskId });
     }
 
-    const task = taskStore.get(taskId);
+    const task: A2aTask | null = await trigger("state::get", {
+      scope: "a2a_tasks",
+      key: taskId,
+    });
     if (!task) throw new Error(`Task not found: ${taskId}`);
     return task;
   },
@@ -266,7 +294,10 @@ registerFunction(
       return rpcCall(agentUrl, "tasks/cancel", { id: taskId });
     }
 
-    const task = taskStore.get(taskId);
+    const task: A2aTask | null = await trigger("state::get", {
+      scope: "a2a_tasks",
+      key: taskId,
+    });
     if (!task) throw new Error(`Task not found: ${taskId}`);
 
     if (task.status.state === "completed" || task.status.state === "failed") {
@@ -274,6 +305,11 @@ registerFunction(
     }
 
     task.status = { state: "cancelled", timestamp: nowIso() };
+    await triggerVoid("state::set", {
+      scope: "a2a_tasks",
+      key: taskId,
+      value: task,
+    });
     return task;
   },
 );
@@ -310,9 +346,15 @@ registerFunction(
         createdAt: Date.now(),
       };
 
-      evictOldTasks();
-      taskStore.set(tid, task);
-      taskOrder.push(tid);
+      await evictOldTasks();
+      await triggerVoid("state::set", {
+        scope: "a2a_tasks",
+        key: tid,
+        value: task,
+      });
+      const order = await getTaskOrder();
+      order.push(tid);
+      await setTaskOrder(order);
 
       const userText = message.parts
         .filter((p: Part) => p.type === "text")
@@ -338,6 +380,11 @@ registerFunction(
           timestamp: nowIso(),
         };
 
+        await triggerVoid("state::set", {
+          scope: "a2a_tasks",
+          key: tid,
+          value: task,
+        });
         return { jsonrpc: "2.0", id: rpcId, result: task };
       } catch (err: any) {
         task.status = {
@@ -348,12 +395,20 @@ registerFunction(
           },
           timestamp: nowIso(),
         };
+        await triggerVoid("state::set", {
+          scope: "a2a_tasks",
+          key: tid,
+          value: task,
+        });
         return { jsonrpc: "2.0", id: rpcId, result: task };
       }
     }
 
     if (method === "tasks/get") {
-      const task = taskStore.get(params.id);
+      const task: A2aTask | null = await trigger("state::get", {
+        scope: "a2a_tasks",
+        key: params.id,
+      });
       if (!task) {
         return {
           jsonrpc: "2.0",
@@ -365,7 +420,10 @@ registerFunction(
     }
 
     if (method === "tasks/cancel") {
-      const task = taskStore.get(params.id);
+      const task: A2aTask | null = await trigger("state::get", {
+        scope: "a2a_tasks",
+        key: params.id,
+      });
       if (!task) {
         return {
           jsonrpc: "2.0",
@@ -374,6 +432,11 @@ registerFunction(
         };
       }
       task.status = { state: "cancelled", timestamp: nowIso() };
+      await triggerVoid("state::set", {
+        scope: "a2a_tasks",
+        key: params.id,
+        value: task,
+      });
       return { jsonrpc: "2.0", id: rpcId, result: task };
     }
 

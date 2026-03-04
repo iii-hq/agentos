@@ -1,14 +1,12 @@
 import { init } from "iii-sdk";
+import { ENGINE_URL, createSecretGetter } from "../shared/config.js";
 import { splitMessage, resolveAgent } from "../shared/utils.js";
 
 const { registerFunction, registerTrigger, trigger, triggerVoid } = init(
-  "ws://localhost:49134",
+  ENGINE_URL,
   { workerName: "channel-ntfy" },
 );
-
-const TOPIC = process.env.NTFY_TOPIC || "";
-const TOKEN = process.env.NTFY_TOKEN || "";
-const BASE_URL = process.env.NTFY_URL || "https://ntfy.sh";
+const getSecret = createSecretGetter(trigger);
 
 registerFunction(
   { id: "channel::ntfy::webhook", description: "Handle ntfy.sh push webhook" },
@@ -45,12 +43,18 @@ registerTrigger({
 });
 
 async function sendMessage(text: string) {
+  const token = await getSecret("NTFY_TOKEN");
+  const ntfyTopic = await getSecret("NTFY_TOPIC");
+  if (!ntfyTopic) {
+    throw new Error("NTFY_TOPIC not configured");
+  }
+  const baseUrl = (await getSecret("NTFY_URL")) || "https://ntfy.sh";
   const chunks = splitMessage(text, 4096);
   for (const chunk of chunks) {
-    await fetch(`${BASE_URL}/${TOPIC}`, {
+    await fetch(`${baseUrl}/${ntfyTopic}`, {
       method: "POST",
       headers: {
-        ...(TOKEN ? { Authorization: `Bearer ${TOKEN}` } : {}),
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
         Title: "AgentSOS",
       },
       body: chunk,

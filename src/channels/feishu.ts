@@ -1,13 +1,13 @@
 import { init } from "iii-sdk";
+import { ENGINE_URL, createSecretGetter } from "../shared/config.js";
 import { splitMessage, resolveAgent } from "../shared/utils.js";
 
 const { registerFunction, registerTrigger, trigger, triggerVoid } = init(
-  "ws://localhost:49134",
+  ENGINE_URL,
   { workerName: "channel-feishu" },
 );
+const getSecret = createSecretGetter(trigger);
 
-const APP_ID = process.env.FEISHU_APP_ID || "";
-const APP_SECRET = process.env.FEISHU_APP_SECRET || "";
 const API_URL = "https://open.feishu.cn/open-apis";
 
 let tenantToken = "";
@@ -60,10 +60,18 @@ registerTrigger({
 
 async function getTenantToken(): Promise<string> {
   if (tenantToken) return tenantToken;
+  const appId = await getSecret("FEISHU_APP_ID");
+  if (!appId) {
+    throw new Error("FEISHU_APP_ID not configured");
+  }
+  const appSecret = await getSecret("FEISHU_APP_SECRET");
+  if (!appSecret) {
+    throw new Error("FEISHU_APP_SECRET not configured");
+  }
   const res = await fetch(`${API_URL}/auth/v3/tenant_access_token/internal`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ app_id: APP_ID, app_secret: APP_SECRET }),
+    body: JSON.stringify({ app_id: appId, app_secret: appSecret }),
   });
   const data = (await res.json()) as { tenant_access_token: string };
   tenantToken = data.tenant_access_token;

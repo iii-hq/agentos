@@ -1,14 +1,12 @@
 import { init } from "iii-sdk";
+import { ENGINE_URL, createSecretGetter } from "../shared/config.js";
 import { splitMessage, resolveAgent } from "../shared/utils.js";
 
 const { registerFunction, registerTrigger, trigger, triggerVoid } = init(
-  "ws://localhost:49134",
+  ENGINE_URL,
   { workerName: "channel-reddit" },
 );
-
-const CLIENT_ID = process.env.REDDIT_CLIENT_ID || "";
-const CLIENT_SECRET = process.env.REDDIT_SECRET || "";
-const REFRESH_TOKEN = process.env.REDDIT_REFRESH_TOKEN || "";
+const getSecret = createSecretGetter(trigger);
 
 let accessToken = "";
 
@@ -48,14 +46,29 @@ registerTrigger({
 });
 
 async function refreshAccessToken() {
+  const clientId = await getSecret("REDDIT_CLIENT_ID");
+  if (!clientId) {
+    throw new Error("REDDIT_CLIENT_ID not configured");
+  }
+  const clientSecret = await getSecret("REDDIT_SECRET");
+  if (!clientSecret) {
+    throw new Error("REDDIT_SECRET not configured");
+  }
+  const refreshToken = await getSecret("REDDIT_REFRESH_TOKEN");
+  if (!refreshToken) {
+    throw new Error("REDDIT_REFRESH_TOKEN not configured");
+  }
   const res = await fetch("https://www.reddit.com/api/v1/access_token", {
     method: "POST",
     headers: {
-      Authorization: `Basic ${Buffer.from(`${CLIENT_ID}:${CLIENT_SECRET}`).toString("base64")}`,
+      Authorization: `Basic ${Buffer.from(`${clientId}:${clientSecret}`).toString("base64")}`,
       "Content-Type": "application/x-www-form-urlencoded",
     },
-    body: `grant_type=refresh_token&refresh_token=${REFRESH_TOKEN}`,
+    body: `grant_type=refresh_token&refresh_token=${encodeURIComponent(refreshToken)}`,
   });
+  if (!res.ok) {
+    throw new Error(`Reddit token refresh failed: ${res.status}`);
+  }
   const data = (await res.json()) as { access_token: string };
   accessToken = data.access_token;
 }

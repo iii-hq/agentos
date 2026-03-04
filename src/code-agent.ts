@@ -1,7 +1,8 @@
 import { init } from "iii-sdk";
+import { ENGINE_URL } from "./shared/config.js";
 import * as vm from "node:vm";
 
-const { registerFunction } = init("ws://localhost:49134", {
+const { registerFunction } = init(ENGINE_URL, {
   workerName: "code-agent",
 });
 

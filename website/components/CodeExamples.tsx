@@ -89,6 +89,13 @@ export default function CodeExamples() {
                 aria-controls={`tabpanel-${i}`}
                 id={`tab-${i}`}
                 onClick={() => setActive(i)}
+                onKeyDown={(e) => {
+                  if (e.key === "ArrowRight") {
+                    setActive((active + 1) % tabs.length);
+                  } else if (e.key === "ArrowLeft") {
+                    setActive((active - 1 + tabs.length) % tabs.length);
+                  }
+                }}
                 className={`px-4 py-2 text-sm font-mono transition-colors rounded-t-lg ${
                   active === i
                     ? "bg-primary/20 text-primary border-b-2 border-primary"

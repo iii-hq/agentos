@@ -1,13 +1,12 @@
 import { init } from "iii-sdk";
+import { ENGINE_URL, createSecretGetter } from "../shared/config.js";
 import { splitMessage, resolveAgent } from "../shared/utils.js";
 
 const { registerFunction, registerTrigger, trigger, triggerVoid } = init(
-  "ws://localhost:49134",
+  ENGINE_URL,
   { workerName: "channel-mastodon" },
 );
-
-const INSTANCE = process.env.MASTODON_INSTANCE || "";
-const TOKEN = process.env.MASTODON_TOKEN || "";
+const getSecret = createSecretGetter(trigger);
 
 registerFunction(
   { id: "channel::mastodon::webhook", description: "Handle Mastodon webhook" },
@@ -46,13 +45,21 @@ registerTrigger({
 });
 
 async function sendMessage(text: string, inReplyToId?: string) {
+  const instance = await getSecret("MASTODON_INSTANCE");
+  if (!instance) {
+    throw new Error("MASTODON_INSTANCE not configured");
+  }
+  const token = await getSecret("MASTODON_TOKEN");
+  if (!token) {
+    throw new Error("MASTODON_TOKEN not configured");
+  }
   const chunks = splitMessage(text, 500);
   let replyId = inReplyToId;
   for (const chunk of chunks) {
-    const res = await fetch(`${INSTANCE}/api/v1/statuses`, {
+    const res = await fetch(`${instance}/api/v1/statuses`, {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${TOKEN}`,
+        Authorization: `Bearer ${token}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({

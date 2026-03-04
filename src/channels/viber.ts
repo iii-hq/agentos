@@ -1,12 +1,12 @@
 import { init } from "iii-sdk";
+import { ENGINE_URL, createSecretGetter } from "../shared/config.js";
 import { splitMessage, resolveAgent } from "../shared/utils.js";
 
 const { registerFunction, registerTrigger, trigger, triggerVoid } = init(
-  "ws://localhost:49134",
+  ENGINE_URL,
   { workerName: "channel-viber" },
 );
-
-const TOKEN = process.env.VIBER_TOKEN || "";
+const getSecret = createSecretGetter(trigger);
 const API_URL = "https://chatapi.viber.com/pa/send_message";
 
 registerFunction(
@@ -52,12 +52,13 @@ registerTrigger({
 });
 
 async function sendMessage(receiverId: string, text: string) {
+  const token = await getSecret("VIBER_TOKEN");
   const chunks = splitMessage(text, 7000);
   for (const chunk of chunks) {
     await fetch(API_URL, {
       method: "POST",
       headers: {
-        "X-Viber-Auth-Token": TOKEN,
+        "X-Viber-Auth-Token": token,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({

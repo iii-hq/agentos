@@ -1,4 +1,9 @@
 import { init } from "iii-sdk";
+import {
+  ENGINE_URL,
+  WORKSPACE_ROOT,
+  assertPathContained,
+} from "./shared/config.js";
 import { readFile, writeFile, readdir, stat } from "fs/promises";
 import { realpathSync } from "node:fs";
 import path, { resolve, relative, join } from "path";
@@ -7,23 +12,17 @@ import { promisify } from "util";
 import { assertNoSsrf } from "./shared/utils.js";
 import { safeCall } from "./shared/errors.js";
 import { createLogger } from "./shared/logger.js";
+import { createRecordMetric } from "./shared/metrics.js";
 
 const log = createLogger("tools");
 const execFileAsync = promisify(execFile);
 
 const { registerFunction, registerTrigger, trigger, triggerVoid } = init(
-  "ws://localhost:49134",
+  ENGINE_URL,
   { workerName: "tools" },
 );
 
-function recordMetric(
-  name: string,
-  value: number,
-  labels: Record<string, string>,
-  type: "counter" | "histogram" | "gauge" = "counter",
-) {
-  triggerVoid("telemetry::record", { name, value, labels, type });
-}
+const recordMetric = createRecordMetric(triggerVoid);
 
 async function withToolMetrics<T>(
   toolId: string,
@@ -52,7 +51,6 @@ async function withToolMetrics<T>(
   }
 }
 
-const WORKSPACE_ROOT = process.env.AGENTSOS_WORKSPACE || process.cwd();
 const TAINT_ENV_ALLOWLIST = new Set([
   "PATH",
   "HOME",
@@ -591,20 +589,6 @@ function safeEnv(): Record<string, string> {
     if (process.env[key]) env[key] = process.env[key]!;
   }
   return env;
-}
-
-function assertPathContained(resolved: string) {
-  let real: string;
-  try {
-    real = realpathSync(resolved);
-  } catch {
-    real = resolved;
-  }
-  const workspaceReal = realpathSync(WORKSPACE_ROOT);
-  const rel = relative(workspaceReal, real);
-  if (rel.startsWith("..") || path.isAbsolute(rel)) {
-    throw new Error(`Path traversal denied: ${resolved}`);
-  }
 }
 
 function htmlToText(html: string): string {

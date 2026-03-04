@@ -1,8 +1,9 @@
 import { init } from "iii-sdk";
+import { ENGINE_URL } from "./shared/config.js";
 import { requireAuth, sanitizeId } from "./shared/utils.js";
 
 const { registerFunction, registerTrigger, trigger, triggerVoid } = init(
-  "ws://localhost:49134",
+  ENGINE_URL,
   { workerName: "approval-tiers" },
 );
 

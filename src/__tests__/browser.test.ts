@@ -1,7 +1,23 @@
 import { describe, it, expect, vi, beforeEach, beforeAll } from "vitest";
 
-const mockTrigger = vi.fn(async () => null);
-const mockTriggerVoid = vi.fn();
+const stateStore = new Map<string, any>();
+
+const mockTrigger = vi.fn(async (id: string, input: any) => {
+  if (id === "state::get") {
+    return stateStore.get(`${input.scope}:${input.key}`) ?? null;
+  }
+  return null;
+});
+const mockTriggerVoid = vi.fn((id: string, input: any) => {
+  if (id === "state::set") {
+    const key = `${input.scope}:${input.key}`;
+    if (input.value === null || input.value === undefined) {
+      stateStore.delete(key);
+    } else {
+      stateStore.set(key, input.value);
+    }
+  }
+});
 
 const handlers: Record<string, Function> = {};
 vi.mock("iii-sdk", () => ({
@@ -73,6 +89,7 @@ function uniqueAgent() {
 beforeEach(() => {
   mockTrigger.mockClear();
   mockTriggerVoid.mockClear();
+  stateStore.clear();
   mockExecResult = {
     stdout: '{"url":"https://example.com","title":"Example"}',
     stderr: "",

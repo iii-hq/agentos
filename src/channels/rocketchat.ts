@@ -1,14 +1,12 @@
 import { init } from "iii-sdk";
+import { ENGINE_URL, createSecretGetter } from "../shared/config.js";
 import { splitMessage, resolveAgent } from "../shared/utils.js";
 
 const { registerFunction, registerTrigger, trigger, triggerVoid } = init(
-  "ws://localhost:49134",
+  ENGINE_URL,
   { workerName: "channel-rocketchat" },
 );
-
-const BASE_URL = process.env.ROCKETCHAT_URL || "";
-const TOKEN = process.env.ROCKETCHAT_TOKEN || "";
-const USER_ID = process.env.ROCKETCHAT_USER_ID || "";
+const getSecret = createSecretGetter(trigger);
 
 registerFunction(
   {
@@ -52,13 +50,16 @@ registerTrigger({
 });
 
 async function sendMessage(roomId: string, text: string, tmid?: string) {
+  const token = await getSecret("ROCKETCHAT_TOKEN");
+  const baseUrl = await getSecret("ROCKETCHAT_URL");
+  const userId = await getSecret("ROCKETCHAT_USER_ID");
   const chunks = splitMessage(text, 4000);
   for (const chunk of chunks) {
-    await fetch(`${BASE_URL}/api/v1/chat.sendMessage`, {
+    await fetch(`${baseUrl}/api/v1/chat.sendMessage`, {
       method: "POST",
       headers: {
-        "X-Auth-Token": TOKEN,
-        "X-User-Id": USER_ID,
+        "X-Auth-Token": token,
+        "X-User-Id": userId,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({

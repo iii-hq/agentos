@@ -1,13 +1,12 @@
 import { init } from "iii-sdk";
+import { ENGINE_URL, createSecretGetter } from "../shared/config.js";
 import { splitMessage, resolveAgent } from "../shared/utils.js";
 
 const { registerFunction, registerTrigger, trigger, triggerVoid } = init(
-  "ws://localhost:49134",
+  ENGINE_URL,
   { workerName: "channel-signal" },
 );
-
-const API_URL = process.env.SIGNAL_API_URL || "";
-const PHONE = process.env.SIGNAL_PHONE || "";
+const getSecret = createSecretGetter(trigger);
 
 registerFunction(
   {
@@ -53,14 +52,16 @@ registerTrigger({
 });
 
 async function sendMessage(recipient: string, text: string, groupId?: string) {
+  const apiUrl = await getSecret("SIGNAL_API_URL");
+  const phone = await getSecret("SIGNAL_PHONE");
   const chunks = splitMessage(text, 4096);
   for (const chunk of chunks) {
-    await fetch(`${API_URL}/v2/send`, {
+    await fetch(`${apiUrl}/v2/send`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         message: chunk,
-        number: PHONE,
+        number: phone,
         ...(groupId
           ? { recipients: [], group_id: groupId }
           : { recipients: [recipient] }),

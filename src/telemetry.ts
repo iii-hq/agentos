@@ -1,10 +1,11 @@
 import { init } from "iii-sdk";
+import { ENGINE_URL } from "./shared/config.js";
 import { createLogger } from "./shared/logger.js";
 
 const log = createLogger("telemetry");
 
 const { registerFunction, registerTrigger, trigger } = init(
-  "ws://localhost:49134",
+  ENGINE_URL,
   { workerName: "telemetry" },
 );
 

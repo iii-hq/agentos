@@ -1,12 +1,12 @@
 import { init } from "iii-sdk";
+import { ENGINE_URL, createSecretGetter } from "../shared/config.js";
 import { splitMessage, resolveAgent } from "../shared/utils.js";
 
 const { registerFunction, registerTrigger, trigger, triggerVoid } = init(
-  "ws://localhost:49134",
+  ENGINE_URL,
   { workerName: "channel-line" },
 );
-
-const TOKEN = process.env.LINE_CHANNEL_TOKEN || "";
+const getSecret = createSecretGetter(trigger);
 const API_URL = "https://api.line.me/v2/bot/message";
 
 registerFunction(
@@ -53,6 +53,7 @@ registerTrigger({
 });
 
 async function sendMessage(replyToken: string, text: string) {
+  const token = await getSecret("LINE_CHANNEL_TOKEN");
   const chunks = splitMessage(text, 5000);
   const messages = chunks
     .slice(0, 5)
@@ -60,7 +61,7 @@ async function sendMessage(replyToken: string, text: string) {
   await fetch(`${API_URL}/reply`, {
     method: "POST",
     headers: {
-      Authorization: `Bearer ${TOKEN}`,
+      Authorization: `Bearer ${token}`,
       "Content-Type": "application/json",
     },
     body: JSON.stringify({ replyToken, messages }),

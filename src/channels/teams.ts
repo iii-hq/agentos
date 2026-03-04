@@ -1,13 +1,13 @@
 import { init } from "iii-sdk";
+import { ENGINE_URL, createSecretGetter } from "../shared/config.js";
 import { splitMessage, resolveAgent } from "../shared/utils.js";
 
 const { registerFunction, registerTrigger, trigger, triggerVoid } = init(
-  "ws://localhost:49134",
+  ENGINE_URL,
   { workerName: "channel-teams" },
 );
+const getSecret = createSecretGetter(trigger);
 
-const APP_ID = process.env.TEAMS_APP_ID || "";
-const APP_PASSWORD = process.env.TEAMS_APP_PASSWORD || "";
 const AUTH_URL =
   "https://login.microsoftonline.com/botframework.com/oauth2/v2.0/token";
 
@@ -59,12 +59,28 @@ registerTrigger({
 });
 
 async function getToken(): Promise<string> {
+  const appId = await getSecret("TEAMS_APP_ID");
+  const appPassword = await getSecret("TEAMS_APP_PASSWORD");
+  if (!appId || !appPassword) {
+    throw new Error("Missing Teams credentials");
+  }
   const res = await fetch(AUTH_URL, {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: `grant_type=client_credentials&client_id=${APP_ID}&client_secret=${APP_PASSWORD}&scope=https://api.botframework.com/.default`,
+    body: new URLSearchParams({
+      grant_type: "client_credentials",
+      client_id: appId,
+      client_secret: appPassword,
+      scope: "https://api.botframework.com/.default",
+    }).toString(),
   });
+  if (!res.ok) {
+    throw new Error(`Token request failed: ${res.status}`);
+  }
   const data = (await res.json()) as { access_token: string };
+  if (!data.access_token) {
+    throw new Error("Token response missing access_token");
+  }
   return data.access_token;
 }
 

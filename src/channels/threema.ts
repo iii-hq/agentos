@@ -1,13 +1,13 @@
 import { init } from "iii-sdk";
+import { ENGINE_URL, createSecretGetter } from "../shared/config.js";
 import { splitMessage, resolveAgent } from "../shared/utils.js";
 
 const { registerFunction, registerTrigger, trigger, triggerVoid } = init(
-  "ws://localhost:49134",
+  ENGINE_URL,
   { workerName: "channel-threema" },
 );
+const getSecret = createSecretGetter(trigger);
 
-const THREEMA_ID = process.env.THREEMA_ID || "";
-const THREEMA_SECRET = process.env.THREEMA_SECRET || "";
 const API_URL = "https://msgapi.threema.ch";
 
 registerFunction(
@@ -48,13 +48,21 @@ registerTrigger({
 });
 
 async function sendMessage(to: string, text: string) {
+  const threemaId = await getSecret("THREEMA_ID");
+  if (!threemaId) {
+    throw new Error("THREEMA_ID not configured");
+  }
+  const secret = await getSecret("THREEMA_SECRET");
+  if (!secret) {
+    throw new Error("THREEMA_SECRET not configured");
+  }
   const chunks = splitMessage(text, 3500);
   for (const chunk of chunks) {
     const params = new URLSearchParams({
-      from: THREEMA_ID,
+      from: threemaId,
       to,
       text: chunk,
-      secret: THREEMA_SECRET,
+      secret,
     });
     await fetch(`${API_URL}/send_simple`, {
       method: "POST",

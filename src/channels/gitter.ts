@@ -1,12 +1,13 @@
 import { init } from "iii-sdk";
+import { ENGINE_URL, createSecretGetter } from "../shared/config.js";
 import { splitMessage, resolveAgent } from "../shared/utils.js";
 
 const { registerFunction, registerTrigger, trigger, triggerVoid } = init(
-  "ws://localhost:49134",
+  ENGINE_URL,
   { workerName: "channel-gitter" },
 );
+const getSecret = createSecretGetter(trigger);
 
-const TOKEN = process.env.GITTER_TOKEN || "";
 const API_URL = "https://api.gitter.im/v1";
 
 registerFunction(
@@ -48,12 +49,16 @@ registerTrigger({
 });
 
 async function sendMessage(roomId: string, text: string) {
+  const token = await getSecret("GITTER_TOKEN");
+  if (!token) {
+    throw new Error("GITTER_TOKEN not configured");
+  }
   const chunks = splitMessage(text, 4096);
   for (const chunk of chunks) {
     await fetch(`${API_URL}/rooms/${roomId}/chatMessages`, {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${TOKEN}`,
+        Authorization: `Bearer ${token}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({ text: chunk }),

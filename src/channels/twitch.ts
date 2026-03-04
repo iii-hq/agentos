@@ -1,13 +1,13 @@
 import { init } from "iii-sdk";
+import { ENGINE_URL, createSecretGetter } from "../shared/config.js";
 import { splitMessage, resolveAgent } from "../shared/utils.js";
 
 const { registerFunction, registerTrigger, trigger, triggerVoid } = init(
-  "ws://localhost:49134",
+  ENGINE_URL,
   { workerName: "channel-twitch" },
 );
+const getSecret = createSecretGetter(trigger);
 
-const TOKEN = process.env.TWITCH_TOKEN || "";
-const CLIENT_ID = process.env.TWITCH_CLIENT_ID || "";
 const API_URL = "https://api.twitch.tv/helix";
 
 registerFunction(
@@ -54,13 +54,21 @@ registerTrigger({
 });
 
 async function sendMessage(broadcasterId: string, text: string) {
+  const token = await getSecret("TWITCH_TOKEN");
+  if (!token) {
+    throw new Error("TWITCH_TOKEN not configured");
+  }
+  const clientId = await getSecret("TWITCH_CLIENT_ID");
+  if (!clientId) {
+    throw new Error("TWITCH_CLIENT_ID not configured");
+  }
   const chunks = splitMessage(text, 500);
   for (const chunk of chunks) {
     await fetch(`${API_URL}/chat/messages`, {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${TOKEN}`,
-        "Client-Id": CLIENT_ID,
+        Authorization: `Bearer ${token}`,
+        "Client-Id": clientId,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({

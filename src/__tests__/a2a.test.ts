@@ -11,18 +11,46 @@ function resetKv() {
 
 const mockTrigger = vi.fn(async (fnId: string, data?: any): Promise<any> => {
   if (fnId === "state::get") return getScope(data.scope).get(data.key) ?? null;
-  if (fnId === "state::set") { getScope(data.scope).set(data.key, data.value); return { ok: true }; }
-  if (fnId === "state::delete") { getScope(data.scope).delete(data.key); return { ok: true }; }
-  if (fnId === "skill::list") return [{ id: "s1", name: "recall", description: "Memory recall", tags: ["memory"] }];
-  if (fnId === "agent::chat") return { content: "Agent response", model: "claude-sonnet-4-6", usage: { total: 30 } };
+  if (fnId === "state::set") {
+    getScope(data.scope).set(data.key, data.value);
+    return { ok: true };
+  }
+  if (fnId === "state::delete") {
+    getScope(data.scope).delete(data.key);
+    return { ok: true };
+  }
+  if (fnId === "skill::list")
+    return [
+      {
+        id: "s1",
+        name: "recall",
+        description: "Memory recall",
+        tags: ["memory"],
+      },
+    ];
+  if (fnId === "agent::chat")
+    return {
+      content: "Agent response",
+      model: "claude-sonnet-4-6",
+      usage: { total: 30 },
+    };
   return null;
 });
-const mockTriggerVoid = vi.fn();
+const mockTriggerVoid = vi.fn((fnId: string, data?: any) => {
+  if (fnId === "state::set") {
+    getScope(data.scope).set(data.key, data.value);
+  }
+  if (fnId === "state::delete") {
+    getScope(data.scope).delete(data.key);
+  }
+});
 
 const handlers: Record<string, Function> = {};
 vi.mock("iii-sdk", () => ({
   init: () => ({
-    registerFunction: (config: any, handler: Function) => { handlers[config.id] = handler; },
+    registerFunction: (config: any, handler: Function) => {
+      handlers[config.id] = handler;
+    },
     registerTrigger: vi.fn(),
     trigger: mockTrigger,
     triggerVoid: mockTriggerVoid,
@@ -33,7 +61,9 @@ vi.mock("../shared/utils.js", () => ({
   requireAuth: vi.fn(),
   assertNoSsrf: vi.fn(async (url: string) => {
     const parsed = new URL(url);
-    if (["127.0.0.1", "localhost", "169.254.169.254"].includes(parsed.hostname)) {
+    if (
+      ["127.0.0.1", "localhost", "169.254.169.254"].includes(parsed.hostname)
+    ) {
       throw new Error(`SSRF blocked: ${parsed.hostname}`);
     }
   }),
@@ -42,14 +72,36 @@ vi.mock("../shared/utils.js", () => ({
 beforeEach(() => {
   resetKv();
   mockTrigger.mockReset();
-  mockTrigger.mockImplementation(async (fnId: string, data?: any): Promise<any> => {
-    if (fnId === "state::get") return getScope(data.scope).get(data.key) ?? null;
-    if (fnId === "state::set") { getScope(data.scope).set(data.key, data.value); return { ok: true }; }
-    if (fnId === "state::delete") { getScope(data.scope).delete(data.key); return { ok: true }; }
-    if (fnId === "skill::list") return [{ id: "s1", name: "recall", description: "Memory recall", tags: ["memory"] }];
-    if (fnId === "agent::chat") return { content: "Agent response", model: "claude-sonnet-4-6", usage: { total: 30 } };
-    return null;
-  });
+  mockTrigger.mockImplementation(
+    async (fnId: string, data?: any): Promise<any> => {
+      if (fnId === "state::get")
+        return getScope(data.scope).get(data.key) ?? null;
+      if (fnId === "state::set") {
+        getScope(data.scope).set(data.key, data.value);
+        return { ok: true };
+      }
+      if (fnId === "state::delete") {
+        getScope(data.scope).delete(data.key);
+        return { ok: true };
+      }
+      if (fnId === "skill::list")
+        return [
+          {
+            id: "s1",
+            name: "recall",
+            description: "Memory recall",
+            tags: ["memory"],
+          },
+        ];
+      if (fnId === "agent::chat")
+        return {
+          content: "Agent response",
+          model: "claude-sonnet-4-6",
+          usage: { total: 30 },
+        };
+      return null;
+    },
+  );
   mockTriggerVoid.mockClear();
 });
 
@@ -65,14 +117,18 @@ async function call(id: string, input: any) {
 
 describe("a2a::agent_card", () => {
   it("returns agent card with default values", async () => {
-    const result = await call("a2a::agent_card", { baseUrl: "https://example.com" });
+    const result = await call("a2a::agent_card", {
+      baseUrl: "https://example.com",
+    });
     expect(result.name).toBe("agentsos");
     expect(result.url).toBe("https://example.com");
     expect(result.version).toBe("0.1.0");
   });
 
   it("includes capabilities", async () => {
-    const result = await call("a2a::agent_card", { baseUrl: "https://example.com" });
+    const result = await call("a2a::agent_card", {
+      baseUrl: "https://example.com",
+    });
     expect(result.capabilities.stateTransitionHistory).toBe(true);
     expect(result.capabilities.streaming).toBe(false);
     expect(result.capabilities.pushNotifications).toBe(false);
@@ -89,32 +145,53 @@ describe("a2a::agent_card", () => {
   });
 
   it("includes skills from skill::list", async () => {
-    const result = await call("a2a::agent_card", { baseUrl: "https://example.com" });
+    const result = await call("a2a::agent_card", {
+      baseUrl: "https://example.com",
+    });
     expect(result.skills).toBeDefined();
     expect(result.skills.length).toBeGreaterThan(0);
   });
 
   it("uses provided skills when given", async () => {
-    const skills = [{ id: "s1", name: "test", description: "Test skill", tags: [], examples: [] }];
-    const result = await call("a2a::agent_card", { baseUrl: "https://example.com", skills });
+    const skills = [
+      {
+        id: "s1",
+        name: "test",
+        description: "Test skill",
+        tags: [],
+        examples: [],
+      },
+    ];
+    const result = await call("a2a::agent_card", {
+      baseUrl: "https://example.com",
+      skills,
+    });
     expect(result.skills).toEqual(skills);
   });
 
   it("includes bearer authentication", async () => {
-    const result = await call("a2a::agent_card", { baseUrl: "https://example.com" });
+    const result = await call("a2a::agent_card", {
+      baseUrl: "https://example.com",
+    });
     expect(result.authentication.schemes).toContain("bearer");
   });
 
   it("includes default input/output modes", async () => {
-    const result = await call("a2a::agent_card", { baseUrl: "https://example.com" });
+    const result = await call("a2a::agent_card", {
+      baseUrl: "https://example.com",
+    });
     expect(result.defaultInputModes).toContain("text/plain");
     expect(result.defaultOutputModes).toContain("text/plain");
   });
 
   it("stores card in state", async () => {
     await call("a2a::agent_card", { baseUrl: "https://example.com" });
-    const setCalls = mockTrigger.mock.calls.filter(c => c[0] === "state::set");
-    expect(setCalls.some(c => c[1].scope === "a2a" && c[1].key === "agent_card")).toBe(true);
+    const setCalls = mockTrigger.mock.calls.filter(
+      (c) => c[0] === "state::set",
+    );
+    expect(
+      setCalls.some((c) => c[1].scope === "a2a" && c[1].key === "agent_card"),
+    ).toBe(true);
   });
 });
 
@@ -155,12 +232,17 @@ describe("a2a::handle_task", () => {
         id: "rpc-2",
         method: "tasks/send",
         params: {
-          message: { role: "user", parts: [{ type: "text", text: "Do something" }] },
+          message: {
+            role: "user",
+            parts: [{ type: "text", text: "Do something" }],
+          },
         },
       },
       headers: { authorization: "Bearer test-key" },
     });
-    const chatCalls = mockTrigger.mock.calls.filter(c => c[0] === "agent::chat");
+    const chatCalls = mockTrigger.mock.calls.filter(
+      (c) => c[0] === "agent::chat",
+    );
     expect(chatCalls.length).toBe(1);
     expect(chatCalls[0][1].message).toBe("Do something");
   });
@@ -184,8 +266,12 @@ describe("a2a::handle_task", () => {
   it("handles tasks/send failure gracefully", async () => {
     mockTrigger.mockImplementation(async (fnId: string, data?: any) => {
       if (fnId === "agent::chat") throw new Error("Agent crashed");
-      if (fnId === "state::get") return getScope(data.scope).get(data.key) ?? null;
-      if (fnId === "state::set") { getScope(data.scope).set(data.key, data.value); return { ok: true }; }
+      if (fnId === "state::get")
+        return getScope(data.scope).get(data.key) ?? null;
+      if (fnId === "state::set") {
+        getScope(data.scope).set(data.key, data.value);
+        return { ok: true };
+      }
       return null;
     });
     const result = await call("a2a::handle_task", {

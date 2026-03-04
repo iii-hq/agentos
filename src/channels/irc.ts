@@ -1,14 +1,12 @@
 import { init } from "iii-sdk";
+import { ENGINE_URL, createSecretGetter } from "../shared/config.js";
 import { splitMessage, resolveAgent } from "../shared/utils.js";
 
 const { registerFunction, registerTrigger, trigger, triggerVoid } = init(
-  "ws://localhost:49134",
+  ENGINE_URL,
   { workerName: "channel-irc" },
 );
-
-const IRC_SERVER = process.env.IRC_SERVER || "";
-const IRC_NICK = process.env.IRC_NICK || "";
-const IRC_BRIDGE_URL = process.env.IRC_BRIDGE_URL || "http://localhost:5050";
+const getSecret = createSecretGetter(trigger);
 
 registerFunction(
   {
@@ -19,7 +17,8 @@ registerFunction(
     const body = req.body || req;
     const { channel, nick, message } = body;
 
-    if (!message || nick === IRC_NICK)
+    const ircNick = await getSecret("IRC_NICK");
+    if (!message || nick === ircNick)
       return { status_code: 200, body: { ok: true } };
 
     const agentId = await resolveAgent(trigger, "irc", channel);
@@ -49,9 +48,11 @@ registerTrigger({
 });
 
 async function sendMessage(channel: string, text: string) {
+  const bridgeUrl =
+    (await getSecret("IRC_BRIDGE_URL")) || "http://localhost:5050";
   const chunks = splitMessage(text, 500);
   for (const chunk of chunks) {
-    await fetch(`${IRC_BRIDGE_URL}/send`, {
+    await fetch(`${bridgeUrl}/send`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ channel, message: chunk }),

@@ -1,4 +1,5 @@
 import { init } from "iii-sdk";
+import { ENGINE_URL, WORKSPACE_ROOT } from "./shared/config.js";
 import { execFile } from "child_process";
 import { promisify } from "util";
 import { readFile, readdir } from "fs/promises";
@@ -6,11 +7,9 @@ import { resolve, join } from "path";
 
 const execFileAsync = promisify(execFile);
 
-const { registerFunction, registerTrigger } = init("ws://localhost:49134", {
+const { registerFunction, registerTrigger } = init(ENGINE_URL, {
   workerName: "skillkit-bridge",
 });
-
-const WORKSPACE_ROOT = process.env.AGENTSOS_WORKSPACE || process.cwd();
 
 const SAFE_ENV: Record<string, string> = {};
 for (const key of [

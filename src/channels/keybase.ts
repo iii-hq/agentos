@@ -1,14 +1,12 @@
 import { init } from "iii-sdk";
+import { ENGINE_URL, createSecretGetter } from "../shared/config.js";
 import { splitMessage, resolveAgent } from "../shared/utils.js";
 
 const { registerFunction, registerTrigger, trigger, triggerVoid } = init(
-  "ws://localhost:49134",
+  ENGINE_URL,
   { workerName: "channel-keybase" },
 );
-
-const USERNAME = process.env.KEYBASE_USERNAME || "";
-const PAPERKEY = process.env.KEYBASE_PAPERKEY || "";
-const BRIDGE_URL = process.env.KEYBASE_BRIDGE_URL || "http://localhost:8822";
+const getSecret = createSecretGetter(trigger);
 
 registerFunction(
   {
@@ -19,7 +17,14 @@ registerFunction(
     const body = req.body || req;
     const { sender, channel, text, conversation_id } = body;
 
-    if (!text || sender === USERNAME)
+    const username = await getSecret("KEYBASE_USERNAME");
+    if (!username) {
+      return {
+        status_code: 500,
+        body: { error: "KEYBASE_USERNAME not configured" },
+      };
+    }
+    if (!text || sender === username)
       return { status_code: 200, body: { ok: true } };
 
     const channelKey = conversation_id || channel;
@@ -50,9 +55,11 @@ registerTrigger({
 });
 
 async function sendMessage(conversationId: string, text: string) {
+  const bridgeUrl =
+    (await getSecret("KEYBASE_BRIDGE_URL")) || "http://localhost:8822";
   const chunks = splitMessage(text, 4096);
   for (const chunk of chunks) {
-    await fetch(`${BRIDGE_URL}/send`, {
+    await fetch(`${bridgeUrl}/send`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({

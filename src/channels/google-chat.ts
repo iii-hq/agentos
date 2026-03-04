@@ -1,12 +1,12 @@
 import { init } from "iii-sdk";
+import { ENGINE_URL, createSecretGetter } from "../shared/config.js";
 import { splitMessage, resolveAgent } from "../shared/utils.js";
 
 const { registerFunction, registerTrigger, trigger, triggerVoid } = init(
-  "ws://localhost:49134",
+  ENGINE_URL,
   { workerName: "channel-google-chat" },
 );
-
-const TOKEN = process.env.GOOGLE_CHAT_TOKEN || "";
+const getSecret = createSecretGetter(trigger);
 
 registerFunction(
   {
@@ -15,6 +15,17 @@ registerFunction(
   },
   async (req) => {
     const event = req.body || req;
+    const headers = req.headers || {};
+
+    const expectedToken = await getSecret("GOOGLE_CHAT_TOKEN");
+    if (expectedToken) {
+      const authHeader =
+        headers["authorization"] || headers["Authorization"] || "";
+      const bearer = authHeader.replace(/^Bearer\s+/i, "");
+      if (!bearer || bearer !== expectedToken) {
+        return { status_code: 401, body: { error: "Unauthorized" } };
+      }
+    }
 
     if (event.type !== "MESSAGE")
       return { status_code: 200, body: { ok: true } };

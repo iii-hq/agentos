@@ -36,6 +36,7 @@ export default function Nav() {
   }, []);
 
   useEffect(() => {
+    setScrolled(window.scrollY > 20);
     const onScroll = () => setScrolled(window.scrollY > 20);
     window.addEventListener("scroll", onScroll, { passive: true });
     return () => window.removeEventListener("scroll", onScroll);
@@ -113,6 +114,7 @@ export default function Nav() {
           id="mobile-menu"
           role="region"
           aria-hidden={!mobileOpen}
+          {...(!mobileOpen ? { inert: true } : {})}
           className={`lg:hidden overflow-hidden transition-all duration-200 ease-in-out ${
             mobileOpen ? "max-h-[500px] opacity-100 pb-4" : "max-h-0 opacity-0"
           }`}

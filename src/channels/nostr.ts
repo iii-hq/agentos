@@ -1,14 +1,12 @@
 import { init } from "iii-sdk";
+import { ENGINE_URL, createSecretGetter } from "../shared/config.js";
 import { splitMessage, resolveAgent } from "../shared/utils.js";
 
 const { registerFunction, registerTrigger, trigger, triggerVoid } = init(
-  "ws://localhost:49134",
+  ENGINE_URL,
   { workerName: "channel-nostr" },
 );
-
-const PRIVATE_KEY = process.env.NOSTR_PRIVATE_KEY || "";
-const RELAY = process.env.NOSTR_RELAY || "wss://relay.damus.io";
-const BRIDGE_URL = process.env.NOSTR_BRIDGE_URL || "http://localhost:7777";
+const getSecret = createSecretGetter(trigger);
 
 registerFunction(
   {
@@ -48,18 +46,28 @@ registerTrigger({
 });
 
 async function sendMessage(content: string, replyToId?: string) {
+  const privateKey = await getSecret("NOSTR_PRIVATE_KEY");
+  if (!privateKey) {
+    throw new Error("NOSTR_PRIVATE_KEY not configured");
+  }
+  const relay = (await getSecret("NOSTR_RELAY")) || "wss://relay.damus.io";
+  const bridgeUrl =
+    (await getSecret("NOSTR_BRIDGE_URL")) || "http://localhost:7777";
   const chunks = splitMessage(content, 4096);
   for (const chunk of chunks) {
-    await fetch(`${BRIDGE_URL}/publish`, {
+    const res = await fetch(`${bridgeUrl}/publish`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         content: chunk,
         kind: 1,
-        relay: RELAY,
-        private_key: PRIVATE_KEY,
+        relay,
+        private_key: privateKey,
         ...(replyToId ? { tags: [["e", replyToId]] } : {}),
       }),
     });
+    if (!res.ok) {
+      throw new Error(`Nostr bridge publish failed: ${res.status}`);
+    }
   }
 }

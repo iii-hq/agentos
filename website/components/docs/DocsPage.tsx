@@ -176,6 +176,15 @@ function renderMarkdown(content: string) {
   return elements;
 }
 
+function escapeHtml(text: string): string {
+  return text
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+
 function sanitizeUrl(url: string): string {
   const trimmed = url.trim().toLowerCase();
   if (
@@ -189,15 +198,16 @@ function sanitizeUrl(url: string): string {
 }
 
 function inlineFormat(text: string): string {
-  return text
+  const escaped = escapeHtml(text);
+  return escaped
     .replace(
       /\[([^\]]+)\]\(([^)]+)\)/g,
       (_, linkText, url) =>
-        `<a href="${sanitizeUrl(url)}" class="text-primary hover:underline">${linkText}</a>`,
+        `<a href="${sanitizeUrl(url)}" class="text-cyan-400 hover:text-cyan-300 underline" target="_blank" rel="noopener noreferrer">${linkText}</a>`,
     )
     .replace(
       /`([^`]+)`/g,
-      '<code class="text-primary/80 bg-white/5 px-1 py-0.5 rounded text-xs">$1</code>',
+      '<code class="bg-white/10 px-1.5 py-0.5 rounded text-cyan-300 text-sm">$1</code>',
     )
     .replace(
       /\*\*([^*]+)\*\*/g,

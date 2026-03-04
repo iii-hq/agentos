@@ -1,7 +1,8 @@
 import { init } from "iii-sdk";
+import { ENGINE_URL } from "./shared/config.js";
 import { createHash } from "crypto";
 
-const { registerFunction } = init("ws://localhost:49134", {
+const { registerFunction, trigger, triggerVoid } = init(ENGINE_URL, {
   workerName: "loop-guard",
 });
 
@@ -20,32 +21,94 @@ const POLL_TOOLS = new Set(["tool::shell_exec", "tool::web_fetch"]);
 const POLL_MULTIPLIER = 3;
 const BACKOFF_SCHEDULE = [5000, 10000, 30000, 60000];
 
-const agentHistory = new Map<string, CallRecord[]>();
-const warningBuckets = new Map<string, number>();
-const agentCallCounts = new Map<string, number>();
-
 const AGENT_TTL_MS = 3_600_000;
 
-function clearWarningBuckets(agentId: string): void {
-  const prefix = `${agentId}:`;
-  for (const key of warningBuckets.keys()) {
-    if (key.startsWith(prefix)) warningBuckets.delete(key);
-  }
+async function getAgentIndex(): Promise<string[]> {
+  return (
+    (await trigger("state::get", {
+      scope: "loop_guard_history",
+      key: "_index",
+    })) || []
+  );
 }
 
-function evictStaleAgents() {
+async function setAgentIndex(index: string[]): Promise<void> {
+  await triggerVoid("state::set", {
+    scope: "loop_guard_history",
+    key: "_index",
+    value: index,
+  });
+}
+
+async function getWarningKeysForAgent(agentId: string): Promise<string[]> {
+  return (
+    (await trigger("state::get", {
+      scope: "loop_guard_warnings",
+      key: `_keys:${agentId}`,
+    })) || []
+  );
+}
+
+async function setWarningKeysForAgent(
+  agentId: string,
+  keys: string[],
+): Promise<void> {
+  await triggerVoid("state::set", {
+    scope: "loop_guard_warnings",
+    key: `_keys:${agentId}`,
+    value: keys,
+  });
+}
+
+async function clearWarningBuckets(agentId: string): Promise<void> {
+  const keys = await getWarningKeysForAgent(agentId);
+  for (const key of keys) {
+    await triggerVoid("state::set", {
+      scope: "loop_guard_warnings",
+      key,
+      value: null,
+    });
+  }
+  await setWarningKeysForAgent(agentId, []);
+}
+
+async function evictStaleAgents() {
   const now = Date.now();
-  for (const [agentId, history] of agentHistory) {
+  const index = await getAgentIndex();
+  const remaining: string[] = [];
+  for (const agentId of index) {
+    const history: CallRecord[] | null = await trigger("state::get", {
+      scope: "loop_guard_history",
+      key: agentId,
+    });
+    if (!history || history.length === 0) {
+      continue;
+    }
     const lastEntry = history[history.length - 1];
     if (lastEntry && now - lastEntry.timestamp > AGENT_TTL_MS) {
-      agentHistory.delete(agentId);
-      agentCallCounts.delete(agentId);
-      clearWarningBuckets(agentId);
+      await triggerVoid("state::set", {
+        scope: "loop_guard_history",
+        key: agentId,
+        value: null,
+      });
+      await triggerVoid("state::set", {
+        scope: "loop_guard_counts",
+        key: agentId,
+        value: null,
+      });
+      await clearWarningBuckets(agentId);
+    } else {
+      remaining.push(agentId);
     }
   }
+  await setAgentIndex(remaining);
 }
 
-setInterval(evictStaleAgents, 600_000);
+setInterval(() => {
+  evictStaleAgents().catch((err) => {
+    console.error("evictStaleAgents failed:", err);
+  });
+}, 600_000);
 
 type GuardDecision = "allow" | "warn" | "block" | "circuit_break";
 
@@ -65,8 +128,17 @@ registerFunction(
     params: Record<string, unknown>;
     resultHash?: string;
   }) => {
-    const agentCalls = (agentCallCounts.get(agentId) || 0) + 1;
-    agentCallCounts.set(agentId, agentCalls);
+    const prevCalls: number =
+      (await trigger("state::get", {
+        scope: "loop_guard_counts",
+        key: agentId,
+      })) || 0;
+    const agentCalls = prevCalls + 1;
+    await triggerVoid("state::set", {
+      scope: "loop_guard_counts",
+      key: agentId,
+      value: agentCalls,
+    });
 
     if (agentCalls > PER_AGENT_CIRCUIT_BREAKER) {
       return {
@@ -76,7 +148,11 @@ registerFunction(
     }
 
     const callHash = hashCall(toolName, params);
-    const history = agentHistory.get(agentId) || [];
+    const history: CallRecord[] =
+      (await trigger("state::get", {
+        scope: "loop_guard_history",
+        key: agentId,
+      })) || [];
 
     const record: CallRecord = {
       hash: callHash,
@@ -87,7 +163,17 @@ registerFunction(
 
     history.push(record);
     if (history.length > HISTORY_SIZE) history.shift();
-    agentHistory.set(agentId, history);
+    await triggerVoid("state::set", {
+      scope: "loop_guard_history",
+      key: agentId,
+      value: history,
+    });
+
+    const index = await getAgentIndex();
+    if (!index.includes(agentId)) {
+      index.push(agentId);
+      await setAgentIndex(index);
+    }
 
     const isPollTool = POLL_TOOLS.has(toolName);
     const warnAt = isPollTool
@@ -128,8 +214,23 @@ registerFunction(
 
     if (identicalCount >= warnAt) {
       const bucketKey = `${agentId}:${callHash}`;
-      const warnings = (warningBuckets.get(bucketKey) || 0) + 1;
-      warningBuckets.set(bucketKey, warnings);
+      const prevWarnings: number =
+        (await trigger("state::get", {
+          scope: "loop_guard_warnings",
+          key: bucketKey,
+        })) || 0;
+      const warnings = prevWarnings + 1;
+      await triggerVoid("state::set", {
+        scope: "loop_guard_warnings",
+        key: bucketKey,
+        value: warnings,
+      });
+
+      const warnKeys = await getWarningKeysForAgent(agentId);
+      if (!warnKeys.includes(bucketKey)) {
+        warnKeys.push(bucketKey);
+        await setWarningKeysForAgent(agentId, warnKeys);
+      }
 
       if (warnings >= 3) {
         return {
@@ -153,9 +254,19 @@ registerFunction(
 registerFunction(
   { id: "guard::reset", description: "Reset loop guard state for an agent" },
   async ({ agentId }: { agentId: string }) => {
-    agentHistory.delete(agentId);
-    clearWarningBuckets(agentId);
-    agentCallCounts.delete(agentId);
+    await triggerVoid("state::set", {
+      scope: "loop_guard_history",
+      key: agentId,
+      value: null,
+    });
+    await clearWarningBuckets(agentId);
+    await triggerVoid("state::set", {
+      scope: "loop_guard_counts",
+      key: agentId,
+      value: null,
+    });
+    const index = await getAgentIndex();
+    await setAgentIndex(index.filter((id) => id !== agentId));
     return { reset: true };
   },
 );
@@ -163,22 +274,37 @@ registerFunction(
 registerFunction(
   { id: "guard::stats", description: "Get loop guard statistics" },
   async ({ agentId }: { agentId: string }) => {
-    const history = agentHistory.get(agentId) || [];
+    const history: CallRecord[] =
+      (await trigger("state::get", {
+        scope: "loop_guard_history",
+        key: agentId,
+      })) || [];
     const callCounts = new Map<string, number>();
 
     for (const h of history) {
       callCounts.set(h.toolName, (callCounts.get(h.toolName) || 0) + 1);
     }
 
+    const warnKeys = await getWarningKeysForAgent(agentId);
+    const warnEntries: [string, number][] = [];
+    for (const key of warnKeys) {
+      const val: number =
+        (await trigger("state::get", { scope: "loop_guard_warnings", key })) ||
+        0;
+      if (val > 0) warnEntries.push([key, val]);
+    }
+
+    const agentCalls: number =
+      (await trigger("state::get", {
+        scope: "loop_guard_counts",
+        key: agentId,
+      })) || 0;
+
     return {
       historySize: history.length,
-      agentCalls: agentCallCounts.get(agentId) || 0,
+      agentCalls,
       toolCounts: Object.fromEntries(callCounts),
-      warningBuckets: Object.fromEntries(
-        [...warningBuckets.entries()].filter(([k]) =>
-          k.startsWith(`${agentId}:`),
-        ),
-      ),
+      warningBuckets: Object.fromEntries(warnEntries),
     };
   },
 );

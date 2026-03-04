@@ -1,12 +1,12 @@
 import { init } from "iii-sdk";
+import { ENGINE_URL, createSecretGetter } from "../shared/config.js";
 import { splitMessage, resolveAgent } from "../shared/utils.js";
 
 const { registerFunction, registerTrigger, trigger, triggerVoid } = init(
-  "ws://localhost:49134",
+  ENGINE_URL,
   { workerName: "channel-revolt" },
 );
-
-const TOKEN = process.env.REVOLT_TOKEN || "";
+const getSecret = createSecretGetter(trigger);
 const API_URL = "https://api.revolt.chat";
 
 registerFunction(
@@ -55,7 +55,7 @@ async function sendMessage(channelId: string, text: string) {
     await fetch(`${API_URL}/channels/${channelId}/messages`, {
       method: "POST",
       headers: {
-        "x-bot-token": TOKEN,
+        "x-bot-token": await getSecret("REVOLT_TOKEN"),
         "Content-Type": "application/json",
       },
       body: JSON.stringify({ content: chunk }),

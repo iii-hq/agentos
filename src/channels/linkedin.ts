@@ -1,12 +1,12 @@
 import { init } from "iii-sdk";
+import { ENGINE_URL, createSecretGetter } from "../shared/config.js";
 import { splitMessage, resolveAgent } from "../shared/utils.js";
 
 const { registerFunction, registerTrigger, trigger, triggerVoid } = init(
-  "ws://localhost:49134",
+  ENGINE_URL,
   { workerName: "channel-linkedin" },
 );
-
-const TOKEN = process.env.LINKEDIN_TOKEN || "";
+const getSecret = createSecretGetter(trigger);
 const API_URL = "https://api.linkedin.com/v2";
 
 registerFunction(
@@ -59,12 +59,13 @@ registerTrigger({
 });
 
 async function sendMessage(threadId: string, text: string) {
+  const token = await getSecret("LINKEDIN_TOKEN");
   const chunks = splitMessage(text, 4096);
   for (const chunk of chunks) {
     await fetch(`${API_URL}/messages`, {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${TOKEN}`,
+        Authorization: `Bearer ${token}`,
         "Content-Type": "application/json",
         "X-Restli-Protocol-Version": "2.0.0",
       },

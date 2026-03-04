@@ -1,13 +1,12 @@
 import { init } from "iii-sdk";
+import { ENGINE_URL, createSecretGetter } from "../shared/config.js";
 import { splitMessage, resolveAgent } from "../shared/utils.js";
 
 const { registerFunction, registerTrigger, trigger, triggerVoid } = init(
-  "ws://localhost:49134",
+  ENGINE_URL,
   { workerName: "channel-gotify" },
 );
-
-const BASE_URL = process.env.GOTIFY_URL || "";
-const TOKEN = process.env.GOTIFY_TOKEN || "";
+const getSecret = createSecretGetter(trigger);
 
 registerFunction(
   { id: "channel::gotify::webhook", description: "Handle Gotify push webhook" },
@@ -45,9 +44,17 @@ registerTrigger({
 });
 
 async function sendMessage(text: string) {
+  const baseUrl = await getSecret("GOTIFY_URL");
+  if (!baseUrl) {
+    throw new Error("GOTIFY_URL not configured");
+  }
+  const token = await getSecret("GOTIFY_TOKEN");
+  if (!token) {
+    throw new Error("GOTIFY_TOKEN not configured");
+  }
   const chunks = splitMessage(text, 4096);
   for (const chunk of chunks) {
-    await fetch(`${BASE_URL}/message?token=${TOKEN}`, {
+    await fetch(`${baseUrl}/message?token=${token}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({

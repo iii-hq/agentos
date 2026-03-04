@@ -1,4 +1,5 @@
 import { init } from "iii-sdk";
+import { ENGINE_URL } from "./shared/config.js";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { requireAuth, sanitizeId } from "./shared/utils.js";
@@ -7,6 +8,7 @@ import { safeInt } from "./shared/validate.js";
 import { createLogger } from "./shared/logger.js";
 import { safeCall } from "./shared/errors.js";
 import { shutdownManager } from "./shared/shutdown.js";
+import { createRecordMetric } from "./shared/metrics.js";
 
 const log = createLogger("api");
 
@@ -21,18 +23,11 @@ function withSecHeaders(response: { status_code: number; body: any }): {
 }
 
 const { registerFunction, registerTrigger, trigger, triggerVoid } = init(
-  "ws://localhost:49134",
+  ENGINE_URL,
   { workerName: "api" },
 );
 
-function recordMetric(
-  name: string,
-  value: number,
-  labels: Record<string, string>,
-  type: "counter" | "histogram" | "gauge" = "counter",
-) {
-  triggerVoid("telemetry::record", { name, value, labels, type });
-}
+const recordMetric = createRecordMetric(triggerVoid);
 
 function instrumentedHandler(
   functionId: string,

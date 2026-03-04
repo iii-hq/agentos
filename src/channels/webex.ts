@@ -1,12 +1,12 @@
 import { init } from "iii-sdk";
+import { ENGINE_URL, createSecretGetter } from "../shared/config.js";
 import { splitMessage, resolveAgent } from "../shared/utils.js";
 
 const { registerFunction, registerTrigger, trigger, triggerVoid } = init(
-  "ws://localhost:49134",
+  ENGINE_URL,
   { workerName: "channel-webex" },
 );
-
-const TOKEN = process.env.WEBEX_TOKEN || "";
+const getSecret = createSecretGetter(trigger);
 const API_URL = "https://webexapis.com/v1";
 
 registerFunction(
@@ -22,9 +22,22 @@ registerFunction(
     const roomId = body.data?.roomId;
     const personId = body.data?.personId;
 
+    const webexToken = await getSecret("WEBEX_TOKEN");
+    if (!webexToken) {
+      return {
+        status_code: 500,
+        body: { error: "WEBEX_TOKEN not configured" },
+      };
+    }
     const msgRes = await fetch(`${API_URL}/messages/${messageId}`, {
-      headers: { Authorization: `Bearer ${TOKEN}` },
+      headers: { Authorization: `Bearer ${webexToken}` },
     });
+    if (!msgRes.ok) {
+      return {
+        status_code: 502,
+        body: { error: "Failed to fetch Webex message" },
+      };
+    }
     const msg = (await msgRes.json()) as { text: string };
     const text = msg.text;
 
@@ -57,12 +70,16 @@ registerTrigger({
 });
 
 async function sendMessage(roomId: string, text: string) {
+  const token = await getSecret("WEBEX_TOKEN");
+  if (!token) {
+    throw new Error("WEBEX_TOKEN not configured");
+  }
   const chunks = splitMessage(text, 7439);
   for (const chunk of chunks) {
     await fetch(`${API_URL}/messages`, {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${TOKEN}`,
+        Authorization: `Bearer ${token}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({ roomId, text: chunk }),

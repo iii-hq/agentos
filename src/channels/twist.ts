@@ -1,12 +1,12 @@
 import { init } from "iii-sdk";
+import { ENGINE_URL, createSecretGetter } from "../shared/config.js";
 import { splitMessage, resolveAgent } from "../shared/utils.js";
 
 const { registerFunction, registerTrigger, trigger, triggerVoid } = init(
-  "ws://localhost:49134",
+  ENGINE_URL,
   { workerName: "channel-twist" },
 );
-
-const TOKEN = process.env.TWIST_TOKEN || "";
+const getSecret = createSecretGetter(trigger);
 const API_URL = "https://api.twist.com/api/v3";
 
 registerFunction(
@@ -50,6 +50,7 @@ registerTrigger({
 });
 
 async function sendMessage(id: number, text: string, isThread: boolean) {
+  const token = await getSecret("TWIST_TOKEN");
   const endpoint = isThread ? "comments/add" : "thread_messages/add";
   const payload = isThread
     ? { thread_id: id, content: text }
@@ -58,7 +59,7 @@ async function sendMessage(id: number, text: string, isThread: boolean) {
   await fetch(`${API_URL}/${endpoint}`, {
     method: "POST",
     headers: {
-      Authorization: `Bearer ${TOKEN}`,
+      Authorization: `Bearer ${token}`,
       "Content-Type": "application/json",
     },
     body: JSON.stringify(payload),

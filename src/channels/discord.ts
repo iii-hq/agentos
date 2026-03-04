@@ -1,12 +1,13 @@
 import { init } from "iii-sdk";
+import { ENGINE_URL, createSecretGetter } from "../shared/config.js";
 import { splitMessage, resolveAgent } from "../shared/utils.js";
 
 const { registerFunction, registerTrigger, trigger, triggerVoid } = init(
-  "ws://localhost:49134",
+  ENGINE_URL,
   { workerName: "channel-discord" },
 );
+const getSecret = createSecretGetter(trigger);
 
-const BOT_TOKEN = process.env.DISCORD_BOT_TOKEN || "";
 const DISCORD_API = "https://discord.com/api/v10";
 
 registerFunction(
@@ -42,12 +43,13 @@ registerTrigger({
 });
 
 async function sendMessage(channelId: string, content: string) {
+  const botToken = await getSecret("DISCORD_BOT_TOKEN");
   const chunks = splitMessage(content, 2000);
   for (const chunk of chunks) {
     await fetch(`${DISCORD_API}/channels/${channelId}/messages`, {
       method: "POST",
       headers: {
-        Authorization: `Bot ${BOT_TOKEN}`,
+        Authorization: `Bot ${botToken}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({ content: chunk }),

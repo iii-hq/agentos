@@ -1,4 +1,5 @@
 import { init } from "iii-sdk";
+import { ENGINE_URL } from "./shared/config.js";
 import { execFile } from "child_process";
 import { promisify } from "util";
 import { writeFile, unlink } from "fs/promises";
@@ -8,8 +9,8 @@ import { assertNoSsrf, requireAuth } from "./shared/utils.js";
 
 const execFileAsync = promisify(execFile);
 
-const { registerFunction, registerTrigger, triggerVoid } = init(
-  "ws://localhost:49134",
+const { registerFunction, registerTrigger, trigger, triggerVoid } = init(
+  ENGINE_URL,
   { workerName: "browser" },
 );
 
@@ -24,15 +25,39 @@ interface BrowserSession {
   scriptPath: string;
 }
 
-const sessions = new Map<string, BrowserSession>();
 const MAX_SESSIONS = 5;
 const IDLE_TIMEOUT_MS = 5 * 60 * 1000;
 const DEFAULT_TIMEOUT_MS = 30_000;
 
-function getSession(agentId: string): BrowserSession {
-  const session = sessions.get(agentId);
+async function getSessionIndex(): Promise<string[]> {
+  return (
+    (await trigger("state::get", {
+      scope: "browser_sessions",
+      key: "_index",
+    })) || []
+  );
+}
+
+async function setSessionIndex(index: string[]): Promise<void> {
+  await triggerVoid("state::set", {
+    scope: "browser_sessions",
+    key: "_index",
+    value: index,
+  });
+}
+
+async function getSession(agentId: string): Promise<BrowserSession> {
+  const session: BrowserSession | null = await trigger("state::get", {
+    scope: "browser_sessions",
+    key: agentId,
+  });
   if (!session) throw new Error(`No browser session for agent: ${agentId}`);
   session.lastActivity = Date.now();
+  await triggerVoid("state::set", {
+    scope: "browser_sessions",
+    key: agentId,
+    value: session,
+  });
   return session;
 }
 
@@ -66,21 +91,38 @@ async function runBrowserScript(
   }
 }
 
-function cleanupIdleSessions() {
+async function cleanupIdleSessions() {
   const now = Date.now();
-  for (const [agentId, session] of sessions) {
-    if (now - session.lastActivity > IDLE_TIMEOUT_MS) {
-      sessions.delete(agentId);
-      unlink(session.scriptPath).catch(() => {});
-      triggerVoid("security::audit", {
-        type: "browser_idle_cleanup",
-        detail: { agentId, sessionId: session.id },
+  const index = await getSessionIndex();
+  const remaining: string[] = [];
+  for (const agentId of index) {
+    const session: BrowserSession | null = await trigger("state::get", {
+      scope: "browser_sessions",
+      key: agentId,
+    });
+    if (!session || now - session.lastActivity > IDLE_TIMEOUT_MS) {
+      if (session) {
+        unlink(session.scriptPath).catch(() => {});
+        triggerVoid("security::audit", {
+          type: "browser_idle_cleanup",
+          detail: { agentId, sessionId: session.id },
+        });
+      }
+      await triggerVoid("state::set", {
+        scope: "browser_sessions",
+        key: agentId,
+        value: null,
       });
+    } else {
+      remaining.push(agentId);
     }
   }
+  await setSessionIndex(remaining);
 }
 
-setInterval(cleanupIdleSessions, 60_000);
+setInterval(() => {
+  cleanupIdleSessions().catch(() => {});
+}, 60_000);
 
 const BRIDGE_SCRIPT = `
 import sys, json
@@ -144,9 +186,14 @@ registerFunction(
   async (req: any) => {
     requireAuth(req);
     const { agentId, headless, viewport } = req.body || req;
-    if (sessions.has(agentId))
+    const existing: BrowserSession | null = await trigger("state::get", {
+      scope: "browser_sessions",
+      key: agentId,
+    });
+    if (existing)
       throw new Error(`Session already exists for agent: ${agentId}`);
-    if (sessions.size >= MAX_SESSIONS)
+    const index = await getSessionIndex();
+    if (index.length >= MAX_SESSIONS)
       throw new Error(`Max sessions (${MAX_SESSIONS}) reached`);
 
     const sessionId = crypto.randomUUID();
@@ -165,7 +212,12 @@ registerFunction(
       scriptPath,
     };
 
-    sessions.set(agentId, session);
+    await triggerVoid("state::set", {
+      scope: "browser_sessions",
+      key: agentId,
+      value: session,
+    });
+    await setSessionIndex([...index, agentId]);
 
     triggerVoid("security::audit", {
       type: "browser_session_created",
@@ -185,15 +237,25 @@ registerFunction(
   { id: "browser::list_sessions", description: "List active browser sessions" },
   async (req: any) => {
     requireAuth(req);
-    const list = Array.from(sessions.values()).map((s) => ({
-      id: s.id,
-      agentId: s.agentId,
-      currentUrl: s.currentUrl,
-      headless: s.headless,
-      createdAt: s.createdAt,
-      lastActivity: s.lastActivity,
-      idleMs: Date.now() - s.lastActivity,
-    }));
+    const index = await getSessionIndex();
+    const list = [];
+    for (const agentId of index) {
+      const s: BrowserSession | null = await trigger("state::get", {
+        scope: "browser_sessions",
+        key: agentId,
+      });
+      if (s) {
+        list.push({
+          id: s.id,
+          agentId: s.agentId,
+          currentUrl: s.currentUrl,
+          headless: s.headless,
+          createdAt: s.createdAt,
+          lastActivity: s.lastActivity,
+          idleMs: Date.now() - s.lastActivity,
+        });
+      }
+    }
 
     return { sessions: list, count: list.length };
   },
@@ -208,12 +270,17 @@ registerFunction(
     requireAuth(req);
     const { agentId, url } = req.body || req;
     await assertNoSsrf(url);
-    const session = getSession(agentId);
+    const session = await getSession(agentId);
 
     const result = (await runBrowserScript(session, "navigate", {
       url,
     })) as any;
     session.currentUrl = result.url || url;
+    await triggerVoid("state::set", {
+      scope: "browser_sessions",
+      key: agentId,
+      value: session,
+    });
 
     return { url: session.currentUrl, title: result.title };
   },
@@ -224,13 +291,20 @@ registerFunction(
   async (req: any) => {
     requireAuth(req);
     const { agentId, selector } = req.body || req;
-    const session = getSession(agentId);
+    const session = await getSession(agentId);
     const result = (await runBrowserScript(session, "click", {
       selector,
       currentUrl: session.currentUrl,
     })) as any;
 
-    if (result.url) session.currentUrl = result.url;
+    if (result.url) {
+      session.currentUrl = result.url;
+      await triggerVoid("state::set", {
+        scope: "browser_sessions",
+        key: agentId,
+        value: session,
+      });
+    }
 
     return { clicked: selector, url: session.currentUrl };
   },
@@ -244,7 +318,7 @@ registerFunction(
   async (req: any) => {
     requireAuth(req);
     const { agentId, selector, text } = req.body || req;
-    const session = getSession(agentId);
+    const session = await getSession(agentId);
     await runBrowserScript(session, "type", {
       selector,
       text,
@@ -263,7 +337,7 @@ registerFunction(
   async (req: any) => {
     requireAuth(req);
     const { agentId, fullPage } = req.body || req;
-    const session = getSession(agentId);
+    const session = await getSession(agentId);
     const savePath = join(
       tmpdir(),
       `screenshot-${session.id}-${Date.now()}.png`,
@@ -284,7 +358,7 @@ registerFunction(
   async (req: any) => {
     requireAuth(req);
     const { agentId } = req.body || req;
-    const session = getSession(agentId);
+    const session = await getSession(agentId);
     const result = (await runBrowserScript(session, "read", {
       currentUrl: session.currentUrl,
     })) as any;
@@ -302,10 +376,19 @@ registerFunction(
   async (req: any) => {
     requireAuth(req);
     const { agentId } = req.body || req;
-    const session = sessions.get(agentId);
+    const session: BrowserSession | null = await trigger("state::get", {
+      scope: "browser_sessions",
+      key: agentId,
+    });
     if (!session) throw new Error(`No browser session for agent: ${agentId}`);
 
-    sessions.delete(agentId);
+    await triggerVoid("state::set", {
+      scope: "browser_sessions",
+      key: agentId,
+      value: null,
+    });
+    const index = await getSessionIndex();
+    await setSessionIndex(index.filter((id) => id !== agentId));
     await unlink(session.scriptPath).catch(() => {});
 
     triggerVoid("security::audit", {

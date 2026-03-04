@@ -1,14 +1,12 @@
 import { init } from "iii-sdk";
+import { ENGINE_URL, createSecretGetter } from "../shared/config.js";
 import { splitMessage, resolveAgent } from "../shared/utils.js";
 
 const { registerFunction, registerTrigger, trigger, triggerVoid } = init(
-  "ws://localhost:49134",
+  ENGINE_URL,
   { workerName: "channel-discourse" },
 );
-
-const BASE_URL = process.env.DISCOURSE_URL || "";
-const API_KEY = process.env.DISCOURSE_API_KEY || "";
-const API_USERNAME = process.env.DISCOURSE_API_USERNAME || "system";
+const getSecret = createSecretGetter(trigger);
 
 registerFunction(
   {
@@ -52,11 +50,20 @@ registerTrigger({
 });
 
 async function sendMessage(topicId: number, text: string) {
-  await fetch(`${BASE_URL}/posts.json`, {
+  const baseUrl = await getSecret("DISCOURSE_URL");
+  if (!baseUrl) {
+    throw new Error("DISCOURSE_URL not configured");
+  }
+  const apiKey = await getSecret("DISCOURSE_API_KEY");
+  if (!apiKey) {
+    throw new Error("DISCOURSE_API_KEY not configured");
+  }
+  const apiUsername = await getSecret("DISCOURSE_API_USERNAME");
+  await fetch(`${baseUrl}/posts.json`, {
     method: "POST",
     headers: {
-      "Api-Key": API_KEY,
-      "Api-Username": API_USERNAME,
+      "Api-Key": apiKey,
+      "Api-Username": apiUsername || "system",
       "Content-Type": "application/json",
     },
     body: JSON.stringify({

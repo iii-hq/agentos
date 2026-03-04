@@ -1,23 +1,17 @@
 import { init } from "iii-sdk";
+import { ENGINE_URL } from "./shared/config.js";
 import { createHash } from "crypto";
 import { safeCall } from "./shared/errors.js";
 import { createLogger } from "./shared/logger.js";
+import { createRecordMetric } from "./shared/metrics.js";
 
 const log = createLogger("memory");
 
-const { registerFunction, trigger, triggerVoid } = init(
-  "ws://localhost:49134",
-  { workerName: "memory" },
-);
+const { registerFunction, trigger, triggerVoid } = init(ENGINE_URL, {
+  workerName: "memory",
+});
 
-function recordMetric(
-  name: string,
-  value: number,
-  labels: Record<string, string>,
-  type: "counter" | "histogram" | "gauge" = "counter",
-) {
-  triggerVoid("telemetry::record", { name, value, labels, type });
-}
+const recordMetric = createRecordMetric(triggerVoid);
 
 interface MemoryEntry {
   id: string;

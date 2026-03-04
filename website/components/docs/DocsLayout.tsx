@@ -39,6 +39,7 @@ export default function DocsLayout() {
                 href="https://github.com/rohitg00/agentsos"
                 target="_blank"
                 rel="noopener noreferrer"
+                aria-label="GitHub repository"
                 className="text-muted hover:text-white transition-colors"
               >
                 <svg

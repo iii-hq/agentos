@@ -1,8 +1,9 @@
 import { init } from "iii-sdk";
+import { ENGINE_URL } from "./shared/config.js";
 import { requireAuth } from "./shared/utils.js";
 
 const { registerFunction, registerTrigger, trigger, triggerVoid } = init(
-  "ws://localhost:49134",
+  ENGINE_URL,
   { workerName: "rate-limiter" },
 );
 
@@ -42,16 +43,25 @@ const OPERATION_COSTS: Record<string, number> = {
   default: 5,
 };
 
-const localState = new Map<string, GcraState>();
-
-function gcraCheck(key: string, cost: number, now: number): RateCheckResult {
-  const state = localState.get(key);
+async function gcraCheck(
+  key: string,
+  cost: number,
+  now: number,
+): Promise<RateCheckResult> {
+  const state: GcraState | null = await trigger("state::get", {
+    scope: "rate_limiter",
+    key,
+  });
 
   const increment = cost * EMISSION_INTERVAL_MS;
 
   if (!state) {
     const newTat = now + increment;
-    localState.set(key, { tat: newTat, tokens: BURST_LIMIT - cost });
+    await triggerVoid("state::set", {
+      scope: "rate_limiter",
+      key,
+      value: { tat: newTat, tokens: BURST_LIMIT - cost },
+    });
     return {
       allowed: true,
       remaining: BURST_LIMIT - cost,
@@ -82,7 +92,11 @@ function gcraCheck(key: string, cost: number, now: number): RateCheckResult {
         EMISSION_INTERVAL_MS,
     ),
   );
-  localState.set(key, { tat: newTat, tokens: remaining });
+  await triggerVoid("state::set", {
+    scope: "rate_limiter",
+    key,
+    value: { tat: newTat, tokens: remaining },
+  });
 
   return {
     allowed: true,
@@ -102,8 +116,12 @@ registerFunction(
     const now = Date.now();
     const key = `ip:${ip}`;
 
-    const result = gcraCheck(key, cost, now);
+    const result = await gcraCheck(key, cost, now);
 
+    const currentState: GcraState | null = await trigger("state::get", {
+      scope: "rate_limiter",
+      key,
+    });
     triggerVoid("state::set", {
       scope: "rate_limits",
       key,
@@ -114,7 +132,7 @@ registerFunction(
         lastCost: cost,
         allowed: result.allowed,
         remaining: result.remaining,
-        state: localState.get(key),
+        state: currentState,
       },
     });
 
@@ -133,7 +151,10 @@ registerFunction(
   { id: "rate::get_status", description: "Get rate limit status for an IP" },
   async ({ ip }: { ip: string }) => {
     const key = `ip:${ip}`;
-    const state = localState.get(key);
+    const state: GcraState | null = await trigger("state::get", {
+      scope: "rate_limiter",
+      key,
+    });
 
     if (!state) {
       return {
@@ -169,7 +190,11 @@ registerFunction(
     requireAuth(req);
     const { ip } = req.body || req;
     const key = `ip:${ip}`;
-    localState.delete(key);
+    await triggerVoid("state::set", {
+      scope: "rate_limiter",
+      key,
+      value: null,
+    });
 
     await trigger("state::delete", {
       scope: "rate_limits",
@@ -192,7 +217,6 @@ registerFunction(
 
 const DEFAULT_AGENT_TOKENS_PER_MIN = 100;
 const DEFAULT_AGENT_MAX_CONCURRENT = 10;
-const agentConcurrent = new Map<string, number>();
 
 registerFunction(
   {
@@ -216,10 +240,17 @@ registerFunction(
     const emissionMs = (60 * 1000) / limit;
     const increment = cost * emissionMs;
 
-    const state = localState.get(key);
+    const state: GcraState | null = await trigger("state::get", {
+      scope: "rate_limiter",
+      key,
+    });
     if (!state) {
       const newTat = now + increment;
-      localState.set(key, { tat: newTat, tokens: limit - cost });
+      await triggerVoid("state::set", {
+        scope: "rate_limiter",
+        key,
+        value: { tat: newTat, tokens: limit - cost },
+      });
       return {
         allowed: true,
         remaining: limit - cost,
@@ -250,7 +281,11 @@ registerFunction(
       0,
       Math.floor((limit * emissionMs - (newTat - now)) / emissionMs),
     );
-    localState.set(key, { tat: newTat, tokens: remaining });
+    await triggerVoid("state::set", {
+      scope: "rate_limiter",
+      key,
+      value: { tat: newTat, tokens: remaining },
+    });
     return { allowed: true, remaining, retryAfter: null, limit };
   },
 );
@@ -280,11 +315,19 @@ registerFunction(
     maxConcurrent?: number;
   }) => {
     const limit = maxConcurrent || DEFAULT_AGENT_MAX_CONCURRENT;
-    const current = agentConcurrent.get(agentId) || 0;
+    const current: number =
+      (await trigger("state::get", {
+        scope: "rate_concurrent",
+        key: agentId,
+      })) || 0;
     if (current >= limit) {
       return { acquired: false, current, limit };
     }
-    agentConcurrent.set(agentId, current + 1);
+    await triggerVoid("state::set", {
+      scope: "rate_concurrent",
+      key: agentId,
+      value: current + 1,
+    });
     return { acquired: true, current: current + 1, limit };
   },
 );
@@ -295,9 +338,18 @@ registerFunction(
     description: "Release concurrent invocation slot for an agent",
   },
   async ({ agentId }: { agentId: string }) => {
-    const current = agentConcurrent.get(agentId) || 0;
-    agentConcurrent.set(agentId, Math.max(0, current - 1));
-    return { released: true, current: Math.max(0, current - 1) };
+    const current: number =
+      (await trigger("state::get", {
+        scope: "rate_concurrent",
+        key: agentId,
+      })) || 0;
+    const next = Math.max(0, current - 1);
+    await triggerVoid("state::set", {
+      scope: "rate_concurrent",
+      key: agentId,
+      value: next,
+    });
+    return { released: true, current: next };
   },
 );
 

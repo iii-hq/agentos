@@ -1,13 +1,12 @@
 import { init } from "iii-sdk";
+import { ENGINE_URL, createSecretGetter } from "../shared/config.js";
 import { splitMessage, resolveAgent } from "../shared/utils.js";
 
 const { registerFunction, registerTrigger, trigger, triggerVoid } = init(
-  "ws://localhost:49134",
+  ENGINE_URL,
   { workerName: "channel-matrix" },
 );
-
-const HOMESERVER = process.env.MATRIX_HOMESERVER || "";
-const TOKEN = process.env.MATRIX_TOKEN || "";
+const getSecret = createSecretGetter(trigger);
 
 registerFunction(
   {
@@ -53,15 +52,23 @@ registerTrigger({
 });
 
 async function sendMessage(roomId: string, text: string) {
-  const txnId = Date.now();
+  const homeserver = await getSecret("MATRIX_HOMESERVER");
+  if (!homeserver) {
+    throw new Error("MATRIX_HOMESERVER not configured");
+  }
+  const token = await getSecret("MATRIX_TOKEN");
+  if (!token) {
+    throw new Error("MATRIX_TOKEN not configured");
+  }
+  const txnId = crypto.randomUUID();
   const chunks = splitMessage(text, 4096);
   for (let i = 0; i < chunks.length; i++) {
     await fetch(
-      `${HOMESERVER}/_matrix/client/v3/rooms/${encodeURIComponent(roomId)}/send/m.room.message/${txnId + i}`,
+      `${homeserver}/_matrix/client/v3/rooms/${encodeURIComponent(roomId)}/send/m.room.message/${txnId}-${i}`,
       {
         method: "PUT",
         headers: {
-          Authorization: `Bearer ${TOKEN}`,
+          Authorization: `Bearer ${token}`,
           "Content-Type": "application/json",
         },
         body: JSON.stringify({

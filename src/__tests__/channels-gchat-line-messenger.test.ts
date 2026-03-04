@@ -68,6 +68,7 @@ describe("channel::google-chat::webhook", () => {
   it("ignores non-MESSAGE events", async () => {
     const result = await call("channel::google-chat::webhook", {
       body: { type: "ADDED_TO_SPACE" },
+      headers: { Authorization: "Bearer test-gchat-token" },
     });
     expect(result.status_code).toBe(200);
     expect(result.body.ok).toBe(true);
@@ -81,6 +82,7 @@ describe("channel::google-chat::webhook", () => {
         message: { text: "Hello Google Chat" },
         user: { name: "users/u1" },
       },
+      headers: { Authorization: "Bearer test-gchat-token" },
     });
     expect(result.status_code).toBe(200);
     expect(result.body.text).toBe("Reply");
@@ -94,6 +96,7 @@ describe("channel::google-chat::webhook", () => {
         message: { text: "Routing test" },
         user: { name: "users/u2" },
       },
+      headers: { Authorization: "Bearer test-gchat-token" },
     });
     const chatCalls = mockTrigger.mock.calls.filter(
       (c) => c[0] === "agent::chat",
@@ -111,6 +114,7 @@ describe("channel::google-chat::webhook", () => {
         message: { text: "Audit" },
         user: { name: "users/u3" },
       },
+      headers: { Authorization: "Bearer test-gchat-token" },
     });
     expect(mockTriggerVoid).toHaveBeenCalledWith(
       "security::audit",
@@ -136,6 +140,7 @@ describe("channel::google-chat::webhook", () => {
         message: { text: "Get response" },
         user: { name: "users/u4" },
       },
+      headers: { Authorization: "Bearer test-gchat-token" },
     });
     expect(result.body.text).toBe("Custom response");
   });
@@ -148,6 +153,7 @@ describe("channel::google-chat::webhook", () => {
         message: {},
         user: { name: "users/u5" },
       },
+      headers: { Authorization: "Bearer test-gchat-token" },
     });
     expect(result.status_code).toBe(200);
     const chatCalls = mockTrigger.mock.calls.filter(

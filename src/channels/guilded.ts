@@ -1,12 +1,12 @@
 import { init } from "iii-sdk";
+import { ENGINE_URL, createSecretGetter } from "../shared/config.js";
 import { splitMessage, resolveAgent } from "../shared/utils.js";
 
 const { registerFunction, registerTrigger, trigger, triggerVoid } = init(
-  "ws://localhost:49134",
+  ENGINE_URL,
   { workerName: "channel-guilded" },
 );
-
-const TOKEN = process.env.GUILDED_TOKEN || "";
+const getSecret = createSecretGetter(trigger);
 const API_URL = "https://www.guilded.gg/api/v1";
 
 registerFunction(
@@ -51,12 +51,13 @@ registerTrigger({
 });
 
 async function sendMessage(channelId: string, text: string) {
+  const token = await getSecret("GUILDED_TOKEN");
   const chunks = splitMessage(text, 4000);
   for (const chunk of chunks) {
     await fetch(`${API_URL}/channels/${channelId}/messages`, {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${TOKEN}`,
+        Authorization: `Bearer ${token}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({ content: chunk }),

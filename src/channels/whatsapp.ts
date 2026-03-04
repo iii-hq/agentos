@@ -1,14 +1,12 @@
 import { init } from "iii-sdk";
+import { ENGINE_URL, createSecretGetter } from "../shared/config.js";
 import { splitMessage, resolveAgent } from "../shared/utils.js";
 
 const { registerFunction, registerTrigger, trigger, triggerVoid } = init(
-  "ws://localhost:49134",
+  ENGINE_URL,
   { workerName: "channel-whatsapp" },
 );
-
-const TOKEN = process.env.WHATSAPP_TOKEN || "";
-const PHONE_ID = process.env.WHATSAPP_PHONE_ID || "";
-const API_URL = `https://graph.facebook.com/v18.0/${PHONE_ID}/messages`;
+const getSecret = createSecretGetter(trigger);
 
 registerFunction(
   {
@@ -56,12 +54,20 @@ registerTrigger({
 });
 
 async function sendMessage(to: string, text: string) {
+  const token = await getSecret("WHATSAPP_TOKEN");
+  if (!token) {
+    throw new Error("WHATSAPP_TOKEN not configured");
+  }
+  const phoneId = await getSecret("WHATSAPP_PHONE_ID");
+  if (!phoneId) {
+    throw new Error("WHATSAPP_PHONE_ID not configured");
+  }
   const chunks = splitMessage(text, 4096);
   for (const chunk of chunks) {
-    await fetch(API_URL, {
+    await fetch(`https://graph.facebook.com/v18.0/${phoneId}/messages`, {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${TOKEN}`,
+        Authorization: `Bearer ${token}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({

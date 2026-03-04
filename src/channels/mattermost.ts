@@ -1,13 +1,12 @@
 import { init } from "iii-sdk";
+import { ENGINE_URL, createSecretGetter } from "../shared/config.js";
 import { splitMessage, resolveAgent } from "../shared/utils.js";
 
 const { registerFunction, registerTrigger, trigger, triggerVoid } = init(
-  "ws://localhost:49134",
+  ENGINE_URL,
   { workerName: "channel-mattermost" },
 );
-
-const BASE_URL = process.env.MATTERMOST_URL || "";
-const TOKEN = process.env.MATTERMOST_TOKEN || "";
+const getSecret = createSecretGetter(trigger);
 
 registerFunction(
   {
@@ -47,12 +46,20 @@ registerTrigger({
 });
 
 async function sendMessage(channelId: string, text: string, rootId?: string) {
+  const token = await getSecret("MATTERMOST_TOKEN");
+  if (!token) {
+    throw new Error("MATTERMOST_TOKEN not configured");
+  }
+  const baseUrl = await getSecret("MATTERMOST_URL");
+  if (!baseUrl) {
+    throw new Error("MATTERMOST_URL not configured");
+  }
   const chunks = splitMessage(text, 4000);
   for (const chunk of chunks) {
-    await fetch(`${BASE_URL}/api/v4/posts`, {
+    await fetch(`${baseUrl}/api/v4/posts`, {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${TOKEN}`,
+        Authorization: `Bearer ${token}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({

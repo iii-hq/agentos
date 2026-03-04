@@ -1,9 +1,10 @@
 import { init } from "iii-sdk";
+import { ENGINE_URL } from "./shared/config.js";
 import type { Message } from "./shared/tokens.js";
 import { estimateTokens, estimateMessagesTokens } from "./shared/tokens.js";
 
 const { registerFunction, registerTrigger, trigger } = init(
-  "ws://localhost:49134",
+  ENGINE_URL,
   { workerName: "context-manager" },
 );
 
