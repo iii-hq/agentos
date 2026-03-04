@@ -5,9 +5,9 @@ import FadeIn from "./shared/FadeIn";
 import { stats } from "../data/stats";
 
 const TERMINAL_LINES = [
-  { text: "$ agents-os init --template coder", type: "command" },
+  { text: "$ agentos init --template coder", type: "command" },
   { text: "  Agent created: coder-01", type: "success" },
-  { text: '$ agents-os run "review PR #42"', type: "command" },
+  { text: '$ agentos run "review PR #42"', type: "command" },
   { text: "  routing to tools: [git, code, search]", type: "info" },
   { text: "  streaming response...", type: "info" },
   { text: "  Review complete. 3 issues found.", type: "success" },
@@ -101,9 +101,11 @@ export default function Hero() {
           <div>
             <FadeIn>
               <h1 className="text-5xl md:text-7xl font-mono font-bold tracking-tight mb-6">
-                The <span className="text-primary">Agents</span>
+                <span className="text-primary">Agent</span>OS
                 <br />
-                Operating System
+                <span className="text-zinc-400 text-4xl md:text-5xl">
+                  The Agent Operating System
+                </span>
               </h1>
             </FadeIn>
 
@@ -162,7 +164,7 @@ export default function Hero() {
                   <span className="w-3 h-3 rounded-full bg-white/10" />
                 </div>
                 <span className="text-xs text-muted font-mono ml-2">
-                  agents-os
+                  agentos
                 </span>
               </div>
 

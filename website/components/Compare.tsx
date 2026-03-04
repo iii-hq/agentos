@@ -15,7 +15,7 @@ const benchmarks: Benchmark[] = [
     unit: "ms",
     direction: "lower",
     data: [
-      { name: "Agents OS", value: 48 },
+      { name: "AgentOS", value: 48 },
       { name: "OpenClaw", value: 5980 },
       { name: "CrewAI", value: 3000 },
       { name: "LangGraph", value: 2500 },
@@ -27,7 +27,7 @@ const benchmarks: Benchmark[] = [
     unit: "MB",
     direction: "lower",
     data: [
-      { name: "Agents OS", value: 12 },
+      { name: "AgentOS", value: 12 },
       { name: "OpenClaw", value: 394 },
       { name: "CrewAI", value: 200 },
       { name: "LangGraph", value: 180 },
@@ -39,7 +39,7 @@ const benchmarks: Benchmark[] = [
     unit: "MB",
     direction: "lower",
     data: [
-      { name: "Agents OS", value: 25 },
+      { name: "AgentOS", value: 25 },
       { name: "OpenClaw", value: 500 },
       { name: "CrewAI", value: 100 },
       { name: "LangGraph", value: 150 },
@@ -51,7 +51,7 @@ const benchmarks: Benchmark[] = [
     unit: "",
     direction: "higher",
     data: [
-      { name: "Agents OS", value: 18 },
+      { name: "AgentOS", value: 18 },
       { name: "OpenClaw", value: 3 },
       { name: "CrewAI", value: 1 },
       { name: "LangGraph", value: 2 },
@@ -63,7 +63,7 @@ const benchmarks: Benchmark[] = [
     unit: "",
     direction: "higher",
     data: [
-      { name: "Agents OS", value: 40 },
+      { name: "AgentOS", value: 40 },
       { name: "OpenClaw", value: 15 },
       { name: "CrewAI", value: 4 },
       { name: "LangGraph", value: 1 },
@@ -75,7 +75,7 @@ const benchmarks: Benchmark[] = [
     unit: "",
     direction: "higher",
     data: [
-      { name: "Agents OS", value: 25 },
+      { name: "AgentOS", value: 25 },
       { name: "OpenClaw", value: 20 },
       { name: "CrewAI", value: 5 },
       { name: "LangGraph", value: 15 },
@@ -202,7 +202,7 @@ const rows: { feature: string; values: string[] }[] = [
   },
 ];
 
-const columns = ["Agents OS", "OpenClaw", "CrewAI", "LangGraph", "AutoGen"];
+const columns = ["AgentOS", "OpenClaw", "CrewAI", "LangGraph", "AutoGen"];
 
 export default function Compare() {
   const [active, setActive] = useState(0);
@@ -240,7 +240,7 @@ export default function Compare() {
 
           <div className="max-w-2xl mx-auto space-y-3">
             {sorted.map((d, i) => {
-              const isUs = d.name === "Agents OS";
+              const isUs = d.name === "AgentOS";
               const pct = (d.value / max) * 100;
               return (
                 <div key={d.name} className="flex items-center gap-3">
@@ -279,7 +279,7 @@ export default function Compare() {
               Feature-by-Feature
             </h3>
             <p className="text-center text-muted text-xs font-mono mb-8">
-              Agents OS vs OpenClaw vs CrewAI vs LangGraph vs AutoGen
+              AgentOS vs OpenClaw vs CrewAI vs LangGraph vs AutoGen
             </p>
 
             <div className="overflow-x-auto">
@@ -290,7 +290,7 @@ export default function Compare() {
                     {columns.map((name) => (
                       <th
                         key={name}
-                        className={`py-3 px-3 text-center text-xs min-w-[130px] ${name === "Agents OS" ? "text-primary font-semibold" : "text-muted font-medium"}`}
+                        className={`py-3 px-3 text-center text-xs min-w-[130px] ${name === "AgentOS" ? "text-primary font-semibold" : "text-muted font-medium"}`}
                       >
                         {name}
                       </th>

@@ -23,7 +23,7 @@ export const docs: DocEntry[] = [
 
 ## Installation
 
-Install Agents OS using the install script:
+Install AgentOS using the install script:
 
 \`\`\`bash
 curl -fsSL https://agentos.dev/install -o install.sh
@@ -46,35 +46,41 @@ cargo build --release
 **1. Initialize a new project**
 
 \`\`\`bash
-agents-os init my-agent
+agentos init my-agent
 cd my-agent
 \`\`\`
 
 **2. Configure your LLM provider**
 
 \`\`\`bash
-agents-os config set llm.provider openai
-agents-os config set llm.model gpt-4o
+agentos config set llm.provider openai
+agentos config set llm.model gpt-4o
 export OPENAI_API_KEY=sk-...
 \`\`\`
 
 **3. Create your first agent**
 
 \`\`\`typescript
-import { worker, fn, trigger } from "iii-sdk";
+import { init } from "iii-sdk";
 
-const greeter = worker("greeter", async (ctx) => {
-  const response = await ctx.call("llm.chat", {
-    messages: [{ role: "user", content: ctx.input.message }],
-  });
-  return { reply: response.content };
-});
+const { registerFunction, trigger } =
+  init("ws://localhost:49134", { workerName: "greeter" });
+
+registerFunction(
+  { id: "greet::reply" },
+  async (input: { message: string }) => {
+    const response = await trigger("llm::chat", {
+      messages: [{ role: "user", content: input.message }],
+    });
+    return { reply: response.content };
+  }
+);
 \`\`\`
 
 **4. Run it**
 
 \`\`\`bash
-agents-os dev
+agentos dev
 \`\`\`
 
 Your agent is now running on \`localhost:3100\`.
@@ -105,65 +111,68 @@ my-agent/
     category: "Core Concepts",
     content: `# Primitives
 
-Agents OS is built on iii-engine's three primitives. Every agent, tool, and workflow is composed from these building blocks.
+AgentOS is built on iii-engine's three primitives. Every agent, tool, and workflow is composed from these building blocks.
 
 ## Worker
 
 A Worker is a long-running process that handles requests. Think of it as a microservice that processes messages.
 
 \`\`\`typescript
-import { worker } from "iii-sdk";
+import { init } from "iii-sdk";
 
-const analyst = worker("analyst", async (ctx) => {
-  const data = await ctx.call("data.fetch", { source: ctx.input.url });
-  const analysis = await ctx.call("llm.chat", {
-    messages: [{ role: "user", content: \`Analyze: \${data}\` }],
-  });
-  return { analysis: analysis.content };
-});
+const { registerFunction, trigger } =
+  init("ws://localhost:49134", { workerName: "analyst" });
+
+registerFunction(
+  { id: "analyst::analyze", description: "Analyze data from URL" },
+  async (input: { url: string }) => {
+    const data = await trigger("tool::http_fetch", { url: input.url });
+    const analysis = await trigger("llm::chat", {
+      messages: [{ role: "user", content: \`Analyze: \${data}\` }],
+    });
+    return { analysis: analysis.content };
+  }
+);
 \`\`\`
 
 **Key properties:**
-- Has its own lifecycle (start, stop, restart)
-- Maintains state across requests
-- Can call Functions and other Workers
+- Long-running process via \`init()\`
+- Registers functions on the iii-engine bus
+- Calls other functions via \`trigger()\`
 - Supports concurrency controls
 
 ## Function
 
-A Function is a stateless, short-lived computation. It runs, returns a result, and exits.
+A Function is a stateless computation registered on the bus. It runs, returns a result, and exits.
 
 \`\`\`typescript
-import { fn } from "iii-sdk";
-
-const summarize = fn("summarize", async (ctx) => {
-  const result = await ctx.call("llm.chat", {
-    messages: [{ role: "user", content: \`Summarize: \${ctx.input.text}\` }],
-    model: "claude-haiku-4-5",
-  });
-  return { summary: result.content };
-});
+registerFunction(
+  { id: "text::summarize", description: "Summarize text" },
+  async (input: { text: string }) => {
+    const result = await trigger("llm::chat", {
+      messages: [{ role: "user", content: \`Summarize: \${input.text}\` }],
+      model: "claude-haiku-4-5",
+    });
+    return { summary: result.content };
+  }
+);
 \`\`\`
 
 **Key properties:**
 - Stateless and idempotent
 - Automatic retries on failure
 - Built-in timeout handling
-- Can be called by Workers or other Functions
+- Called by other functions via \`trigger("text::summarize", ...)\`
 
 ## Trigger
 
-A Trigger starts execution based on an event. It connects the outside world to your Workers and Functions.
+A Trigger starts execution based on an event. It connects the outside world to your Functions.
 
 \`\`\`typescript
-import { trigger } from "iii-sdk";
-
-const onSlackMessage = trigger("slack.message", {
-  channel: "#support",
-  filter: (event) => event.text.includes("help"),
-  handler: async (ctx) => {
-    await ctx.call("support-agent", { message: ctx.event.text });
-  },
+registerTrigger({
+  type: "http",
+  function_id: "analyst::analyze",
+  config: { api_path: "api/analyze", http_method: "POST" },
 });
 \`\`\`
 
@@ -176,12 +185,12 @@ const onSlackMessage = trigger("slack.message", {
 ## How They Compose
 
 \`\`\`
-Trigger (Slack message)
-  -> Worker (support-agent)
-    -> Function (classify-intent)
-    -> Function (search-docs)
-    -> Function (generate-reply)
-  -> Channel (Slack reply)
+Trigger (HTTP POST /api/support)
+  -> Function (support::classify)
+    -> trigger("intent::classify", ...)
+    -> trigger("docs::search", ...)
+    -> trigger("llm::chat", ...)
+  -> trigger("channel::slack_reply", ...)
 \`\`\`
 
 The pipeline overhead for this chain is just 18% vs direct function calls.`,
@@ -193,7 +202,7 @@ The pipeline overhead for this chain is just 18% vs direct function calls.`,
     category: "Core Concepts",
     content: `# Architecture
 
-Agents OS is a multi-language system with a Rust core, TypeScript application layer, and Python for specialized tasks.
+AgentOS is a multi-language system with a Rust core, TypeScript application layer, and Python for specialized tasks.
 
 ## Rust Crates (10)
 
@@ -250,7 +259,7 @@ Everything runs on iii-engine's Worker/Function/Trigger primitives:
     category: "Core Concepts",
     content: `# Configuration
 
-Agents OS is configured through \`agents.toml\` and environment variables.
+AgentOS is configured through \`agents.toml\` and environment variables.
 
 ## agents.toml
 
@@ -308,10 +317,10 @@ host = "0.0.0.0"
 | \`OPENAI_API_KEY\` | OpenAI API key |
 | \`ANTHROPIC_API_KEY\` | Anthropic API key |
 | \`GOOGLE_API_KEY\` | Google AI API key |
-| \`AGENTS_OS_PORT\` | Server port (default: 3100) |
-| \`AGENTS_OS_LOG_LEVEL\` | Log level: debug, info, warn, error |
-| \`AGENTS_OS_VAULT_KEY\` | Master key for vault encryption |
-| \`AGENTS_OS_DATA_DIR\` | Data directory (default: ~/.agents-os) |
+| \`AGENTOS_PORT\` | Server port (default: 3100) |
+| \`AGENTOS_LOG_LEVEL\` | Log level: debug, info, warn, error |
+| \`AGENTOS_VAULT_KEY\` | Master key for vault encryption |
+| \`AGENTOS_DATA_DIR\` | Data directory (default: ~/.agentos) |
 
 ## Tool Profiles
 
@@ -333,7 +342,7 @@ Profiles control which tools an agent can access:
     category: "Core Concepts",
     content: `# Security Model
 
-Agents OS ships with 18 discrete security layers. Security is fail-closed by default, not opt-in.
+AgentOS ships with 18 discrete security layers. Security is fail-closed by default, not opt-in.
 
 ## Core Principles
 
@@ -389,7 +398,7 @@ Agents OS ships with 18 discrete security layers. Security is fail-closed by def
     category: "Core Concepts",
     content: `# LLM Providers
 
-Agents OS supports 25 providers and 47 models with intelligent routing.
+AgentOS supports 25 providers and 47 models with intelligent routing.
 
 ## Supported Providers
 
@@ -448,7 +457,7 @@ Every LLM call is tracked:
     category: "Integration",
     content: `# Channel Adapters
 
-Agents OS includes 40 built-in channel adapters. Deploy your agent wherever your users are.
+AgentOS includes 40 built-in channel adapters. Deploy your agent wherever your users are.
 
 ## Messaging
 Slack, Discord, Microsoft Teams, Telegram, WhatsApp, Signal, iMessage, Matrix, IRC, Zulip
@@ -492,16 +501,23 @@ channels = ["support", "general"]
 ## Writing Custom Adapters
 
 \`\`\`typescript
-import { trigger } from "iii-sdk";
+import { init } from "iii-sdk";
 
-const myChannel = trigger("custom.webhook", {
-  path: "/webhook/my-service",
-  method: "POST",
-  handler: async (ctx) => {
-    const message = ctx.event.body.text;
-    const result = await ctx.call("my-agent", { message });
+const { registerFunction, registerTrigger, trigger } =
+  init("ws://localhost:49134", { workerName: "custom-channel" });
+
+registerFunction(
+  { id: "channel::webhook_handler" },
+  async (input: { text: string }) => {
+    const result = await trigger("agent::process", { message: input.text });
     return { status: 200, body: result };
-  },
+  }
+);
+
+registerTrigger({
+  type: "http",
+  function_id: "channel::webhook_handler",
+  config: { api_path: "webhook/my-service", http_method: "POST" },
 });
 \`\`\``,
   },
@@ -512,7 +528,7 @@ const myChannel = trigger("custom.webhook", {
     category: "Integration",
     content: `# Agent Templates
 
-Agents OS ships with 30 ready-to-use agent templates.
+AgentOS ships with 30 ready-to-use agent templates.
 
 ## Code Agents
 - **Code Reviewer**: Reviews PRs, checks style, finds bugs
@@ -543,8 +559,8 @@ Agents OS ships with 30 ready-to-use agent templates.
 ## Using a Template
 
 \`\`\`bash
-agents-os agent create --template code-reviewer my-reviewer
-agents-os dev
+agentos agent create --template code-reviewer my-reviewer
+agentos dev
 \`\`\`
 
 Templates can be customized by editing the generated \`agents.toml\` and worker files.`,
@@ -556,19 +572,19 @@ Templates can be customized by editing the generated \`agents.toml\` and worker 
     category: "Integration",
     content: `# SkillKit Integration
 
-Agents OS integrates with SkillKit for access to a universal skill marketplace across 32+ AI coding agents.
+AgentOS integrates with SkillKit for access to a universal skill marketplace across 32+ AI coding agents.
 
 ## Installing Skills
 
 \`\`\`bash
 # Search for skills
-agents-os skill search "code review"
+agentos skill search "code review"
 
 # Install a skill
-agents-os skill install pro-workflow
+agentos skill install pro-workflow
 
 # List installed skills
-agents-os skill list
+agentos skill list
 \`\`\`
 
 ## Using SkillKit CLI
@@ -580,9 +596,9 @@ npm install -g skillkit
 # Browse marketplace
 skillkit search "testing"
 
-# Install and translate for Agents OS
+# Install and translate for AgentOS
 skillkit install pro-workflow
-skillkit translate pro-workflow --agent agents-os
+skillkit translate pro-workflow --agent agentos
 \`\`\`
 
 ## Skill Format
@@ -612,7 +628,7 @@ skillkit init
 skillkit publish
 \`\`\`
 
-Skills published to SkillKit are available across all 32+ supported agents, not just Agents OS.`,
+Skills published to SkillKit are available across all 32+ supported agents, not just AgentOS.`,
   },
   {
     slug: "mcp-a2a",
@@ -621,7 +637,7 @@ Skills published to SkillKit are available across all 32+ supported agents, not 
     category: "Integration",
     content: `# MCP and A2A
 
-Agents OS supports both MCP (Model Context Protocol) and A2A (Agent-to-Agent) protocols.
+AgentOS supports both MCP (Model Context Protocol) and A2A (Agent-to-Agent) protocols.
 
 ## MCP (Model Context Protocol)
 
@@ -659,7 +675,7 @@ discovery = "local"    # local | dns | registry
 ### Agent Communication
 
 \`\`\`typescript
-const result = await ctx.call("a2a.request", {
+const result = await trigger("a2a::request", {
   agent: "code-reviewer",
   task: "Review this pull request",
   context: { pr_url: "https://github.com/org/repo/pull/42" },
@@ -671,7 +687,7 @@ const result = await ctx.call("a2a.request", {
 Multiple agents can form swarms for complex tasks:
 
 \`\`\`typescript
-const swarm = await ctx.call("swarm.create", {
+const swarm = await trigger("swarm::create", {
   agents: ["researcher", "writer", "reviewer"],
   task: "Write a technical blog post about WASM sandboxing",
   strategy: "pipeline",    // pipeline | parallel | consensus
@@ -690,20 +706,22 @@ Workflows orchestrate multi-step agent pipelines with built-in retry, branching,
 ## Defining Workflows
 
 \`\`\`typescript
-import { workflow } from "iii-sdk";
+registerFunction(
+  { id: "workflow::code_review", description: "Code review pipeline" },
+  async (input: { pr: number }) => {
+    const diff = await trigger("tool::git_diff", { pr: input.pr });
+    const analysis = await trigger("review::analyze", { diff });
+    const security = await trigger("security::scan", { diff });
 
-const codeReviewPipeline = workflow("code-review", [
-  { step: "fetch-diff", worker: "github-tool", input: { action: "get_pr_diff" } },
-  { step: "analyze", worker: "code-reviewer", input: { from: "fetch-diff" } },
-  { step: "check-security", worker: "security-scanner", input: { from: "fetch-diff" } },
-  {
-    step: "approve",
-    type: "gate",
-    condition: (results) =>
-      results["analyze"].score > 0.8 && results["check-security"].issues === 0,
-  },
-  { step: "post-review", worker: "github-tool", input: { action: "post_review" } },
-]);
+    if (analysis.score < 0.8 || security.issues > 0) {
+      await trigger("approval::request", { pr: input.pr, analysis, security });
+    }
+
+    await trigger("tool::github_post_review", {
+      pr: input.pr, body: analysis.summary,
+    });
+  }
+);
 \`\`\`
 
 ## Step Types
@@ -733,13 +751,13 @@ const codeReviewPipeline = workflow("code-review", [
 
 \`\`\`bash
 # Start a workflow
-agents-os workflow run code-review --input '{"pr": 42}'
+agentos workflow run code-review --input '{"pr": 42}'
 
 # List running workflows
-agents-os workflow list
+agentos workflow list
 
 # Check status
-agents-os workflow status <id>
+agentos workflow status <id>
 \`\`\``,
   },
   {
@@ -749,78 +767,78 @@ agents-os workflow status <id>
     category: "Reference",
     content: `# CLI Reference
 
-The \`agents-os\` CLI provides 50+ commands for managing agents, tools, channels, and more.
+The \`agentos\` CLI provides 50+ commands for managing agents, tools, channels, and more.
 
 ## Core Commands
 
 \`\`\`bash
-agents-os init <name>          # Initialize new project
-agents-os dev                  # Start development server
-agents-os build                # Build for production
-agents-os deploy               # Deploy to target
+agentos init <name>          # Initialize new project
+agentos dev                  # Start development server
+agentos build                # Build for production
+agentos deploy               # Deploy to target
 \`\`\`
 
 ## Agent Management
 
 \`\`\`bash
-agents-os agent list           # List all agents
-agents-os agent create <name>  # Create new agent
-agents-os agent start <name>   # Start an agent
-agents-os agent stop <name>    # Stop an agent
-agents-os agent logs <name>    # View agent logs
-agents-os agent status         # Show all agent statuses
+agentos agent list           # List all agents
+agentos agent create <name>  # Create new agent
+agentos agent start <name>   # Start an agent
+agentos agent stop <name>    # Stop an agent
+agentos agent logs <name>    # View agent logs
+agentos agent status         # Show all agent statuses
 \`\`\`
 
 ## Tool Management
 
 \`\`\`bash
-agents-os tool list            # List available tools
-agents-os tool install <name>  # Install a tool
-agents-os tool profile set <p> # Set tool profile
+agentos tool list            # List available tools
+agentos tool install <name>  # Install a tool
+agentos tool profile set <p> # Set tool profile
 \`\`\`
 
 ## Channel Management
 
 \`\`\`bash
-agents-os channel list         # List channels
-agents-os channel add <type>   # Add a channel
-agents-os channel test <name>  # Test channel connection
+agentos channel list         # List channels
+agentos channel add <type>   # Add a channel
+agentos channel test <name>  # Test channel connection
 \`\`\`
 
 ## Skill Management
 
 \`\`\`bash
-agents-os skill search <q>     # Search marketplace
-agents-os skill install <name> # Install skill
-agents-os skill list           # List installed
-agents-os skill publish        # Publish a skill
+agentos skill search <q>     # Search marketplace
+agentos skill install <name> # Install skill
+agentos skill list           # List installed
+agentos skill publish        # Publish a skill
 \`\`\`
 
 ## Configuration
 
 \`\`\`bash
-agents-os config get <key>     # Get config value
-agents-os config set <k> <v>   # Set config value
-agents-os config list          # Show all config
+agentos config get <key>     # Get config value
+agentos config set <k> <v>   # Set config value
+agentos config list          # Show all config
 \`\`\`
 
 ## Security
 
 \`\`\`bash
-agents-os security audit       # Run security audit
-agents-os security scan        # Scan for vulnerabilities
-agents-os vault set <key>      # Store secret in vault
-agents-os vault get <key>      # Retrieve secret
+agentos security audit       # Run security audit
+agentos security scan        # Scan for vulnerabilities
+agentos vault set <key>      # Store secret in vault
+agentos vault get <key>      # Retrieve secret
 \`\`\`
 
 ## Monitoring
 
 \`\`\`bash
-agents-os status               # System status
-agents-os costs                # Cost summary
-agents-os costs daily          # Daily cost breakdown
-agents-os metrics              # Performance metrics
-agents-os tui                  # Launch terminal UI
+agentos status               # System status
+agentos costs                # Cost summary
+agentos costs daily          # Daily cost breakdown
+agentos metrics              # Performance metrics
+agentos tui                  # Launch terminal UI
 \`\`\``,
   },
   {
@@ -830,7 +848,7 @@ agents-os tui                  # Launch terminal UI
     category: "Reference",
     content: `# REST API Reference
 
-Agents OS exposes a REST API on port 3100 for managing agents programmatically.
+AgentOS exposes a REST API on port 3100 for managing agents programmatically.
 
 ## Authentication
 
@@ -913,7 +931,7 @@ GET    /api/metrics             # Prometheus metrics
     category: "Reference",
     content: `# Desktop App
 
-Agents OS includes a native desktop application built with Tauri 2.0.
+AgentOS includes a native desktop application built with Tauri 2.0.
 
 ## Installation
 
@@ -947,7 +965,7 @@ cargo tauri build
 If you prefer the terminal, the TUI provides the same functionality with 22 screens:
 
 \`\`\`bash
-agents-os tui
+agentos tui
 \`\`\`
 
 Navigation: Tab to switch screens, / for help, q to quit.`,
@@ -964,29 +982,32 @@ Navigation: Tab to switch screens, / for help, q to quit.`,
 Watches GitHub PRs and posts reviews:
 
 \`\`\`typescript
-import { worker, trigger } from "iii-sdk";
+import { init } from "iii-sdk";
 
-const reviewer = worker("code-reviewer", async (ctx) => {
-  const diff = await ctx.call("github.get_diff", { pr: ctx.input.pr });
-  const review = await ctx.call("llm.chat", {
-    model: "claude-sonnet-4-6",
-    messages: [{
-      role: "user",
-      content: \`Review this diff for bugs, style, and security:\\n\${diff}\`,
-    }],
-  });
-  await ctx.call("github.post_review", {
-    pr: ctx.input.pr,
-    body: review.content,
-  });
-});
+const { registerFunction, registerTrigger, trigger } =
+  init("ws://localhost:49134", { workerName: "code-reviewer" });
 
-trigger("github.pull_request", {
-  repos: ["org/repo"],
-  events: ["opened", "synchronize"],
-  handler: async (ctx) => {
-    await ctx.call("code-reviewer", { pr: ctx.event.number });
-  },
+registerFunction(
+  { id: "review::pr", description: "Review a GitHub PR" },
+  async (input: { pr: number }) => {
+    const diff = await trigger("tool::github_get_diff", { pr: input.pr });
+    const review = await trigger("llm::chat", {
+      model: "claude-sonnet-4-6",
+      messages: [{
+        role: "user",
+        content: \`Review this diff for bugs, style, and security:\\n\${diff}\`,
+      }],
+    });
+    await trigger("tool::github_post_review", {
+      pr: input.pr, body: review.content,
+    });
+  }
+);
+
+registerTrigger({
+  type: "http",
+  function_id: "review::pr",
+  config: { api_path: "api/review", http_method: "POST" },
 });
 \`\`\`
 
@@ -995,19 +1016,24 @@ trigger("github.pull_request", {
 Searches the web and produces summaries:
 
 \`\`\`typescript
-const researcher = worker("researcher", async (ctx) => {
-  const results = await ctx.call("browser.search", { query: ctx.input.topic });
-  const pages = await Promise.all(
-    results.slice(0, 5).map((r) => ctx.call("browser.scrape", { url: r.url }))
-  );
-  const summary = await ctx.call("llm.chat", {
-    messages: [{
-      role: "user",
-      content: \`Summarize these sources about \${ctx.input.topic}:\\n\${pages.join("\\n---\\n")}\`,
-    }],
-  });
-  return { summary: summary.content, sources: results.map((r) => r.url) };
-});
+registerFunction(
+  { id: "research::summarize" },
+  async (input: { topic: string }) => {
+    const results = await trigger("tool::web_search", { query: input.topic });
+    const pages = await Promise.all(
+      results.slice(0, 5).map((r: any) =>
+        trigger("tool::web_scrape", { url: r.url })
+      )
+    );
+    const summary = await trigger("llm::chat", {
+      messages: [{
+        role: "user",
+        content: \`Summarize these sources about \${input.topic}:\\n\${pages.join("\\n---\\n")}\`,
+      }],
+    });
+    return { summary: summary.content, sources: results.map((r: any) => r.url) };
+  }
+);
 \`\`\`
 
 ## Ops Bot
@@ -1015,28 +1041,29 @@ const researcher = worker("researcher", async (ctx) => {
 Monitors infrastructure and responds to incidents:
 
 \`\`\`typescript
-const opsBot = worker("ops-bot", async (ctx) => {
-  const alert = ctx.input.alert;
-  const diagnostics = await ctx.call("shell.exec", {
-    command: \`kubectl describe pod \${alert.pod}\`,
-  });
-  const analysis = await ctx.call("llm.chat", {
-    messages: [{
-      role: "user",
-      content: \`Analyze this Kubernetes alert and suggest fixes:\\n\${JSON.stringify(alert)}\\n\\nDiagnostics:\\n\${diagnostics}\`,
-    }],
-  });
-  await ctx.call("slack.post", {
-    channel: "#incidents",
-    text: analysis.content,
-  });
-});
+registerFunction(
+  { id: "ops::handle_alert" },
+  async (input: { alert: any }) => {
+    const diagnostics = await trigger("tool::shell_exec", {
+      command: \`kubectl describe pod \${input.alert.pod}\`,
+    });
+    const analysis = await trigger("llm::chat", {
+      messages: [{
+        role: "user",
+        content: \`Analyze this Kubernetes alert:\\n\${JSON.stringify(input.alert)}\\n\\nDiagnostics:\\n\${diagnostics}\`,
+      }],
+    });
+    await trigger("channel::slack_post", {
+      channel: "#incidents",
+      text: analysis.content,
+    });
+  }
+);
 
-trigger("webhook", {
-  path: "/alerts/pagerduty",
-  handler: async (ctx) => {
-    await ctx.call("ops-bot", { alert: ctx.event.body });
-  },
+registerTrigger({
+  type: "http",
+  function_id: "ops::handle_alert",
+  config: { api_path: "alerts/pagerduty", http_method: "POST" },
 });
 \`\`\``,
   },

@@ -1,6 +1,6 @@
 export const stats = [
   { label: "Tools", value: 60, suffix: "+" },
-  { label: "Providers", value: 25 },
-  { label: "Models", value: 47 },
+  { label: "Tests", value: 1818 },
+  { label: "Agents", value: 30 },
   { label: "Channels", value: 40 },
 ];

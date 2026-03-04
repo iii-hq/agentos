@@ -51,9 +51,9 @@ const stats = [
 export default function DocsHome() {
   return (
     <div>
-      <h1 className="font-mono font-bold text-3xl mb-3">Agents OS Docs</h1>
+      <h1 className="font-mono font-bold text-3xl mb-3">AgentOS Docs</h1>
       <p className="text-muted font-mono text-sm mb-8 max-w-xl">
-        Everything you need to install, configure, and operate Agents OS.
+        Everything you need to install, configure, and operate AgentOS.
       </p>
 
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-12">

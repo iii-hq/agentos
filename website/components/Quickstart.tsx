@@ -4,20 +4,20 @@ import FadeIn from "./shared/FadeIn";
 import SectionHeader from "./shared/SectionHeader";
 
 const steps = [
-  { cmd: "npm install agents-os", desc: "Install the Agents OS runtime" },
+  { cmd: "npm install agentos", desc: "Install the AgentOS runtime" },
   {
-    cmd: "agents-os init --template coder",
+    cmd: "agentos init --template coder",
     desc: "Scaffold a new agent project",
   },
   {
-    cmd: "agents-os config set provider anthropic",
+    cmd: "agentos config set provider anthropic",
     desc: "Configure your LLM provider",
   },
   {
-    cmd: "agents-os tools add git code search",
+    cmd: "agentos tools add git code search",
     desc: "Add tools to your agent",
   },
-  { cmd: "agents-os run", desc: "Launch your agent" },
+  { cmd: "agentos run", desc: "Launch your agent" },
 ];
 
 function CopyButton({ text }: { text: string }) {

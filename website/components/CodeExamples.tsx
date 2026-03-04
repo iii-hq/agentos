@@ -9,62 +9,83 @@ const tabs = [
     label: "TypeScript",
     lang: "typescript",
     filename: "agent.ts",
-    code: `import { worker, fn } from "iii-sdk";
+    code: `import { init } from "iii-sdk";
 
-const review = fn("review", async (pr: string) => {
-  const diff = await tools.git.diff(pr);
-  const issues = await llm.complete("find bugs", diff);
-  return { issues, count: issues.length };
-});
+const { registerFunction, registerTrigger, trigger } =
+  init("ws://localhost:49134", { workerName: "coder" });
 
-export default worker("coder", {
-  tools: ["git", "code", "search"],
-  channels: ["slack", "github"],
-}, async (req) => {
-  const result = await review(req.body.pr);
-  await channels.slack.send(result);
-  return result;
+registerFunction(
+  { id: "review::analyze", description: "Review a PR" },
+  async (input: { pr: number }) => {
+    const diff = await trigger("tool::git_diff", { pr: input.pr });
+    const issues = await trigger("llm::chat", {
+      prompt: "Find bugs in this diff",
+      context: diff,
+    });
+    return { issues, count: issues.length };
+  }
+);
+
+registerTrigger({
+  type: "http",
+  function_id: "review::analyze",
+  config: { api_path: "api/review", http_method: "POST" },
 });`,
   },
   {
     label: "Rust",
     lang: "rust",
     filename: "worker.rs",
-    code: `use iii_sdk::worker;
+    code: `use iii_sdk::{init, Config, Value};
 
-#[worker]
-async fn coder(input: Request) -> Response {
-    let task = input.body::<Task>().await?;
-    let result = tools::code::review(&task.pr_url).await?;
-    let summary = llm::complete("summarize", &result).await?;
-    Response::json(&summary)
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let engine = init(Config {
+        url: "ws://localhost:49134".into(),
+        worker_name: "coder-rust".into(),
+    }).await?;
+
+    engine.register_function("review::analyze", |input: Value| async move {
+        let diff = engine.trigger("tool::git_diff", &input).await?;
+        let issues = engine.trigger("llm::chat", &json!({
+            "prompt": "Find bugs", "context": diff,
+        })).await?;
+        Ok(json!({ "issues": issues }))
+    }).await?;
+
+    engine.listen().await
 }`,
   },
   {
     label: "Python",
     lang: "python",
     filename: "embed.py",
-    code: `from iii_sdk import worker, fn
+    code: `from iii_sdk import init
 
-@fn("embed")
-async def generate_embedding(text: str) -> list[float]:
+engine = init("ws://localhost:49134", worker_name="embedder")
+
+@engine.register("embed::generate")
+async def generate_embedding(input: dict) -> dict:
     from sentence_transformers import SentenceTransformer
     model = SentenceTransformer("all-MiniLM-L6-v2")
-    return model.encode(text).tolist()
+    vec = model.encode(input["text"]).tolist()
+    return {"embedding": vec, "dimensions": len(vec)}
 
-@worker("embedder")
-async def handle(request):
-    text = request.body["text"]
-    embedding = await generate_embedding(text)
-    return {"embedding": embedding, "dimensions": len(embedding)}`,
+engine.register_trigger(
+    type="http",
+    function_id="embed::generate",
+    config={"api_path": "api/embed", "http_method": "POST"},
+)
+
+engine.listen()`,
   },
 ];
 
 const flow = [
-  { label: "Trigger", sub: "HTTP" },
-  { label: "Worker", sub: "coder" },
-  { label: "Function", sub: "review" },
-  { label: "Channel", sub: "slack" },
+  { label: "Trigger", sub: "HTTP POST" },
+  { label: "Function", sub: "review::analyze" },
+  { label: "trigger()", sub: "tool::git_diff" },
+  { label: "trigger()", sub: "llm::chat" },
 ];
 
 export default function CodeExamples() {

@@ -4,7 +4,7 @@ export default function Footer() {
       <div className="max-w-6xl mx-auto px-6">
         <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
           <span className="font-mono font-bold text-sm">
-            agents<span className="text-primary">_</span>os
+            Agent<span className="text-primary">OS</span>
           </span>
           <div className="flex items-center gap-6">
             <a
