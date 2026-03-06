@@ -1,0 +1,59 @@
+id: incident-response
+name: Incident Response
+description: >
+  Structured incident response workflow from detection through verification.
+  Uses ops, debugger, coder, and test-engineer for rapid resolution.
+
+agents:
+  - ops
+  - debugger
+  - coder
+  - test-engineer
+
+steps:
+  - name: Detect
+    functionId: "agent::chat"
+    promptTemplate: >
+      Analyze the incident: {{input}}.
+      Classify severity (P0-P3), identify affected systems,
+      and determine blast radius. Produce an initial incident report.
+    mode: sequential
+    timeoutMs: 60000
+    errorMode: fail
+    outputVar: incident_report
+
+  - name: Triage
+    functionId: "agent::chat"
+    promptTemplate: >
+      Debug the incident from this report: {{incident_report}}.
+      Analyze logs, traces, and metrics to identify root cause.
+      Produce a root cause analysis with evidence.
+    mode: sequential
+    timeoutMs: 180000
+    errorMode: retry
+    maxRetries: 2
+    outputVar: root_cause
+
+  - name: Fix
+    functionId: "agent::chat"
+    promptTemplate: >
+      Implement a fix for root cause: {{root_cause}}.
+      Prefer minimal, targeted changes. Include rollback plan.
+      Write a regression test for the failure mode.
+    mode: sequential
+    timeoutMs: 300000
+    errorMode: retry
+    maxRetries: 3
+    outputVar: fix_output
+
+  - name: Verify
+    functionId: "agent::chat"
+    promptTemplate: >
+      Verify the fix: {{fix_output}}.
+      Run regression tests, confirm the original issue is resolved,
+      and validate no new issues were introduced.
+      Produce a post-mortem summary with lessons learned.
+    mode: sequential
+    timeoutMs: 120000
+    errorMode: fail
+    outputVar: verification_result

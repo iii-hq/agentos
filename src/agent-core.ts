@@ -4,6 +4,7 @@ import type {
   AgentConfig,
   ChatRequest,
   ChatResponse,
+  Division,
   ToolCall,
 } from "./types.js";
 import { filterToolsByProfile } from "./tool-profiles.js";
@@ -902,6 +903,21 @@ registerFunction(
       data: { type: "deleted", agentId },
     });
     return { deleted: true };
+  },
+);
+
+registerFunction(
+  {
+    id: "agent::list_by_division",
+    description: "List agents filtered by division",
+    metadata: { category: "agent" },
+  },
+  async ({ division }: { division?: Division }) => {
+    const agents: AgentConfig[] = await trigger("state::list", {
+      scope: "agents",
+    });
+    if (!division) return agents;
+    return agents.filter((a) => a.persona?.division === division);
   },
 );
 

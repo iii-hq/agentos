@@ -1,0 +1,60 @@
+id: feature-build
+name: Feature Build
+description: >
+  Standard feature development workflow with spec, implementation,
+  iterative code review, and merge. Uses architect, coder, and reviewer.
+
+agents:
+  - architect
+  - coder
+  - code-reviewer
+
+steps:
+  - name: Spec
+    functionId: "agent::chat"
+    promptTemplate: >
+      Design the feature: {{feature_description}}.
+      Produce a technical spec with API contracts, data models,
+      edge cases, and a dependency list.
+    mode: sequential
+    timeoutMs: 120000
+    errorMode: fail
+    outputVar: tech_spec
+
+  - name: Implement
+    functionId: "agent::chat"
+    promptTemplate: >
+      Implement the feature based on this spec: {{tech_spec}}.
+      Follow existing codebase patterns. Include unit tests.
+      Output the list of changed files.
+    mode: sequential
+    timeoutMs: 300000
+    errorMode: retry
+    maxRetries: 2
+    outputVar: implementation
+
+  - name: Review
+    functionId: "agent::chat"
+    promptTemplate: >
+      Review this implementation: {{implementation}}.
+      Previous review feedback (if any): {{review_result}}.
+      Check for bugs, security issues, test coverage gaps, and style.
+      If issues found, return specific fix instructions for the next iteration.
+      If approved, your response MUST include the word "LGTM".
+    mode: loop
+    timeoutMs: 180000
+    errorMode: retry
+    maxRetries: 2
+    maxIterations: 3
+    until: "LGTM"
+    outputVar: review_result
+
+  - name: Merge
+    functionId: "agent::chat"
+    promptTemplate: >
+      Final approval for merge. Review result: {{review_result}}.
+      Create a changelog entry and confirm merge readiness.
+    mode: sequential
+    timeoutMs: 60000
+    errorMode: fail
+    outputVar: merge_status

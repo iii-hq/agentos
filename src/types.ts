@@ -1,3 +1,29 @@
+export type Division =
+  | "engineering"
+  | "quality"
+  | "research"
+  | "operations"
+  | "communication"
+  | "support"
+  | "personal"
+  | "design"
+  | "marketing";
+
+export interface AgentPersona {
+  division?: Division;
+  communicationStyle?: string;
+  criticalRules?: string[];
+  workflow?: {
+    phases: string[];
+  };
+  successMetrics?: {
+    metrics: string[];
+  };
+  learning?: {
+    patterns: string[];
+  };
+}
+
 export interface AgentConfig {
   id?: string;
   name: string;
@@ -19,6 +45,7 @@ export interface AgentConfig {
     dailyBudget?: number;
     monthlyBudget?: number;
   };
+  persona?: AgentPersona;
   codeAgentMode?: boolean;
   approvalOverrides?: Record<string, "auto" | "async" | "sync">;
   tags?: string[];

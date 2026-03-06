@@ -1,0 +1,73 @@
+id: mvp-sprint
+name: MVP Sprint
+description: >
+  End-to-end MVP delivery workflow from market discovery through deployment.
+  Uses 5 specialized agents across research, design, engineering, QA, and DevOps.
+
+agents:
+  - trend-researcher
+  - ux-architect
+  - rapid-prototyper
+  - evidence-collector
+  - devops-lead
+
+steps:
+  - name: Discovery
+    functionId: "agent::chat"
+    promptTemplate: >
+      Research the market for: {{goal}}.
+      Identify target users, competitors, and key differentiators.
+      Produce a one-page brief with validated assumptions.
+    mode: sequential
+    timeoutMs: 120000
+    errorMode: fail
+    outputVar: discovery_brief
+
+  - name: Design
+    functionId: "agent::chat"
+    promptTemplate: >
+      Based on this discovery brief: {{discovery_brief}}.
+      Create UX wireframes, user flows, and a component inventory.
+      Focus on the critical path — minimum screens for core value.
+    mode: sequential
+    timeoutMs: 120000
+    errorMode: fail
+    outputVar: design_spec
+
+  - name: Build
+    functionId: "agent::chat"
+    promptTemplate: >
+      Implement the MVP based on this design spec: {{design_spec}}.
+      Prioritize working software over polish.
+      Write tests for critical paths.
+      When all tests pass, include "all_tests_pass" in your response.
+    mode: loop
+    timeoutMs: 300000
+    errorMode: retry
+    maxRetries: 3
+    maxIterations: 5
+    until: "all_tests_pass"
+    outputVar: build_output
+
+  - name: Test
+    functionId: "agent::chat"
+    promptTemplate: >
+      QA the build output: {{build_output}}.
+      Collect evidence (screenshots, test results) for every acceptance criterion.
+      Flag any P0/P1 issues that block ship.
+    mode: sequential
+    timeoutMs: 180000
+    errorMode: fail
+    outputVar: qa_report
+
+  - name: Ship
+    functionId: "agent::chat"
+    promptTemplate: >
+      Deploy the MVP based on QA report: {{qa_report}}.
+      Set up monitoring, alerting, and rollback procedures.
+      Produce a deployment checklist and go-live confirmation.
+    mode: sequential
+    timeoutMs: 120000
+    errorMode: retry
+    maxRetries: 2
+    outputVar: deployment_status

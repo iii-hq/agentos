@@ -1,8 +1,10 @@
 import { describe, it, expect } from "vitest";
 import type {
   AgentConfig,
+  AgentPersona,
   ChatRequest,
   ChatResponse,
+  Division,
   TokenUsage,
   ToolCall,
 } from "../types.js";
@@ -176,5 +178,102 @@ describe("ToolCall type", () => {
     };
     const namespace = tc.id.split("::")[0];
     expect(namespace).toBe("simple_tool");
+  });
+});
+
+describe("Division type", () => {
+  it("accepts all valid division values", () => {
+    const divisions: Division[] = [
+      "engineering",
+      "quality",
+      "research",
+      "operations",
+      "communication",
+      "support",
+      "personal",
+      "design",
+      "marketing",
+    ];
+    expect(divisions).toHaveLength(9);
+  });
+});
+
+describe("AgentPersona type", () => {
+  it("accepts empty persona", () => {
+    const persona: AgentPersona = {};
+    expect(persona.division).toBeUndefined();
+    expect(persona.communicationStyle).toBeUndefined();
+  });
+
+  it("accepts persona with only division", () => {
+    const persona: AgentPersona = { division: "engineering" };
+    expect(persona.division).toBe("engineering");
+  });
+
+  it("accepts full persona with all fields", () => {
+    const persona: AgentPersona = {
+      division: "quality",
+      communicationStyle: "Constructive and specific",
+      criticalRules: ["Never approve insecure code", "Provide alternatives"],
+      workflow: {
+        phases: ["Scan", "Analyze", "Comment", "Verify", "Approve"],
+      },
+      successMetrics: {
+        metrics: ["Bugs caught >90%", "Review turnaround <4h"],
+      },
+      learning: {
+        patterns: ["Common bug patterns", "Effective review phrasing"],
+      },
+    };
+    expect(persona.division).toBe("quality");
+    expect(persona.criticalRules).toHaveLength(2);
+    expect(persona.workflow?.phases).toHaveLength(5);
+    expect(persona.successMetrics?.metrics).toHaveLength(2);
+    expect(persona.learning?.patterns).toHaveLength(2);
+  });
+});
+
+describe("AgentConfig with persona", () => {
+  it("accepts config without persona (backward compat)", () => {
+    const config: AgentConfig = { name: "Legacy Agent" };
+    expect(config.persona).toBeUndefined();
+  });
+
+  it("accepts config with persona", () => {
+    const config: AgentConfig = {
+      name: "Enriched Agent",
+      persona: {
+        division: "engineering",
+        communicationStyle: "Direct and technical",
+        criticalRules: ["Always write tests"],
+        workflow: { phases: ["Analyze", "Implement", "Test"] },
+        successMetrics: { metrics: ["Coverage >80%"] },
+        learning: { patterns: ["Refactoring approaches"] },
+      },
+      tags: ["coding"],
+    };
+    expect(config.persona?.division).toBe("engineering");
+    expect(config.persona?.workflow?.phases).toContain("Implement");
+    expect(config.persona?.successMetrics?.metrics).toHaveLength(1);
+  });
+
+  it("filters agents by division", () => {
+    const agents: AgentConfig[] = [
+      { name: "coder", persona: { division: "engineering" } },
+      { name: "reviewer", persona: { division: "quality" } },
+      { name: "architect", persona: { division: "engineering" } },
+      { name: "assistant", persona: { division: "personal" } },
+      { name: "legacy" },
+    ];
+
+    const engineering = agents.filter(
+      (a) => a.persona?.division === "engineering",
+    );
+    expect(engineering).toHaveLength(2);
+    expect(engineering.map((a) => a.name)).toEqual(["coder", "architect"]);
+
+    const withoutDivision = agents.filter((a) => !a.persona?.division);
+    expect(withoutDivision).toHaveLength(1);
+    expect(withoutDivision[0].name).toBe("legacy");
   });
 });
