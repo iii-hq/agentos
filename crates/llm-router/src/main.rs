@@ -164,7 +164,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing_subscriber::fmt::init();
 
     let iii = III::new("ws://localhost:49134");
-    iii.connect().await?;
 
     let state = Arc::new(RouterState {
         usage: DashMap::new(),
@@ -591,5 +590,312 @@ mod tests {
         let parts: Vec<&str> = key.splitn(2, ':').collect();
         assert_eq!(parts[0], "anthropic");
         assert_eq!(parts[1], "claude-sonnet-4-20250514");
+    }
+
+    #[test]
+    fn test_score_complexity_no_content_field() {
+        let messages = vec![json!({"role": "user"})];
+        let score = score_complexity(&messages, &[]);
+        assert_eq!(score, 0);
+    }
+
+    #[test]
+    fn test_score_complexity_null_content() {
+        let messages = vec![json!({"role": "user", "content": null})];
+        let score = score_complexity(&messages, &[]);
+        assert_eq!(score, 0);
+    }
+
+    #[test]
+    fn test_score_complexity_whitespace_only() {
+        let messages = vec![json!({"role": "user", "content": "   \t\n  "})];
+        let score = score_complexity(&messages, &[]);
+        assert_eq!(score, 0);
+    }
+
+    #[test]
+    fn test_score_complexity_exactly_100_chars() {
+        let content = "x".repeat(100);
+        let messages = vec![json!({"role": "user", "content": content})];
+        let score = score_complexity(&messages, &[]);
+        assert_eq!(score, 1);
+    }
+
+    #[test]
+    fn test_score_complexity_99_chars() {
+        let content = "x".repeat(99);
+        let messages = vec![json!({"role": "user", "content": content})];
+        let score = score_complexity(&messages, &[]);
+        assert_eq!(score, 0);
+    }
+
+    #[test]
+    fn test_score_complexity_exactly_10_messages() {
+        let messages: Vec<Value> = (0..10).map(|i| json!({"role": "user", "content": format!("m{}", i)})).collect();
+        let score = score_complexity(&messages, &[]);
+        assert_eq!(score, 0);
+    }
+
+    #[test]
+    fn test_select_model_boundary_0() {
+        let (_, model) = select_model(0, None);
+        assert_eq!(model, "claude-haiku-4-5-20251001");
+    }
+
+    #[test]
+    fn test_select_model_very_high_complexity() {
+        let (provider, model) = select_model(1000, None);
+        assert_eq!(provider, "anthropic");
+        assert_eq!(model, "claude-opus-4-20250514");
+    }
+
+    #[test]
+    fn test_select_model_empty_preferred_falls_through() {
+        let (_, model) = select_model(5, Some(""));
+        assert_eq!(model, "claude-haiku-4-5-20251001");
+    }
+
+    #[test]
+    fn test_select_model_all_named_preferences() {
+        let prefs = vec![
+            ("opus", "claude-opus-4-20250514"),
+            ("claude-opus", "claude-opus-4-20250514"),
+            ("sonnet", "claude-sonnet-4-20250514"),
+            ("claude-sonnet", "claude-sonnet-4-20250514"),
+            ("haiku", "claude-haiku-4-5-20251001"),
+            ("claude-haiku", "claude-haiku-4-5-20251001"),
+            ("gpt-4o", "gpt-4o"),
+            ("gemini", "gemini-2.0-flash"),
+        ];
+        for (pref, expected_model) in prefs {
+            let (_, model) = select_model(50, Some(pref));
+            assert_eq!(model, expected_model, "Preference '{}' should select model '{}'", pref, expected_model);
+        }
+    }
+
+    #[test]
+    fn test_default_providers_all_have_non_empty_base_url() {
+        for (name, base_url, _, _, _) in default_providers() {
+            assert!(!base_url.is_empty(), "Provider {} has empty base_url", name);
+        }
+    }
+
+    #[test]
+    fn test_default_providers_env_key_format() {
+        for (name, _, env_key, _, _) in default_providers() {
+            if !env_key.is_empty() {
+                assert!(env_key.ends_with("_KEY") || env_key.ends_with("_API_KEY"),
+                    "Provider {} env_key '{}' doesn't follow convention", name, env_key);
+            }
+        }
+    }
+
+    #[test]
+    fn test_default_providers_model_count_per_provider() {
+        let providers = default_providers();
+        for (name, _, _, _, models) in &providers {
+            assert!(models.len() >= 1, "Provider {} should have at least 1 model", name);
+        }
+        let anthropic = providers.iter().find(|p| p.0 == "anthropic").unwrap();
+        assert_eq!(anthropic.4.len(), 3);
+        let openai = providers.iter().find(|p| p.0 == "openai").unwrap();
+        assert_eq!(openai.4.len(), 4);
+    }
+
+    #[test]
+    fn test_usage_key_with_colon_in_model_name() {
+        let key = format!("{}:{}", "openrouter", "anthropic/claude-opus-4-20250514");
+        let parts: Vec<&str> = key.splitn(2, ':').collect();
+        assert_eq!(parts[0], "openrouter");
+        assert_eq!(parts[1], "anthropic/claude-opus-4-20250514");
+    }
+
+    #[test]
+    fn test_usage_key_splitn_preserves_colons_in_value() {
+        let key = "provider:model:with:colons";
+        let parts: Vec<&str> = key.splitn(2, ':').collect();
+        assert_eq!(parts.len(), 2);
+        assert_eq!(parts[0], "provider");
+        assert_eq!(parts[1], "model:with:colons");
+    }
+
+    #[test]
+    fn test_default_providers_unique_names() {
+        let providers = default_providers();
+        let names: Vec<&str> = providers.iter().map(|p| p.0).collect();
+        let mut deduped = names.clone();
+        deduped.sort();
+        deduped.dedup();
+        assert_eq!(names.len(), deduped.len());
+    }
+
+    #[test]
+    fn test_default_providers_groq_exists() {
+        assert!(default_providers().iter().any(|p| p.0 == "groq"));
+    }
+
+    #[test]
+    fn test_default_providers_deepseek_exists() {
+        assert!(default_providers().iter().any(|p| p.0 == "deepseek"));
+    }
+
+    #[test]
+    fn test_default_providers_together_exists() {
+        assert!(default_providers().iter().any(|p| p.0 == "together"));
+    }
+
+    #[test]
+    fn test_default_providers_fireworks_exists() {
+        assert!(default_providers().iter().any(|p| p.0 == "fireworks"));
+    }
+
+    #[test]
+    fn test_score_complexity_combined_code_and_analysis() {
+        let messages = vec![json!({"role": "user", "content": "analyze this function ```code```"})];
+        let score = score_complexity(&messages, &[]);
+        assert!(score >= 35, "Expected >= 35 for code+analysis, got {}", score);
+    }
+
+    #[test]
+    fn test_score_complexity_compare_keyword_alone() {
+        let messages = vec![json!({"role": "user", "content": "compare option A with option B"})];
+        let score = score_complexity(&messages, &[]);
+        assert!(score >= 15);
+    }
+
+    #[test]
+    fn test_score_complexity_function_keyword_alone() {
+        let messages = vec![json!({"role": "user", "content": "write a function that adds two numbers"})];
+        let score = score_complexity(&messages, &[]);
+        assert!(score >= 20);
+    }
+
+    #[test]
+    fn test_score_complexity_exactly_11_messages() {
+        let messages: Vec<Value> = (0..11).map(|i| json!({"role": "user", "content": format!("m{}", i)})).collect();
+        let score = score_complexity(&messages, &[]);
+        assert!(score >= 10);
+    }
+
+    #[test]
+    fn test_score_complexity_one_tool_adds_5() {
+        let messages = vec![json!({"role": "user", "content": "hi"})];
+        let tools = vec![json!({"name": "t"})];
+        let s1 = score_complexity(&messages, &[]);
+        let s2 = score_complexity(&messages, &tools);
+        assert_eq!(s2 - s1, 5);
+    }
+
+    #[test]
+    fn test_score_complexity_ten_tools() {
+        let messages = vec![json!({"role": "user", "content": "hi"})];
+        let tools: Vec<Value> = (0..10).map(|i| json!({"name": format!("t{}", i)})).collect();
+        let score = score_complexity(&messages, &tools);
+        assert!(score >= 50);
+    }
+
+    #[test]
+    fn test_score_complexity_200_chars_gives_2() {
+        let content = "y".repeat(200);
+        let messages = vec![json!({"role": "user", "content": content})];
+        assert_eq!(score_complexity(&messages, &[]), 2);
+    }
+
+    #[test]
+    fn test_select_model_boundary_exact_ranges() {
+        for c in 0..=10 {
+            let (_, model) = select_model(c, None);
+            assert_eq!(model, "claude-haiku-4-5-20251001", "complexity {} should be haiku", c);
+        }
+        for c in 11..=40 {
+            let (_, model) = select_model(c, None);
+            assert_eq!(model, "claude-sonnet-4-20250514", "complexity {} should be sonnet", c);
+        }
+        for c in [41, 50, 100, 255, u32::MAX] {
+            let (_, model) = select_model(c, None);
+            assert_eq!(model, "claude-opus-4-20250514", "complexity {} should be opus", c);
+        }
+    }
+
+    #[test]
+    fn test_select_model_preferred_overrides_complexity() {
+        let (_, model) = select_model(100, Some("haiku"));
+        assert_eq!(model, "claude-haiku-4-5-20251001");
+
+        let (_, model) = select_model(0, Some("opus"));
+        assert_eq!(model, "claude-opus-4-20250514");
+    }
+
+    #[test]
+    fn test_default_providers_openai_details() {
+        let providers = default_providers();
+        let openai = providers.iter().find(|p| p.0 == "openai").unwrap();
+        assert_eq!(openai.1, "https://api.openai.com/v1");
+        assert_eq!(openai.2, "OPENAI_API_KEY");
+        assert!(openai.4.contains(&"gpt-4o"));
+    }
+
+    #[test]
+    fn test_default_providers_google_details() {
+        let providers = default_providers();
+        let google = providers.iter().find(|p| p.0 == "google").unwrap();
+        assert_eq!(google.2, "GOOGLE_API_KEY");
+        assert!(google.4.contains(&"gemini-2.0-flash"));
+    }
+
+    #[test]
+    fn test_default_providers_groq_details() {
+        let providers = default_providers();
+        let groq = providers.iter().find(|p| p.0 == "groq").unwrap();
+        assert_eq!(groq.2, "GROQ_API_KEY");
+        assert!(groq.4.contains(&"llama-3.3-70b-versatile"));
+    }
+
+    #[test]
+    fn test_default_providers_deepseek_details() {
+        let providers = default_providers();
+        let ds = providers.iter().find(|p| p.0 == "deepseek").unwrap();
+        assert_eq!(ds.2, "DEEPSEEK_API_KEY");
+        assert!(ds.4.contains(&"deepseek-chat"));
+        assert!(ds.4.contains(&"deepseek-reasoner"));
+    }
+
+    #[test]
+    fn test_default_providers_mistral_details() {
+        let providers = default_providers();
+        let mistral = providers.iter().find(|p| p.0 == "mistral").unwrap();
+        assert_eq!(mistral.2, "MISTRAL_API_KEY");
+    }
+
+    #[test]
+    fn test_default_providers_openrouter_details() {
+        let providers = default_providers();
+        let or = providers.iter().find(|p| p.0 == "openrouter").unwrap();
+        assert_eq!(or.2, "OPENROUTER_API_KEY");
+        assert!(or.4.iter().any(|m| m.contains("anthropic/")));
+    }
+
+    #[test]
+    fn test_default_providers_ollama_local() {
+        let providers = default_providers();
+        let ollama = providers.iter().find(|p| p.0 == "ollama").unwrap();
+        assert!(ollama.1.contains("localhost"));
+        assert!(ollama.2.is_empty());
+    }
+
+    #[test]
+    fn test_usage_key_empty_provider() {
+        let key = format!("{}:{}", "", "model-name");
+        let parts: Vec<&str> = key.splitn(2, ':').collect();
+        assert_eq!(parts[0], "");
+        assert_eq!(parts[1], "model-name");
+    }
+
+    #[test]
+    fn test_usage_key_no_colon() {
+        let key = "just-a-key";
+        let parts: Vec<&str> = key.splitn(2, ':').collect();
+        assert_eq!(parts.len(), 1);
+        assert_eq!(parts[0], "just-a-key");
     }
 }

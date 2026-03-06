@@ -344,6 +344,246 @@ mod tests {
         ts.add(TaintLabel::Secret);
         assert_eq!(ts.labels().len(), 1);
     }
+
+    #[test]
+    fn test_tainted_value_with_number() {
+        let tv = TaintedValue::new(42_i64, TaintSet::from_labels(vec![TaintLabel::Secret]));
+        assert_eq!(tv.value, 42);
+        assert!(tv.taints.check(&TaintLabel::Secret));
+    }
+
+    #[test]
+    fn test_tainted_value_with_vec() {
+        let tv = TaintedValue::new(vec![1, 2, 3], TaintSet::from_labels(vec![TaintLabel::Pii]));
+        assert_eq!(tv.value.len(), 3);
+        assert!(tv.taints.check(&TaintLabel::Pii));
+    }
+
+    #[test]
+    fn test_tainted_value_with_nested_json() {
+        let nested = json!({"user": {"name": "Alice", "age": 30}});
+        let tv = TaintedValue::new(nested.clone(), TaintSet::from_labels(vec![TaintLabel::Pii, TaintLabel::UserInput]));
+        assert_eq!(tv.value["user"]["name"], "Alice");
+        assert!(tv.taints.check(&TaintLabel::Pii));
+        assert!(tv.taints.check(&TaintLabel::UserInput));
+    }
+
+    #[test]
+    fn test_tainted_value_with_boolean() {
+        let tv = TaintedValue::new(true, TaintSet::new());
+        assert!(tv.value);
+        assert!(tv.taints.is_empty());
+    }
+
+    #[test]
+    fn test_flow_control_external_network_all_sinks() {
+        let ts = TaintSet::from_labels(vec![TaintLabel::ExternalNetwork]);
+        assert!(can_flow_to(&ts, &TaintSink::LogOutput));
+        assert!(can_flow_to(&ts, &TaintSink::NetworkSend));
+        assert!(can_flow_to(&ts, &TaintSink::FileWrite));
+        assert!(can_flow_to(&ts, &TaintSink::AgentResponse));
+    }
+
+    #[test]
+    fn test_flow_control_user_input_all_sinks() {
+        let ts = TaintSet::from_labels(vec![TaintLabel::UserInput]);
+        assert!(can_flow_to(&ts, &TaintSink::LogOutput));
+        assert!(can_flow_to(&ts, &TaintSink::NetworkSend));
+        assert!(can_flow_to(&ts, &TaintSink::FileWrite));
+        assert!(can_flow_to(&ts, &TaintSink::AgentResponse));
+    }
+
+    #[test]
+    fn test_flow_control_pii_all_sinks() {
+        let ts = TaintSet::from_labels(vec![TaintLabel::Pii]);
+        assert!(!can_flow_to(&ts, &TaintSink::LogOutput));
+        assert!(can_flow_to(&ts, &TaintSink::NetworkSend));
+        assert!(can_flow_to(&ts, &TaintSink::FileWrite));
+        assert!(can_flow_to(&ts, &TaintSink::AgentResponse));
+    }
+
+    #[test]
+    fn test_flow_control_secret_all_sinks() {
+        let ts = TaintSet::from_labels(vec![TaintLabel::Secret]);
+        assert!(!can_flow_to(&ts, &TaintSink::LogOutput));
+        assert!(!can_flow_to(&ts, &TaintSink::NetworkSend));
+        assert!(!can_flow_to(&ts, &TaintSink::FileWrite));
+        assert!(!can_flow_to(&ts, &TaintSink::AgentResponse));
+    }
+
+    #[test]
+    fn test_flow_control_untrusted_agent_all_sinks() {
+        let ts = TaintSet::from_labels(vec![TaintLabel::UntrustedAgent]);
+        assert!(can_flow_to(&ts, &TaintSink::LogOutput));
+        assert!(can_flow_to(&ts, &TaintSink::NetworkSend));
+        assert!(!can_flow_to(&ts, &TaintSink::FileWrite));
+        assert!(can_flow_to(&ts, &TaintSink::AgentResponse));
+    }
+
+    #[test]
+    fn test_merge_with_empty_set() {
+        let mut ts = TaintSet::from_labels(vec![TaintLabel::Secret, TaintLabel::Pii]);
+        let empty = TaintSet::new();
+        ts.merge(&empty);
+        assert_eq!(ts.labels().len(), 2);
+        assert!(ts.check(&TaintLabel::Secret));
+        assert!(ts.check(&TaintLabel::Pii));
+    }
+
+    #[test]
+    fn test_merge_empty_with_nonempty() {
+        let mut ts = TaintSet::new();
+        let other = TaintSet::from_labels(vec![TaintLabel::ExternalNetwork]);
+        ts.merge(&other);
+        assert_eq!(ts.labels().len(), 1);
+        assert!(ts.check(&TaintLabel::ExternalNetwork));
+    }
+
+    #[test]
+    fn test_merge_two_empty_sets() {
+        let mut ts = TaintSet::new();
+        let other = TaintSet::new();
+        ts.merge(&other);
+        assert!(ts.is_empty());
+    }
+
+    #[test]
+    fn test_declassify_then_re_add() {
+        let mut ts = TaintSet::from_labels(vec![TaintLabel::Secret]);
+        ts.declassify(&TaintLabel::Secret);
+        assert!(!ts.check(&TaintLabel::Secret));
+        ts.add(TaintLabel::Secret);
+        assert!(ts.check(&TaintLabel::Secret));
+    }
+
+    #[test]
+    fn test_multiple_add_merge_declassify_sequence() {
+        let mut ts = TaintSet::new();
+        ts.add(TaintLabel::Pii);
+        ts.add(TaintLabel::Secret);
+        assert_eq!(ts.labels().len(), 2);
+
+        let other = TaintSet::from_labels(vec![TaintLabel::UserInput, TaintLabel::ExternalNetwork]);
+        ts.merge(&other);
+        assert_eq!(ts.labels().len(), 4);
+
+        ts.declassify(&TaintLabel::Secret);
+        assert_eq!(ts.labels().len(), 3);
+        assert!(!ts.check(&TaintLabel::Secret));
+
+        ts.add(TaintLabel::UntrustedAgent);
+        assert_eq!(ts.labels().len(), 4);
+
+        ts.declassify(&TaintLabel::Pii);
+        ts.declassify(&TaintLabel::UserInput);
+        ts.declassify(&TaintLabel::ExternalNetwork);
+        ts.declassify(&TaintLabel::UntrustedAgent);
+        assert!(ts.is_empty());
+    }
+
+    #[test]
+    fn test_tainted_value_serialization_roundtrip_string() {
+        let tv = TaintedValue::new("sensitive data".to_string(), TaintSet::from_labels(vec![TaintLabel::Pii, TaintLabel::Secret]));
+        let serialized = serde_json::to_string(&tv).unwrap();
+        let deserialized: TaintedValue<String> = serde_json::from_str(&serialized).unwrap();
+        assert_eq!(deserialized.value, "sensitive data");
+        assert!(deserialized.taints.check(&TaintLabel::Pii));
+        assert!(deserialized.taints.check(&TaintLabel::Secret));
+    }
+
+    #[test]
+    fn test_tainted_value_serialization_roundtrip_json() {
+        let data = json!({"key": "value", "nested": [1, 2, 3]});
+        let tv = TaintedValue::new(data.clone(), TaintSet::from_labels(vec![TaintLabel::UserInput]));
+        let serialized = serde_json::to_value(&tv).unwrap();
+        assert_eq!(serialized["value"]["key"], "value");
+        assert_eq!(serialized["value"]["nested"][1], 2);
+        let labels = serialized["taints"]["labels"].as_array().unwrap();
+        assert_eq!(labels.len(), 1);
+    }
+
+    #[test]
+    fn test_taint_label_clone_and_copy() {
+        let label = TaintLabel::Secret;
+        let cloned = label.clone();
+        let copied = label;
+        assert_eq!(label, cloned);
+        assert_eq!(label, copied);
+    }
+
+    #[test]
+    fn test_taint_set_from_labels_with_duplicates() {
+        let ts = TaintSet::from_labels(vec![TaintLabel::Pii, TaintLabel::Pii, TaintLabel::Pii]);
+        assert_eq!(ts.labels().len(), 1);
+        assert!(ts.check(&TaintLabel::Pii));
+    }
+
+    #[test]
+    fn test_flow_secret_and_pii_combined() {
+        let ts = TaintSet::from_labels(vec![TaintLabel::Secret, TaintLabel::Pii]);
+        assert!(!can_flow_to(&ts, &TaintSink::LogOutput));
+        assert!(!can_flow_to(&ts, &TaintSink::NetworkSend));
+        assert!(!can_flow_to(&ts, &TaintSink::FileWrite));
+        assert!(!can_flow_to(&ts, &TaintSink::AgentResponse));
+    }
+
+    #[test]
+    fn test_flow_secret_and_untrusted_combined() {
+        let ts = TaintSet::from_labels(vec![TaintLabel::Secret, TaintLabel::UntrustedAgent]);
+        assert!(!can_flow_to(&ts, &TaintSink::LogOutput));
+        assert!(!can_flow_to(&ts, &TaintSink::NetworkSend));
+        assert!(!can_flow_to(&ts, &TaintSink::FileWrite));
+        assert!(!can_flow_to(&ts, &TaintSink::AgentResponse));
+    }
+
+    #[test]
+    fn test_flow_pii_and_untrusted_combined() {
+        let ts = TaintSet::from_labels(vec![TaintLabel::Pii, TaintLabel::UntrustedAgent]);
+        assert!(!can_flow_to(&ts, &TaintSink::LogOutput));
+        assert!(can_flow_to(&ts, &TaintSink::NetworkSend));
+        assert!(!can_flow_to(&ts, &TaintSink::FileWrite));
+        assert!(can_flow_to(&ts, &TaintSink::AgentResponse));
+    }
+
+    #[test]
+    fn test_declassify_secret_enables_all_flows() {
+        let mut ts = TaintSet::from_labels(vec![TaintLabel::Secret]);
+        assert!(!can_flow_to(&ts, &TaintSink::LogOutput));
+        ts.declassify(&TaintLabel::Secret);
+        assert!(can_flow_to(&ts, &TaintSink::LogOutput));
+        assert!(can_flow_to(&ts, &TaintSink::NetworkSend));
+        assert!(can_flow_to(&ts, &TaintSink::FileWrite));
+        assert!(can_flow_to(&ts, &TaintSink::AgentResponse));
+    }
+
+    #[test]
+    fn test_taint_set_serialization_roundtrip() {
+        let ts = TaintSet::from_labels(vec![TaintLabel::ExternalNetwork, TaintLabel::UserInput, TaintLabel::Secret]);
+        let serialized = serde_json::to_string(&ts).unwrap();
+        let deserialized: TaintSet = serde_json::from_str(&serialized).unwrap();
+        assert_eq!(deserialized.labels().len(), 3);
+        assert!(deserialized.check(&TaintLabel::ExternalNetwork));
+        assert!(deserialized.check(&TaintLabel::UserInput));
+        assert!(deserialized.check(&TaintLabel::Secret));
+    }
+
+    #[test]
+    fn test_parse_label_case_sensitivity() {
+        assert_eq!(parse_label("secret"), None);
+        assert_eq!(parse_label("SECRET"), None);
+        assert_eq!(parse_label("pii"), None);
+        assert_eq!(parse_label("PII"), None);
+        assert_eq!(parse_label("userinput"), None);
+        assert_eq!(parse_label("USERINPUT"), None);
+    }
+
+    #[test]
+    fn test_parse_sink_case_sensitivity() {
+        assert_eq!(parse_sink("logOutput"), None);
+        assert_eq!(parse_sink("LOGOUTPUT"), None);
+        assert_eq!(parse_sink("networkSend"), None);
+        assert_eq!(parse_sink("filewrite"), None);
+    }
 }
 
 pub fn register(iii: &III) {

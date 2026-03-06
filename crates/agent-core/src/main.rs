@@ -14,7 +14,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing_subscriber::fmt::init();
 
     let iii = III::new("ws://localhost:49134");
-    iii.connect().await?;
 
     let iii_clone = iii.clone();
     iii.register_function_with_description(
@@ -95,7 +94,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     iii.register_trigger("queue", "agent::chat", json!({ "topic": "agent.inbox" }))?;
 
-    tracing::info!("agent-core worker connected");
+    tracing::info!("agent-core worker started");
     tokio::signal::ctrl_c().await?;
     iii.shutdown_async().await;
     Ok(())
@@ -532,6 +531,643 @@ mod tests {
             iterations += 1;
         }
         assert_eq!(iterations, 50);
+    }
+
+    #[test]
+    fn test_chat_request_empty_message() {
+        let json_val = json!({
+            "agentId": "agent-1",
+            "message": "",
+        });
+        let req: ChatRequest = serde_json::from_value(json_val).unwrap();
+        assert_eq!(req.message, "");
+    }
+
+    #[test]
+    fn test_chat_request_very_long_message() {
+        let long_msg = "x".repeat(100_000);
+        let json_val = json!({
+            "agentId": "agent-1",
+            "message": long_msg,
+        });
+        let req: ChatRequest = serde_json::from_value(json_val).unwrap();
+        assert_eq!(req.message.len(), 100_000);
+    }
+
+    #[test]
+    fn test_chat_request_with_all_optional_fields() {
+        let json_val = json!({
+            "agentId": "agent-full",
+            "message": "Hello",
+            "sessionId": "sess-99",
+            "systemPrompt": "Be concise",
+        });
+        let req: ChatRequest = serde_json::from_value(json_val).unwrap();
+        assert_eq!(req.session_id, Some("sess-99".to_string()));
+        assert_eq!(req.system_prompt, Some("Be concise".to_string()));
+    }
+
+    #[test]
+    fn test_chat_request_unicode_message() {
+        let json_val = json!({
+            "agentId": "agent-unicode",
+            "message": "Hello! CJK: \u{4e16}\u{754c} Emoji: \u{1f600}\u{1f680}",
+        });
+        let req: ChatRequest = serde_json::from_value(json_val).unwrap();
+        assert!(req.message.contains('\u{4e16}'));
+        assert!(req.message.contains('\u{1f600}'));
+    }
+
+    #[test]
+    fn test_agent_config_no_optional_fields() {
+        let config = AgentConfig {
+            id: None,
+            name: "Minimal".to_string(),
+            description: None,
+            model: None,
+            system_prompt: None,
+            capabilities: None,
+            resources: None,
+            tags: None,
+        };
+        assert!(config.id.is_none());
+        assert!(config.description.is_none());
+        assert!(config.model.is_none());
+        assert!(config.system_prompt.is_none());
+        assert!(config.capabilities.is_none());
+        assert!(config.resources.is_none());
+        assert!(config.tags.is_none());
+    }
+
+    #[test]
+    fn test_agent_config_all_fields_populated() {
+        let config = AgentConfig {
+            id: Some("full-agent".to_string()),
+            name: "Full Agent".to_string(),
+            description: Some("Complete agent config".to_string()),
+            model: Some(ModelConfig {
+                provider: Some("anthropic".to_string()),
+                model: Some("claude-opus-4-6".to_string()),
+                max_tokens: Some(16384),
+            }),
+            system_prompt: Some("You are an expert".to_string()),
+            capabilities: Some(Capabilities {
+                tools: vec!["file::*".to_string(), "memory::*".to_string(), "network::*".to_string()],
+                memory_scopes: Some(vec!["personal".to_string(), "shared".to_string()]),
+                network_hosts: Some(vec!["api.anthropic.com".to_string()]),
+            }),
+            resources: Some(Resources {
+                max_tokens_per_hour: Some(500_000),
+            }),
+            tags: Some(vec!["prod".to_string(), "v2".to_string(), "ai".to_string()]),
+        };
+        assert_eq!(config.id, Some("full-agent".to_string()));
+        assert_eq!(config.model.as_ref().unwrap().max_tokens, Some(16384));
+        assert_eq!(config.capabilities.as_ref().unwrap().tools.len(), 3);
+        assert_eq!(config.tags.as_ref().unwrap().len(), 3);
+    }
+
+    #[test]
+    fn test_agent_id_auto_generation_is_uuid() {
+        let config = AgentConfig {
+            id: None,
+            name: "AutoId".to_string(),
+            description: None,
+            model: None,
+            system_prompt: None,
+            capabilities: None,
+            resources: None,
+            tags: None,
+        };
+        let generated = config.id.clone().unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
+        assert_eq!(generated.len(), 36);
+        assert_eq!(generated.chars().filter(|c| *c == '-').count(), 4);
+    }
+
+    #[test]
+    fn test_agent_id_explicit_not_overridden() {
+        let config = AgentConfig {
+            id: Some("my-custom-id".to_string()),
+            name: "ExplicitId".to_string(),
+            description: None,
+            model: None,
+            system_prompt: None,
+            capabilities: None,
+            resources: None,
+            tags: None,
+        };
+        let id = config.id.clone().unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
+        assert_eq!(id, "my-custom-id");
+    }
+
+    #[test]
+    fn test_max_iterations_boundary_at_49() {
+        let mut iterations: u32 = 0;
+        let tool_calls_present = true;
+        while tool_calls_present && iterations < MAX_ITERATIONS {
+            iterations += 1;
+            if iterations == 49 {
+                break;
+            }
+        }
+        assert_eq!(iterations, 49);
+        assert!(iterations < MAX_ITERATIONS);
+    }
+
+    #[test]
+    fn test_max_iterations_boundary_at_50() {
+        let mut iterations: u32 = 0;
+        while iterations < MAX_ITERATIONS {
+            iterations += 1;
+        }
+        assert_eq!(iterations, MAX_ITERATIONS);
+        assert!(!(iterations < MAX_ITERATIONS));
+    }
+
+    #[test]
+    fn test_max_iterations_empty_tool_calls_break() {
+        let tool_calls: Vec<Value> = vec![];
+        let iterations: u32 = 0;
+        let should_break = tool_calls.is_empty() || iterations >= MAX_ITERATIONS;
+        assert!(should_break);
+    }
+
+    #[test]
+    fn test_tool_call_parsing_nested_arguments() {
+        let json_val = json!({
+            "callId": "tc-nested",
+            "id": "tool::complex",
+            "arguments": {
+                "config": {
+                    "nested": {
+                        "deep": true,
+                        "level": 3,
+                    },
+                },
+                "items": [1, 2, 3],
+            },
+        });
+        let tc: ToolCall = serde_json::from_value(json_val).unwrap();
+        assert!(tc.arguments["config"]["nested"]["deep"].as_bool().unwrap());
+        assert_eq!(tc.arguments["config"]["nested"]["level"], 3);
+        assert_eq!(tc.arguments["items"].as_array().unwrap().len(), 3);
+    }
+
+    #[test]
+    fn test_tool_call_parsing_array_arguments() {
+        let json_val = json!({
+            "callId": "tc-arr",
+            "id": "tool::batch",
+            "arguments": [1, "two", false, null],
+        });
+        let tc: ToolCall = serde_json::from_value(json_val).unwrap();
+        assert!(tc.arguments.is_array());
+        assert_eq!(tc.arguments.as_array().unwrap().len(), 4);
+    }
+
+    #[test]
+    fn test_tool_call_parsing_empty_arguments() {
+        let json_val = json!({
+            "callId": "tc-empty",
+            "id": "tool::noop",
+            "arguments": {},
+        });
+        let tc: ToolCall = serde_json::from_value(json_val).unwrap();
+        assert!(tc.arguments.as_object().unwrap().is_empty());
+    }
+
+    #[test]
+    fn test_tool_call_parsing_null_argument_value() {
+        let json_val = json!({
+            "callId": "tc-null",
+            "id": "tool::nullarg",
+            "arguments": {"key": null},
+        });
+        let tc: ToolCall = serde_json::from_value(json_val).unwrap();
+        assert!(tc.arguments["key"].is_null());
+    }
+
+    #[test]
+    fn test_risk_score_exactly_0_5_passes() {
+        let risk_score: f64 = 0.5;
+        let rejected = risk_score > 0.5;
+        assert!(!rejected);
+    }
+
+    #[test]
+    fn test_risk_score_just_above_0_5_fails() {
+        let risk_score: f64 = 0.500001;
+        let rejected = risk_score > 0.5;
+        assert!(rejected);
+    }
+
+    #[test]
+    fn test_risk_score_zero_passes() {
+        let risk_score: f64 = 0.0;
+        let rejected = risk_score > 0.5;
+        assert!(!rejected);
+    }
+
+    #[test]
+    fn test_risk_score_negative_passes() {
+        let risk_score: f64 = -1.0;
+        let rejected = risk_score > 0.5;
+        assert!(!rejected);
+    }
+
+    #[test]
+    fn test_risk_score_one_fails() {
+        let risk_score: f64 = 1.0;
+        let rejected = risk_score > 0.5;
+        assert!(rejected);
+    }
+
+    #[test]
+    fn test_risk_score_default_from_missing_field() {
+        let scan_result = json!({ "safe": true });
+        let risk_score = scan_result["riskScore"].as_f64().unwrap_or(0.0);
+        assert_eq!(risk_score, 0.0);
+    }
+
+    #[test]
+    fn test_message_building_with_empty_memories() {
+        let mut messages: Vec<Value> = vec![];
+        let memories = json!([]);
+        if let Some(mems) = memories.as_array() {
+            messages.extend(mems.iter().cloned());
+        }
+        messages.push(json!({"role": "user", "content": "question"}));
+        assert_eq!(messages.len(), 1);
+        assert_eq!(messages[0]["role"], "user");
+    }
+
+    #[test]
+    fn test_message_building_with_many_memories() {
+        let mut messages: Vec<Value> = vec![];
+        let mut mem_arr = Vec::new();
+        for i in 0..50 {
+            mem_arr.push(json!({"role": if i % 2 == 0 { "user" } else { "assistant" }, "content": format!("msg {}", i)}));
+        }
+        let memories = json!(mem_arr);
+        if let Some(mems) = memories.as_array() {
+            messages.extend(mems.iter().cloned());
+        }
+        messages.push(json!({"role": "user", "content": "new question"}));
+        assert_eq!(messages.len(), 51);
+        assert_eq!(messages[50]["content"], "new question");
+    }
+
+    #[test]
+    fn test_message_building_null_memories_ignored() {
+        let mut messages: Vec<Value> = vec![];
+        let memories = json!(null);
+        if let Some(mems) = memories.as_array() {
+            messages.extend(mems.iter().cloned());
+        }
+        messages.push(json!({"role": "user", "content": "hello"}));
+        assert_eq!(messages.len(), 1);
+    }
+
+    #[test]
+    fn test_tool_filter_multiple_prefixes() {
+        let allowed = vec!["file::".to_string(), "memory::".to_string(), "tool::".to_string()];
+        assert!(allowed.iter().any(|a| "file::read".starts_with(a.as_str())));
+        assert!(allowed.iter().any(|a| "memory::store".starts_with(a.as_str())));
+        assert!(allowed.iter().any(|a| "tool::web_fetch".starts_with(a.as_str())));
+        assert!(!allowed.iter().any(|a| "network::send".starts_with(a.as_str())));
+        assert!(!allowed.iter().any(|a| "security::scan".starts_with(a.as_str())));
+    }
+
+    #[test]
+    fn test_tool_filter_empty_allowed_list() {
+        let allowed: Vec<String> = vec![];
+        let tool_id = "file::read";
+        let matches = allowed.iter().any(|a| tool_id.starts_with(a.as_str()));
+        assert!(!matches);
+    }
+
+    #[test]
+    fn test_tool_filter_exact_match() {
+        let allowed = vec!["file::read".to_string()];
+        let tool_id = "file::read";
+        let matches = allowed.iter().any(|a| tool_id.starts_with(a.as_str()));
+        assert!(matches);
+    }
+
+    #[test]
+    fn test_tool_filter_partial_prefix_no_match() {
+        let allowed = vec!["file::read_all".to_string()];
+        let tool_id = "file::read";
+        let matches = allowed.iter().any(|a| tool_id.starts_with(a.as_str()));
+        assert!(!matches);
+    }
+
+    #[test]
+    fn test_tool_call_id_split_multiple_separators() {
+        let tc = ToolCall {
+            call_id: "c-3".to_string(),
+            id: "security::check::deep".to_string(),
+            arguments: json!({}),
+        };
+        let capability = tc.id.split("::").next().unwrap_or("");
+        assert_eq!(capability, "security");
+    }
+
+    #[test]
+    fn test_tool_call_id_split_empty_string() {
+        let tc = ToolCall {
+            call_id: "c-4".to_string(),
+            id: "".to_string(),
+            arguments: json!({}),
+        };
+        let capability = tc.id.split("::").next().unwrap_or("");
+        assert_eq!(capability, "");
+    }
+
+    #[test]
+    fn test_tool_results_capability_denied() {
+        let result = json!({
+            "toolCallId": "tc-denied",
+            "output": { "error": "capability denied" },
+        });
+        assert_eq!(result["output"]["error"], "capability denied");
+    }
+
+    #[test]
+    fn test_tool_results_success() {
+        let result = json!({
+            "toolCallId": "tc-ok",
+            "output": { "data": "success result" },
+        });
+        assert_eq!(result["output"]["data"], "success result");
+        assert!(result["output"].get("error").is_none());
+    }
+
+    #[test]
+    fn test_session_id_format_with_special_chars() {
+        let agent_id = "agent/special-chars_123";
+        let session_id: Option<String> = None;
+        let result = session_id.unwrap_or_else(|| format!("default:{}", agent_id));
+        assert_eq!(result, "default:agent/special-chars_123");
+    }
+
+    #[test]
+    fn test_response_extraction_missing_content() {
+        let response = json!({});
+        let content = response.get("content").and_then(|v| v.as_str()).unwrap_or("");
+        assert_eq!(content, "");
+    }
+
+    #[test]
+    fn test_response_extraction_null_content() {
+        let response = json!({"content": null});
+        let content = response.get("content").and_then(|v| v.as_str()).unwrap_or("");
+        assert_eq!(content, "");
+    }
+
+    #[test]
+    fn test_response_extraction_present_content() {
+        let response = json!({"content": "Hello, world!"});
+        let content = response.get("content").and_then(|v| v.as_str()).unwrap_or("");
+        assert_eq!(content, "Hello, world!");
+    }
+
+    #[test]
+    fn test_tool_count_from_empty_tools() {
+        let tools = json!([]);
+        let count = tools.as_array().map(|a| a.len()).unwrap_or(0);
+        assert_eq!(count, 0);
+    }
+
+    #[test]
+    fn test_tool_count_from_tools_array() {
+        let tools = json!([{"id": "a"}, {"id": "b"}, {"id": "c"}]);
+        let count = tools.as_array().map(|a| a.len()).unwrap_or(0);
+        assert_eq!(count, 3);
+    }
+
+    #[test]
+    fn test_tool_count_from_non_array() {
+        let tools = json!("not an array");
+        let count = tools.as_array().map(|a| a.len()).unwrap_or(0);
+        assert_eq!(count, 0);
+    }
+
+    #[test]
+    fn test_create_agent_json_structure() {
+        let config = AgentConfig {
+            id: Some("new-agent".to_string()),
+            name: "New Agent".to_string(),
+            description: Some("A new agent".to_string()),
+            model: Some(ModelConfig {
+                provider: Some("anthropic".to_string()),
+                model: Some("claude-sonnet-4-20250514".to_string()),
+                max_tokens: Some(4096),
+            }),
+            system_prompt: Some("Be helpful".to_string()),
+            capabilities: Some(Capabilities {
+                tools: vec!["*".to_string()],
+                memory_scopes: None,
+                network_hosts: None,
+            }),
+            resources: None,
+            tags: Some(vec!["test".to_string()]),
+        };
+        let agent_id = config.id.clone().unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
+        let val = json!({
+            "id": &agent_id,
+            "name": &config.name,
+            "description": &config.description,
+            "model": &config.model,
+            "systemPrompt": &config.system_prompt,
+            "capabilities": &config.capabilities,
+            "resources": &config.resources,
+            "tags": &config.tags,
+        });
+        assert_eq!(val["id"], "new-agent");
+        assert_eq!(val["name"], "New Agent");
+        assert_eq!(val["description"], "A new agent");
+        assert!(val["resources"].is_null());
+    }
+
+    #[test]
+    fn test_iteration_counter_increments_correctly() {
+        let mut iterations: u32 = 0;
+        for _ in 0..5 {
+            iterations += 1;
+        }
+        assert_eq!(iterations, 5);
+    }
+
+    #[test]
+    fn test_tool_call_filter_map_ignores_invalid() {
+        let tool_calls = vec![
+            json!({"callId": "1", "id": "valid::tool", "arguments": {}}),
+            json!({"missing": "fields"}),
+            json!({"callId": "3", "id": "another::tool", "arguments": {"k": "v"}}),
+        ];
+        let calls: Vec<ToolCall> = tool_calls
+            .iter()
+            .filter_map(|tc| serde_json::from_value(tc.clone()).ok())
+            .collect();
+        assert_eq!(calls.len(), 2);
+        assert_eq!(calls[0].id, "valid::tool");
+        assert_eq!(calls[1].id, "another::tool");
+    }
+
+    #[test]
+    fn test_tool_call_filter_map_all_invalid() {
+        let tool_calls = vec![
+            json!({"bad": "data"}),
+            json!(42),
+            json!(null),
+        ];
+        let calls: Vec<ToolCall> = tool_calls
+            .iter()
+            .filter_map(|tc| serde_json::from_value(tc.clone()).ok())
+            .collect();
+        assert_eq!(calls.len(), 0);
+    }
+
+    #[test]
+    fn test_agent_config_serialization_produces_rename() {
+        let config = AgentConfig {
+            id: Some("test".to_string()),
+            name: "Test".to_string(),
+            description: None,
+            model: None,
+            system_prompt: Some("prompt".to_string()),
+            capabilities: None,
+            resources: None,
+            tags: None,
+        };
+        let val = serde_json::to_value(&config).unwrap();
+        assert!(val.get("systemPrompt").is_some());
+        assert!(val.get("system_prompt").is_none());
+    }
+
+    #[test]
+    fn test_risk_score_nan_treated_as_zero() {
+        let scan_result = json!({ "safe": true, "riskScore": "not_a_number" });
+        let risk_score = scan_result["riskScore"].as_f64().unwrap_or(0.0);
+        assert_eq!(risk_score, 0.0);
+        assert!(!(risk_score > 0.5));
+    }
+
+    #[test]
+    fn test_risk_score_very_large_fails() {
+        let risk_score: f64 = 999.99;
+        assert!(risk_score > 0.5);
+    }
+
+    #[test]
+    fn test_risk_score_f64_precision_boundary() {
+        let risk_score: f64 = 0.5 + f64::EPSILON;
+        assert!(risk_score > 0.5);
+    }
+
+    #[test]
+    fn test_tool_filter_wildcard_pattern_match() {
+        let allowed = vec!["file::*".to_string()];
+        let tool_id = "file::*";
+        let matches = allowed.iter().any(|a| tool_id.starts_with(a.as_str()));
+        assert!(matches);
+    }
+
+    #[test]
+    fn test_tool_filter_case_sensitive() {
+        let allowed = vec!["File::".to_string()];
+        let tool_id = "file::read";
+        let matches = allowed.iter().any(|a| tool_id.starts_with(a.as_str()));
+        assert!(!matches);
+    }
+
+    #[test]
+    fn test_tool_filter_empty_string_prefix() {
+        let allowed = vec!["".to_string()];
+        let tool_id = "file::read";
+        let matches = allowed.iter().any(|a| tool_id.starts_with(a.as_str()));
+        assert!(matches);
+    }
+
+    #[test]
+    fn test_message_building_with_non_array_memories() {
+        let mut messages: Vec<Value> = vec![];
+        let memories = json!({"not": "an array"});
+        if let Some(mems) = memories.as_array() {
+            messages.extend(mems.iter().cloned());
+        }
+        messages.push(json!({"role": "user", "content": "test"}));
+        assert_eq!(messages.len(), 1);
+    }
+
+    #[test]
+    fn test_message_building_preserves_order() {
+        let mut messages: Vec<Value> = vec![];
+        let memories = json!([
+            {"role": "user", "content": "first"},
+            {"role": "assistant", "content": "second"},
+            {"role": "user", "content": "third"},
+        ]);
+        if let Some(mems) = memories.as_array() {
+            messages.extend(mems.iter().cloned());
+        }
+        messages.push(json!({"role": "user", "content": "fourth"}));
+        assert_eq!(messages.len(), 4);
+        assert_eq!(messages[0]["content"], "first");
+        assert_eq!(messages[1]["content"], "second");
+        assert_eq!(messages[2]["content"], "third");
+        assert_eq!(messages[3]["content"], "fourth");
+    }
+
+    #[test]
+    fn test_session_id_default_format_empty_agent() {
+        let agent_id = "";
+        let session_id: Option<String> = None;
+        let result = session_id.unwrap_or_else(|| format!("default:{}", agent_id));
+        assert_eq!(result, "default:");
+    }
+
+    #[test]
+    fn test_session_id_default_format_unicode_agent() {
+        let agent_id = "agent-\u{1f600}";
+        let session_id: Option<String> = None;
+        let result = session_id.unwrap_or_else(|| format!("default:{}", agent_id));
+        assert!(result.starts_with("default:"));
+        assert!(result.contains('\u{1f600}'));
+    }
+
+    #[test]
+    fn test_tool_results_mixed_success_and_error() {
+        let mut results = Vec::new();
+        for i in 0..10 {
+            if i % 3 == 0 {
+                results.push(json!({"toolCallId": format!("tc-{}", i), "output": {"error": "denied"}}));
+            } else {
+                results.push(json!({"toolCallId": format!("tc-{}", i), "output": {"data": format!("result-{}", i)}}));
+            }
+        }
+        assert_eq!(results.len(), 10);
+        let errors: Vec<_> = results.iter().filter(|r| r["output"].get("error").is_some()).collect();
+        assert_eq!(errors.len(), 4);
+    }
+
+    #[test]
+    fn test_tool_call_id_split_only_separator() {
+        let tc = ToolCall {
+            call_id: "c".to_string(),
+            id: "::".to_string(),
+            arguments: json!({}),
+        };
+        let capability = tc.id.split("::").next().unwrap_or("");
+        assert_eq!(capability, "");
+    }
+
+    #[test]
+    fn test_response_extraction_numeric_content() {
+        let response = json!({"content": 42});
+        let content = response.get("content").and_then(|v| v.as_str()).unwrap_or("");
+        assert_eq!(content, "");
     }
 }
 

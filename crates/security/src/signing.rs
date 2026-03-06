@@ -322,4 +322,176 @@ mod tests {
         let sig = sign_manifest(&manifest, &private_key).unwrap();
         assert_eq!(sig.len(), 128);
     }
+
+    #[test]
+    fn test_sign_verify_complex_nested_manifest() {
+        let (private_key, public_key) = test_keypair();
+        let manifest = json!({
+            "name": "complex-tool",
+            "version": "2.0.0",
+            "config": {
+                "nested": {
+                    "deep": {
+                        "value": 42,
+                        "list": [1, 2, 3, "four"],
+                        "flag": true,
+                        "nothing": null
+                    }
+                }
+            },
+            "tags": ["security", "signing", "test"]
+        });
+        let sig = sign_manifest(&manifest, &private_key).unwrap();
+        assert!(verify_manifest(&manifest, &sig, &public_key).unwrap());
+    }
+
+    #[test]
+    fn test_sign_verify_with_array_manifest() {
+        let (private_key, public_key) = test_keypair();
+        let manifest = json!([1, "two", true, null, [3, 4], {"key": "val"}]);
+        let sig = sign_manifest(&manifest, &private_key).unwrap();
+        assert!(verify_manifest(&manifest, &sig, &public_key).unwrap());
+    }
+
+    #[test]
+    fn test_sign_verify_with_unicode_strings() {
+        let (private_key, public_key) = test_keypair();
+        let manifest = json!({
+            "greeting": "\u{4f60}\u{597d}\u{4e16}\u{754c}",
+            "emoji": "\u{1f600}\u{1f680}",
+            "accent": "\u{e9}\u{e8}\u{ea}"
+        });
+        let sig = sign_manifest(&manifest, &private_key).unwrap();
+        assert!(verify_manifest(&manifest, &sig, &public_key).unwrap());
+    }
+
+    #[test]
+    fn test_sign_verify_null_manifest() {
+        let (private_key, public_key) = test_keypair();
+        let manifest = json!(null);
+        let sig = sign_manifest(&manifest, &private_key).unwrap();
+        assert!(verify_manifest(&manifest, &sig, &public_key).unwrap());
+    }
+
+    #[test]
+    fn test_sign_empty_vs_null_manifest_different_signatures() {
+        let (private_key, _) = test_keypair();
+        let empty = json!({});
+        let null = json!(null);
+        let sig_empty = sign_manifest(&empty, &private_key).unwrap();
+        let sig_null = sign_manifest(&null, &private_key).unwrap();
+        assert_ne!(sig_empty, sig_null);
+    }
+
+    #[test]
+    fn test_multiple_sign_verify_cycles_same_key() {
+        let (private_key, public_key) = test_keypair();
+        for i in 0..10 {
+            let manifest = json!({"iteration": i, "data": format!("test-{}", i)});
+            let sig = sign_manifest(&manifest, &private_key).unwrap();
+            assert!(verify_manifest(&manifest, &sig, &public_key).unwrap());
+        }
+    }
+
+    #[test]
+    fn test_sign_same_manifest_twice_produces_same_signature() {
+        let (private_key, _) = test_keypair();
+        let manifest = json!({"deterministic": true});
+        let sig1 = sign_manifest(&manifest, &private_key).unwrap();
+        let sig2 = sign_manifest(&manifest, &private_key).unwrap();
+        assert_eq!(sig1, sig2);
+    }
+
+    #[test]
+    fn test_canonical_json_special_characters_in_strings() {
+        let val = json!({"key": "value with \"quotes\" and \\backslash"});
+        let result = canonical_json(&val);
+        assert!(result.contains("\\\"quotes\\\""));
+        assert!(result.contains("\\\\backslash"));
+    }
+
+    #[test]
+    fn test_canonical_json_newlines_tabs_in_strings() {
+        let val = json!({"text": "line1\nline2\ttab"});
+        let result = canonical_json(&val);
+        assert!(result.contains("\\n"));
+        assert!(result.contains("\\t"));
+    }
+
+    #[test]
+    fn test_canonical_json_unicode_string() {
+        let val = json!({"emoji": "\u{1f600}"});
+        let result = canonical_json(&val);
+        assert!(result.contains("\u{1f600}") || result.contains("\\u"));
+    }
+
+    #[test]
+    fn test_canonical_json_number_float() {
+        let result = canonical_json(&json!(3.14));
+        assert_eq!(result, "3.14");
+    }
+
+    #[test]
+    fn test_canonical_json_number_negative() {
+        let result = canonical_json(&json!(-99));
+        assert_eq!(result, "-99");
+    }
+
+    #[test]
+    fn test_canonical_json_nested_arrays() {
+        let val = json!([[1, 2], [3, [4, 5]]]);
+        assert_eq!(canonical_json(&val), "[[1,2],[3,[4,5]]]");
+    }
+
+    #[test]
+    fn test_canonical_json_deeply_nested_objects() {
+        let val = json!({"a": {"b": {"c": {"d": 1}}}});
+        assert_eq!(canonical_json(&val), "{\"a\":{\"b\":{\"c\":{\"d\":1}}}}");
+    }
+
+    #[test]
+    fn test_different_keys_produce_different_signatures() {
+        let (private_key_1, _) = test_keypair();
+        let key_2 = SigningKey::from_bytes(&[
+            32, 31, 30, 29, 28, 27, 26, 25, 24, 23, 22, 21, 20, 19, 18, 17,
+            16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1,
+        ]);
+        let private_key_2 = hex::encode(key_2.to_bytes());
+
+        let manifest = json!({"data": "test"});
+        let sig1 = sign_manifest(&manifest, &private_key_1).unwrap();
+        let sig2 = sign_manifest(&manifest, &private_key_2).unwrap();
+        assert_ne!(sig1, sig2);
+    }
+
+    #[test]
+    fn test_hash_manifest_null() {
+        let h1 = hash_manifest(&json!(null));
+        let h2 = hash_manifest(&json!(null));
+        assert_eq!(h1, h2);
+    }
+
+    #[test]
+    fn test_hash_manifest_array() {
+        let h1 = hash_manifest(&json!([1, 2, 3]));
+        let h2 = hash_manifest(&json!([1, 2, 4]));
+        assert_ne!(h1, h2);
+    }
+
+    #[test]
+    fn test_canonical_json_empty_string() {
+        assert_eq!(canonical_json(&json!("")), "\"\"");
+    }
+
+    #[test]
+    fn test_verify_manifest_corrupted_signature_one_byte() {
+        let (private_key, public_key) = test_keypair();
+        let manifest = json!({"test": "data"});
+        let sig = sign_manifest(&manifest, &private_key).unwrap();
+        let mut sig_bytes: Vec<u8> = hex::decode(&sig).unwrap();
+        sig_bytes[0] ^= 0xFF;
+        let corrupted_sig = hex::encode(&sig_bytes);
+        let valid = verify_manifest(&manifest, &corrupted_sig, &public_key).unwrap();
+        assert!(!valid);
+    }
 }

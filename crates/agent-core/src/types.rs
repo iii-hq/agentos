@@ -431,4 +431,241 @@ mod tests {
         let debug_str = format!("{:?}", config);
         assert!(debug_str.contains("Debug"));
     }
+
+    #[test]
+    fn test_chat_request_unicode_cjk() {
+        let json_val = json!({
+            "agentId": "agent-cjk",
+            "message": "\u{4f60}\u{597d}\u{4e16}\u{754c}",
+        });
+        let req: ChatRequest = serde_json::from_value(json_val).unwrap();
+        assert_eq!(req.message, "\u{4f60}\u{597d}\u{4e16}\u{754c}");
+    }
+
+    #[test]
+    fn test_chat_request_unicode_emoji() {
+        let json_val = json!({
+            "agentId": "agent-emoji",
+            "message": "\u{1f680}\u{1f4a5}\u{2728}",
+        });
+        let req: ChatRequest = serde_json::from_value(json_val).unwrap();
+        assert!(req.message.contains('\u{1f680}'));
+    }
+
+    #[test]
+    fn test_chat_request_empty_agent_id() {
+        let json_val = json!({
+            "agentId": "",
+            "message": "hello",
+        });
+        let req: ChatRequest = serde_json::from_value(json_val).unwrap();
+        assert_eq!(req.agent_id, "");
+    }
+
+    #[test]
+    fn test_chat_request_very_long_agent_id() {
+        let long_id = "x".repeat(10_000);
+        let json_val = json!({
+            "agentId": long_id,
+            "message": "test",
+        });
+        let req: ChatRequest = serde_json::from_value(json_val).unwrap();
+        assert_eq!(req.agent_id.len(), 10_000);
+    }
+
+    #[test]
+    fn test_chat_request_empty_strings() {
+        let req = ChatRequest {
+            agent_id: "".to_string(),
+            message: "".to_string(),
+            session_id: Some("".to_string()),
+            system_prompt: Some("".to_string()),
+        };
+        let val = serde_json::to_value(&req).unwrap();
+        assert_eq!(val["agentId"], "");
+        assert_eq!(val["message"], "");
+        assert_eq!(val["sessionId"], "");
+        assert_eq!(val["systemPrompt"], "");
+    }
+
+    #[test]
+    fn test_tool_call_null_arguments() {
+        let json_val = json!({
+            "callId": "c-null",
+            "id": "tool::test",
+            "arguments": null,
+        });
+        let tc: ToolCall = serde_json::from_value(json_val).unwrap();
+        assert!(tc.arguments.is_null());
+    }
+
+    #[test]
+    fn test_tool_call_array_arguments() {
+        let json_val = json!({
+            "callId": "c-arr",
+            "id": "tool::batch",
+            "arguments": [1, "two", false, null, [3, 4]],
+        });
+        let tc: ToolCall = serde_json::from_value(json_val).unwrap();
+        assert!(tc.arguments.is_array());
+        assert_eq!(tc.arguments.as_array().unwrap().len(), 5);
+    }
+
+    #[test]
+    fn test_tool_call_deeply_nested_arguments() {
+        let json_val = json!({
+            "callId": "c-deep",
+            "id": "tool::deep",
+            "arguments": {
+                "a": {"b": {"c": {"d": {"e": "bottom"}}}}
+            },
+        });
+        let tc: ToolCall = serde_json::from_value(json_val).unwrap();
+        assert_eq!(tc.arguments["a"]["b"]["c"]["d"]["e"], "bottom");
+    }
+
+    #[test]
+    fn test_agent_config_serialization_renames_system_prompt() {
+        let config = AgentConfig {
+            id: None,
+            name: "RenameTest".to_string(),
+            description: None,
+            model: None,
+            system_prompt: Some("test prompt".to_string()),
+            capabilities: None,
+            resources: None,
+            tags: None,
+        };
+        let val = serde_json::to_value(&config).unwrap();
+        assert!(val.get("systemPrompt").is_some());
+        assert!(val.get("system_prompt").is_none());
+        assert_eq!(val["systemPrompt"], "test prompt");
+    }
+
+    #[test]
+    fn test_agent_config_serialization_renames_all_fields() {
+        let config = AgentConfig {
+            id: Some("x".to_string()),
+            name: "Full".to_string(),
+            description: Some("desc".to_string()),
+            model: Some(ModelConfig {
+                provider: Some("p".to_string()),
+                model: Some("m".to_string()),
+                max_tokens: Some(100),
+            }),
+            system_prompt: Some("sp".to_string()),
+            capabilities: Some(Capabilities {
+                tools: vec!["t".to_string()],
+                memory_scopes: Some(vec!["s".to_string()]),
+                network_hosts: Some(vec!["h".to_string()]),
+            }),
+            resources: Some(Resources {
+                max_tokens_per_hour: Some(999),
+            }),
+            tags: Some(vec!["tag".to_string()]),
+        };
+        let json_str = serde_json::to_string(&config).unwrap();
+        assert!(json_str.contains("\"systemPrompt\""));
+        assert!(!json_str.contains("\"system_prompt\""));
+        assert!(json_str.contains("\"maxTokens\""));
+        assert!(!json_str.contains("\"max_tokens\""));
+        assert!(json_str.contains("\"memoryScopes\""));
+        assert!(!json_str.contains("\"memory_scopes\""));
+        assert!(json_str.contains("\"networkHosts\""));
+        assert!(!json_str.contains("\"network_hosts\""));
+        assert!(json_str.contains("\"maxTokensPerHour\""));
+        assert!(!json_str.contains("\"max_tokens_per_hour\""));
+    }
+
+    #[test]
+    fn test_model_config_roundtrip_anthropic() {
+        let mc = ModelConfig {
+            provider: Some("anthropic".to_string()),
+            model: Some("claude-opus-4-6".to_string()),
+            max_tokens: Some(16384),
+        };
+        let s = serde_json::to_string(&mc).unwrap();
+        let rt: ModelConfig = serde_json::from_str(&s).unwrap();
+        assert_eq!(rt.provider, Some("anthropic".to_string()));
+        assert_eq!(rt.model, Some("claude-opus-4-6".to_string()));
+        assert_eq!(rt.max_tokens, Some(16384));
+    }
+
+    #[test]
+    fn test_model_config_roundtrip_openai() {
+        let mc = ModelConfig {
+            provider: Some("openai".to_string()),
+            model: Some("gpt-4o".to_string()),
+            max_tokens: Some(128000),
+        };
+        let s = serde_json::to_string(&mc).unwrap();
+        let rt: ModelConfig = serde_json::from_str(&s).unwrap();
+        assert_eq!(rt.provider.as_deref(), Some("openai"));
+        assert_eq!(rt.model.as_deref(), Some("gpt-4o"));
+    }
+
+    #[test]
+    fn test_model_config_roundtrip_google() {
+        let mc = ModelConfig {
+            provider: Some("google".to_string()),
+            model: Some("gemini-2.0-flash".to_string()),
+            max_tokens: None,
+        };
+        let s = serde_json::to_string(&mc).unwrap();
+        let rt: ModelConfig = serde_json::from_str(&s).unwrap();
+        assert_eq!(rt.provider.as_deref(), Some("google"));
+        assert!(rt.max_tokens.is_none());
+    }
+
+    #[test]
+    fn test_capabilities_wildcard_and_specific() {
+        let caps = Capabilities {
+            tools: vec!["*".to_string(), "file::read".to_string()],
+            memory_scopes: None,
+            network_hosts: None,
+        };
+        assert!(caps.tools.contains(&"*".to_string()));
+        assert!(caps.tools.contains(&"file::read".to_string()));
+        assert_eq!(caps.tools.len(), 2);
+    }
+
+    #[test]
+    fn test_capabilities_empty_tools_serialization() {
+        let caps = Capabilities {
+            tools: vec![],
+            memory_scopes: Some(vec![]),
+            network_hosts: Some(vec![]),
+        };
+        let val = serde_json::to_value(&caps).unwrap();
+        assert!(val["tools"].as_array().unwrap().is_empty());
+        assert!(val["memoryScopes"].as_array().unwrap().is_empty());
+        assert!(val["networkHosts"].as_array().unwrap().is_empty());
+    }
+
+    #[test]
+    fn test_resources_max_u64_value() {
+        let json_val = json!({"maxTokensPerHour": u64::MAX});
+        let res: Resources = serde_json::from_value(json_val).unwrap();
+        assert_eq!(res.max_tokens_per_hour, Some(u64::MAX));
+    }
+
+    #[test]
+    fn test_resources_roundtrip_zero() {
+        let res = Resources {
+            max_tokens_per_hour: Some(0),
+        };
+        let s = serde_json::to_string(&res).unwrap();
+        let rt: Resources = serde_json::from_str(&s).unwrap();
+        assert_eq!(rt.max_tokens_per_hour, Some(0));
+    }
+
+    #[test]
+    fn test_resources_roundtrip_none() {
+        let res = Resources {
+            max_tokens_per_hour: None,
+        };
+        let s = serde_json::to_string(&res).unwrap();
+        let rt: Resources = serde_json::from_str(&s).unwrap();
+        assert!(rt.max_tokens_per_hour.is_none());
+    }
 }

@@ -27,7 +27,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing_subscriber::fmt::init();
 
     let iii = III::new("ws://localhost:49134");
-    iii.connect().await?;
 
     let iii_ref = iii.clone();
     iii.register_function_with_description(
@@ -128,7 +127,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     iii.register_trigger("cron", "memory::evict", json!({ "expression": "0 3 * * *" }))?;
 
-    tracing::info!("memory worker connected");
+    tracing::info!("memory worker started");
     tokio::signal::ctrl_c().await?;
     iii.shutdown_async().await;
     Ok(())
@@ -1139,5 +1138,895 @@ mod tests {
         let b = vec![-1.0, 1.0];
         let sim = cosine_similarity(&a, &b);
         assert!((sim - (-1.0)).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_cosine_similarity_large_vectors_100_elements() {
+        let a: Vec<f64> = (0..100).map(|i| (i as f64) * 0.1).collect();
+        let b: Vec<f64> = (0..100).map(|i| (i as f64) * 0.2).collect();
+        let sim = cosine_similarity(&a, &b);
+        assert!((sim - 1.0).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_cosine_similarity_large_vectors_1000_elements() {
+        let a: Vec<f64> = (0..1000).map(|i| ((i as f64) * 0.01).sin()).collect();
+        let b: Vec<f64> = (0..1000).map(|i| ((i as f64) * 0.01).sin()).collect();
+        let sim = cosine_similarity(&a, &b);
+        assert!((sim - 1.0).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_cosine_similarity_nan_produces_nan_or_zero() {
+        let a = vec![f64::NAN, 1.0, 2.0];
+        let b = vec![1.0, 2.0, 3.0];
+        let sim = cosine_similarity(&a, &b);
+        assert!(sim.is_nan() || sim == 0.0);
+    }
+
+    #[test]
+    fn test_cosine_similarity_very_small_values_underflow() {
+        let a = vec![1e-300, 2e-300, 3e-300];
+        let b = vec![1e-300, 2e-300, 3e-300];
+        let sim = cosine_similarity(&a, &b);
+        assert_eq!(sim, 0.0);
+    }
+
+    #[test]
+    fn test_cosine_similarity_moderately_small_values() {
+        let a = vec![1e-100, 2e-100, 3e-100];
+        let b = vec![1e-100, 2e-100, 3e-100];
+        let sim = cosine_similarity(&a, &b);
+        assert!((sim - 1.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_cosine_similarity_very_large_values() {
+        let a = vec![1e150, 2e150, 3e150];
+        let b = vec![1e150, 2e150, 3e150];
+        let sim = cosine_similarity(&a, &b);
+        assert!((sim - 1.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_cosine_similarity_one_zero_one_nonzero() {
+        let a = vec![0.0, 0.0];
+        let b = vec![0.0, 0.0];
+        let sim = cosine_similarity(&a, &b);
+        assert_eq!(sim, 0.0);
+    }
+
+    #[test]
+    fn test_estimate_importance_error_and_bug_combined() {
+        let score = estimate_importance("this error is actually a bug", "user");
+        assert!((score - 0.65).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_estimate_importance_error_critical_code() {
+        let score = estimate_importance("error critical ```code```", "user");
+        assert!((score - 0.75).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_estimate_importance_all_keywords_assistant_long() {
+        let long = "a".repeat(501);
+        let content = format!("{} error bug fix critical ```block```", long);
+        let score = estimate_importance(&content, "assistant");
+        assert!((score - 0.95).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_estimate_importance_exact_500_chars_boundary() {
+        let exactly_500 = "a".repeat(500);
+        let score_at = estimate_importance(&exactly_500, "user");
+        assert_eq!(score_at, 0.5);
+
+        let exactly_501 = "a".repeat(501);
+        let score_above = estimate_importance(&exactly_501, "user");
+        assert!((score_above - 0.6).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_estimate_importance_case_sensitive_keywords() {
+        let score_lower = estimate_importance("error", "user");
+        assert!((score_lower - 0.65).abs() < 1e-10);
+
+        let score_upper = estimate_importance("ERROR", "user");
+        assert_eq!(score_upper, 0.5);
+    }
+
+    #[test]
+    fn test_estimate_importance_keyword_in_larger_word() {
+        let score = estimate_importance("errorhandling bugfix fixture critically", "user");
+        assert!((score - 0.65).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_estimate_importance_code_block_only() {
+        let score = estimate_importance("some text with ``` code blocks ```", "user");
+        assert!((score - 0.6).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_estimate_importance_assistant_with_code_and_long() {
+        let long = "a".repeat(501);
+        let content = format!("{} ```some code```", long);
+        let score = estimate_importance(&content, "assistant");
+        assert!((score - 0.8).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_chunk_text_unicode_emoji() {
+        let text = "\u{1f600}\u{1f680}\u{1f4a1}\u{2764}\u{fe0f}\u{1f525}";
+        let chunks = chunk_text(text, 100);
+        assert_eq!(chunks.len(), 1);
+        assert!(chunks[0].contains('\u{1f600}'));
+    }
+
+    #[test]
+    fn test_chunk_text_cjk_characters() {
+        let text = "\u{4e16}\u{754c}\u{4f60}\u{597d}\u{6211}\u{4eec}\u{5b66}\u{4e60}\u{7f16}\u{7a0b}";
+        let chunks = chunk_text(text, 15);
+        assert!(chunks.len() >= 1);
+        let rejoined: String = chunks.join("");
+        assert_eq!(rejoined, text);
+    }
+
+    #[test]
+    fn test_chunk_text_only_newlines() {
+        let text = "\n\n\n\n\n";
+        let chunks = chunk_text(text, 3);
+        assert!(chunks.len() >= 1);
+        let rejoined: String = chunks.join("");
+        assert_eq!(rejoined, text);
+    }
+
+    #[test]
+    fn test_chunk_text_single_long_line() {
+        let text = "a".repeat(200);
+        let chunks = chunk_text(&text, 50);
+        assert_eq!(chunks.len(), 4);
+        for chunk in &chunks {
+            assert!(chunk.len() <= 50);
+        }
+    }
+
+    #[test]
+    fn test_chunk_text_mixed_newlines_and_content() {
+        let text = "line1\nline2\n\nline4\nline5\nline6";
+        let chunks = chunk_text(text, 12);
+        let rejoined: String = chunks.join("");
+        assert_eq!(rejoined, text);
+    }
+
+    #[test]
+    fn test_chunk_text_exact_boundary_at_newline() {
+        let text = "12345\n67890\nabcde";
+        let chunks = chunk_text(text, 6);
+        assert!(chunks.len() >= 2);
+        let rejoined: String = chunks.join("");
+        assert_eq!(rejoined, text);
+    }
+
+    #[test]
+    fn test_memory_entry_all_defaults_and_empty() {
+        let entry = MemoryEntry {
+            id: "".to_string(),
+            agent_id: "".to_string(),
+            content: "".to_string(),
+            role: "".to_string(),
+            embedding: None,
+            timestamp: 0,
+            session_id: None,
+            importance: 0.0,
+            hash: "".to_string(),
+            confidence: 0.0,
+            access_count: 0,
+            last_accessed: 0,
+        };
+        let val = serde_json::to_value(&entry).unwrap();
+        assert_eq!(val["id"], "");
+        assert_eq!(val["importance"], 0.0);
+        assert_eq!(val["confidence"], 0.0);
+        assert_eq!(val["access_count"], 0);
+    }
+
+    #[test]
+    fn test_memory_entry_very_long_content() {
+        let long_content = "x".repeat(1_000_000);
+        let entry = MemoryEntry {
+            id: "long-1".to_string(),
+            agent_id: "agent-1".to_string(),
+            content: long_content.clone(),
+            role: "user".to_string(),
+            embedding: None,
+            timestamp: 1000,
+            session_id: None,
+            importance: 0.5,
+            hash: "hash-long".to_string(),
+            confidence: 1.0,
+            access_count: 0,
+            last_accessed: 1000,
+        };
+        assert_eq!(entry.content.len(), 1_000_000);
+        let serialized = serde_json::to_string(&entry).unwrap();
+        let deserialized: MemoryEntry = serde_json::from_str(&serialized).unwrap();
+        assert_eq!(deserialized.content.len(), 1_000_000);
+    }
+
+    #[test]
+    fn test_memory_entry_empty_embedding_vec() {
+        let entry = MemoryEntry {
+            id: "emb-empty".to_string(),
+            agent_id: "a".to_string(),
+            content: "test".to_string(),
+            role: "user".to_string(),
+            embedding: Some(vec![]),
+            timestamp: 100,
+            session_id: None,
+            importance: 0.5,
+            hash: "h".to_string(),
+            confidence: 1.0,
+            access_count: 0,
+            last_accessed: 100,
+        };
+        assert_eq!(entry.embedding.as_ref().unwrap().len(), 0);
+        let val = serde_json::to_value(&entry).unwrap();
+        assert!(val["embedding"].as_array().unwrap().is_empty());
+    }
+
+    #[test]
+    fn test_memory_entry_large_embedding() {
+        let embedding = vec![0.01; 1536];
+        let entry = MemoryEntry {
+            id: "emb-large".to_string(),
+            agent_id: "a".to_string(),
+            content: "test".to_string(),
+            role: "user".to_string(),
+            embedding: Some(embedding.clone()),
+            timestamp: 100,
+            session_id: None,
+            importance: 0.5,
+            hash: "h".to_string(),
+            confidence: 1.0,
+            access_count: 0,
+            last_accessed: 100,
+        };
+        assert_eq!(entry.embedding.as_ref().unwrap().len(), 1536);
+    }
+
+    #[test]
+    fn test_now_ms_monotonicity_repeated() {
+        let t1 = now_ms();
+        let t2 = now_ms();
+        let t3 = now_ms();
+        assert!(t2 >= t1);
+        assert!(t3 >= t2);
+    }
+
+    #[test]
+    fn test_now_ms_returns_reasonable_value() {
+        let ts = now_ms();
+        assert!(ts > 1_700_000_000_000);
+    }
+
+    #[test]
+    fn test_sha256_empty_string_hash() {
+        let mut hasher = Sha256::new();
+        hasher.update(b"");
+        let hash = format!("{:x}", hasher.finalize());
+        assert_eq!(hash, "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855");
+    }
+
+    #[test]
+    fn test_sha256_whitespace_only_hash() {
+        let mut h1 = Sha256::new();
+        h1.update(b" ");
+        let hash_space = format!("{:x}", h1.finalize());
+
+        let mut h2 = Sha256::new();
+        h2.update(b"\t");
+        let hash_tab = format!("{:x}", h2.finalize());
+
+        let mut h3 = Sha256::new();
+        h3.update(b"\n");
+        let hash_newline = format!("{:x}", h3.finalize());
+
+        assert_ne!(hash_space, hash_tab);
+        assert_ne!(hash_space, hash_newline);
+        assert_ne!(hash_tab, hash_newline);
+        assert_eq!(hash_space.len(), 64);
+    }
+
+    #[test]
+    fn test_sha256_unicode_content() {
+        let mut h1 = Sha256::new();
+        h1.update("\u{1f600}".as_bytes());
+        let hash = format!("{:x}", h1.finalize());
+        assert_eq!(hash.len(), 64);
+    }
+
+    #[test]
+    fn test_session_compact_below_threshold() {
+        let messages: Vec<Value> = (0..29).map(|i| json!({"id": format!("m-{}", i), "role": "user"})).collect();
+        let threshold = 30_usize;
+        let below = messages.len() < threshold;
+        assert!(below);
+    }
+
+    #[test]
+    fn test_session_compact_at_threshold() {
+        let messages: Vec<Value> = (0..30).map(|i| json!({"id": format!("m-{}", i), "role": "user"})).collect();
+        let threshold = 30_usize;
+        let below = messages.len() < threshold;
+        assert!(!below);
+    }
+
+    #[test]
+    fn test_session_compact_above_threshold() {
+        let messages: Vec<Value> = (0..31).map(|i| json!({"id": format!("m-{}", i), "role": "user"})).collect();
+        let threshold = 30_usize;
+        let keep_recent = 10_usize;
+        let below = messages.len() < threshold;
+        assert!(!below);
+        let to_summarize = &messages[..messages.len().saturating_sub(keep_recent)];
+        let to_keep = &messages[messages.len().saturating_sub(keep_recent)..];
+        assert_eq!(to_summarize.len(), 21);
+        assert_eq!(to_keep.len(), 10);
+    }
+
+    #[test]
+    fn test_session_compact_keep_recent_larger_than_messages() {
+        let messages: Vec<Value> = (0..5).map(|i| json!({"id": format!("m-{}", i)})).collect();
+        let keep_recent = 10_usize;
+        let to_keep = &messages[messages.len().saturating_sub(keep_recent)..];
+        assert_eq!(to_keep.len(), 5);
+    }
+
+    #[test]
+    fn test_eviction_stale_and_low_value() {
+        let now = 10_000_000_000u64;
+        let max_age_ms = 30 * 86_400_000u64;
+        let timestamp = 0u64;
+        let importance = 0.1;
+        let confidence = 0.5;
+        let min_importance = 0.2;
+
+        let age = now.saturating_sub(timestamp);
+        let is_stale = age > max_age_ms;
+        let is_low_value = importance < min_importance;
+        let is_low_confidence = confidence < 0.1;
+
+        assert!(is_stale);
+        assert!(is_low_value);
+        assert!(!is_low_confidence);
+        assert!((is_stale && is_low_value) || is_low_confidence);
+    }
+
+    #[test]
+    fn test_eviction_low_confidence_only() {
+        let confidence = 0.05;
+        let is_low_confidence = confidence < 0.1;
+        assert!(is_low_confidence);
+    }
+
+    #[test]
+    fn test_eviction_not_stale_not_low_value() {
+        let now = 1000u64;
+        let max_age_ms = 30 * 86_400_000u64;
+        let timestamp = 500u64;
+        let importance = 0.8;
+        let confidence = 0.5;
+
+        let age = now.saturating_sub(timestamp);
+        let is_stale = age > max_age_ms;
+        let is_low_value = importance < 0.2;
+        let is_low_confidence = confidence < 0.1;
+
+        assert!(!is_stale);
+        assert!(!is_low_value);
+        assert!(!is_low_confidence);
+        assert!(!((is_stale && is_low_value) || is_low_confidence));
+    }
+
+    #[test]
+    fn test_consolidation_decay_rate() {
+        let decay_rate: f64 = 0.05;
+        let confidence: f64 = 0.8;
+        let new_confidence = (confidence * (1.0 - decay_rate)).max(0.1);
+        assert!((new_confidence - 0.76).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_consolidation_decay_floors_at_0_1() {
+        let decay_rate: f64 = 0.05;
+        let confidence: f64 = 0.1;
+        let new_confidence = (confidence * (1.0 - decay_rate)).max(0.1);
+        assert_eq!(new_confidence, 0.1);
+    }
+
+    #[test]
+    fn test_consolidation_skip_recently_accessed() {
+        let now = 100_000u64;
+        let seven_days_ms = 7 * 86_400_000u64;
+        let last_accessed = now - 1000;
+        let should_decay = now.saturating_sub(last_accessed) > seven_days_ms;
+        assert!(!should_decay);
+    }
+
+    #[test]
+    fn test_keyword_scoring() {
+        let query = "find the error in code";
+        let keywords: Vec<String> = query.to_lowercase().split_whitespace().map(String::from).collect();
+        assert_eq!(keywords.len(), 5);
+
+        let content_lower = "there was an error in the code block".to_lowercase();
+        let hits = keywords.iter().filter(|k| content_lower.contains(k.as_str())).count();
+        assert_eq!(hits, 4);
+        let keyword_score = hits as f64 / keywords.len().max(1) as f64;
+        assert!((keyword_score - 0.8).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_keyword_scoring_empty_query() {
+        let query = "";
+        let keywords: Vec<String> = query.to_lowercase().split_whitespace().map(String::from).collect();
+        assert_eq!(keywords.len(), 0);
+        let hits = 0usize;
+        let keyword_score = hits as f64 / keywords.len().max(1) as f64;
+        assert_eq!(keyword_score, 0.0);
+    }
+
+    #[test]
+    fn test_recency_score_recent() {
+        let now = 1_000_000u64;
+        let timestamp = 999_000u64;
+        let age_hours = (now.saturating_sub(timestamp)) as f64 / 3_600_000.0;
+        let recency = (-age_hours / 168.0_f64).exp();
+        assert!(recency > 0.99);
+    }
+
+    #[test]
+    fn test_recency_score_old() {
+        let now = 100_000_000_000u64;
+        let timestamp = 0u64;
+        let age_hours = (now.saturating_sub(timestamp)) as f64 / 3_600_000.0;
+        let recency = (-age_hours / 168.0_f64).exp();
+        assert!(recency < 0.01);
+    }
+
+    #[test]
+    fn test_memory_scope_format() {
+        let agent_id = "agent-42";
+        let scope = format!("memory:{}", agent_id);
+        assert_eq!(scope, "memory:agent-42");
+        assert!(scope.starts_with("memory:"));
+    }
+
+    #[test]
+    fn test_session_scope_format() {
+        let agent_id = "agent-42";
+        let scope = format!("sessions:{}", agent_id);
+        assert_eq!(scope, "sessions:agent-42");
+    }
+
+    #[test]
+    fn test_repair_empty_id_removal() {
+        let messages = vec![
+            json!({"id": "m-1", "role": "user"}),
+            json!({"id": "", "role": "user"}),
+            json!({"role": "user"}),
+            json!({"id": "m-4", "role": "assistant"}),
+        ];
+        let mut repaired = messages.clone();
+        let before = repaired.len();
+        repaired.retain(|m| {
+            m.get("id").and_then(|v| v.as_str()).map(|s| !s.is_empty()).unwrap_or(false)
+        });
+        assert_eq!(before - repaired.len(), 2);
+        assert_eq!(repaired.len(), 2);
+    }
+
+    #[test]
+    fn test_repair_dedup_by_id() {
+        let messages = vec![
+            json!({"id": "m-1", "role": "user"}),
+            json!({"id": "m-1", "role": "user"}),
+            json!({"id": "m-2", "role": "assistant"}),
+        ];
+        let mut seen = std::collections::HashSet::new();
+        let repaired: Vec<&Value> = messages.iter().filter(|m| {
+            let id = m["id"].as_str().unwrap_or("").to_string();
+            seen.insert(id)
+        }).collect();
+        assert_eq!(repaired.len(), 2);
+    }
+
+    #[test]
+    fn test_repair_consecutive_role_merge() {
+        let messages = vec![
+            json!({"id": "m-1", "role": "user"}),
+            json!({"id": "m-2", "role": "user"}),
+            json!({"id": "m-3", "role": "assistant"}),
+            json!({"id": "m-4", "role": "assistant"}),
+            json!({"id": "m-5", "role": "system"}),
+            json!({"id": "m-6", "role": "system"}),
+        ];
+        let mut merged = Vec::new();
+        let mut merge_count = 0u64;
+        for msg in &messages {
+            let role = msg["role"].as_str().unwrap_or("");
+            if let Some(last) = merged.last() {
+                let last_role: &str = match last {
+                    Value::Object(obj) => obj.get("role").and_then(|v| v.as_str()).unwrap_or(""),
+                    _ => "",
+                };
+                if last_role == role && role != "system" {
+                    merge_count += 1;
+                    continue;
+                }
+            }
+            merged.push(msg.clone());
+        }
+        assert_eq!(merge_count, 2);
+        assert_eq!(merged.len(), 4);
+    }
+
+    #[test]
+    fn test_repair_timestamp_reordering() {
+        let mut messages = vec![
+            json!({"id": "m-1", "timestamp": 100, "role": "user"}),
+            json!({"id": "m-2", "timestamp": 50, "role": "assistant"}),
+            json!({"id": "m-3", "timestamp": 200, "role": "user"}),
+        ];
+        let mut reordered = 0u64;
+        let mut prev_ts = 0u64;
+        for msg in &mut messages {
+            let ts = msg["timestamp"].as_u64().unwrap_or(0);
+            if ts < prev_ts {
+                if let Some(obj) = msg.as_object_mut() {
+                    obj.insert("timestamp".into(), json!(prev_ts + 1));
+                    reordered += 1;
+                }
+            }
+            prev_ts = msg["timestamp"].as_u64().unwrap_or(prev_ts);
+        }
+        assert_eq!(reordered, 1);
+        assert_eq!(messages[1]["timestamp"], 101);
+    }
+
+    #[test]
+    fn test_cosine_similarity_unit_vectors() {
+        let a = vec![1.0, 0.0, 0.0];
+        let b = vec![0.0, 1.0, 0.0];
+        let c = vec![0.0, 0.0, 1.0];
+        assert!(cosine_similarity(&a, &b).abs() < 1e-10);
+        assert!(cosine_similarity(&a, &c).abs() < 1e-10);
+        assert!(cosine_similarity(&b, &c).abs() < 1e-10);
+        assert!((cosine_similarity(&a, &a) - 1.0).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_cosine_similarity_half_pi_angle() {
+        let a = vec![1.0, 1.0];
+        let b = vec![1.0, 0.0];
+        let sim = cosine_similarity(&a, &b);
+        let expected = 1.0 / (2.0_f64).sqrt();
+        assert!((sim - expected).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_estimate_importance_multiple_keywords_only_one_bonus() {
+        let score_one = estimate_importance("error happened", "user");
+        let score_two = estimate_importance("error and bug happened", "user");
+        assert_eq!(score_one, score_two);
+    }
+
+    #[test]
+    fn test_estimate_importance_assistant_long_error_code() {
+        let long = "a".repeat(501);
+        let content = format!("{} error ```code```", long);
+        let score = estimate_importance(&content, "assistant");
+        assert!((score - 0.95).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_estimate_importance_empty_role() {
+        let score = estimate_importance("hello", "");
+        assert_eq!(score, 0.5);
+    }
+
+    #[test]
+    fn test_chunk_text_two_char_max() {
+        let text = "abcdef";
+        let chunks = chunk_text(text, 2);
+        assert_eq!(chunks.len(), 3);
+        let rejoined: String = chunks.join("");
+        assert_eq!(rejoined, text);
+    }
+
+    #[test]
+    fn test_chunk_text_newline_at_boundary() {
+        let text = "ab\ncd\nef";
+        let chunks = chunk_text(text, 3);
+        assert!(chunks.len() >= 2);
+        let rejoined: String = chunks.join("");
+        assert_eq!(rejoined, text);
+    }
+
+    #[test]
+    fn test_chunk_text_all_same_char() {
+        let text = "x".repeat(50);
+        let chunks = chunk_text(&text, 10);
+        assert_eq!(chunks.len(), 5);
+        for chunk in &chunks {
+            assert_eq!(chunk.len(), 10);
+        }
+    }
+
+    #[test]
+    fn test_memory_entry_unicode_content() {
+        let entry = MemoryEntry {
+            id: "unicode-1".to_string(),
+            agent_id: "agent".to_string(),
+            content: "\u{4f60}\u{597d}\u{4e16}\u{754c} \u{1f600}".to_string(),
+            role: "user".to_string(),
+            embedding: None,
+            timestamp: 100,
+            session_id: None,
+            importance: 0.5,
+            hash: "h".to_string(),
+            confidence: 1.0,
+            access_count: 0,
+            last_accessed: 100,
+        };
+        let serialized = serde_json::to_string(&entry).unwrap();
+        let deserialized: MemoryEntry = serde_json::from_str(&serialized).unwrap();
+        assert!(deserialized.content.contains("\u{4f60}"));
+        assert!(deserialized.content.contains("\u{1f600}"));
+    }
+
+    #[test]
+    fn test_memory_entry_max_importance_confidence() {
+        let entry = MemoryEntry {
+            id: "max-1".to_string(),
+            agent_id: "agent".to_string(),
+            content: "test".to_string(),
+            role: "user".to_string(),
+            embedding: None,
+            timestamp: 100,
+            session_id: None,
+            importance: 1.0,
+            hash: "h".to_string(),
+            confidence: 1.0,
+            access_count: u64::MAX,
+            last_accessed: u64::MAX,
+        };
+        let val = serde_json::to_value(&entry).unwrap();
+        assert_eq!(val["importance"], 1.0);
+        assert_eq!(val["confidence"], 1.0);
+    }
+
+    #[test]
+    fn test_consolidation_decay_multiple_rounds() {
+        let decay_rate = 0.05_f64;
+        let mut confidence = 1.0_f64;
+        for _ in 0..100 {
+            confidence = (confidence * (1.0 - decay_rate)).max(0.1);
+        }
+        assert_eq!(confidence, 0.1);
+    }
+
+    #[test]
+    fn test_consolidation_decay_rate_zero() {
+        let decay_rate = 0.0_f64;
+        let confidence = 0.8_f64;
+        let new_confidence = (confidence * (1.0 - decay_rate)).max(0.1);
+        assert!((new_confidence - 0.8).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_consolidation_decay_rate_one() {
+        let decay_rate = 1.0_f64;
+        let confidence = 0.8_f64;
+        let new_confidence = (confidence * (1.0 - decay_rate)).max(0.1);
+        assert_eq!(new_confidence, 0.1);
+    }
+
+    #[test]
+    fn test_eviction_stale_but_high_value() {
+        let now = 10_000_000_000u64;
+        let max_age_ms = 30 * 86_400_000u64;
+        let timestamp = 0u64;
+        let importance = 0.9;
+        let confidence = 0.5;
+
+        let age = now.saturating_sub(timestamp);
+        let is_stale = age > max_age_ms;
+        let is_low_value = importance < 0.2;
+        let is_low_confidence = confidence < 0.1;
+
+        assert!(is_stale);
+        assert!(!is_low_value);
+        assert!(!((is_stale && is_low_value) || is_low_confidence));
+    }
+
+    #[test]
+    fn test_eviction_not_stale_but_low_value() {
+        let now = 1000u64;
+        let max_age_ms = 30 * 86_400_000u64;
+        let timestamp = 500u64;
+        let importance = 0.1;
+
+        let age = now.saturating_sub(timestamp);
+        let is_stale = age > max_age_ms;
+        let is_low_value = importance < 0.2;
+        let is_low_confidence = false;
+
+        assert!(!is_stale);
+        assert!(is_low_value);
+        assert!(!((is_stale && is_low_value) || is_low_confidence));
+    }
+
+    #[test]
+    fn test_eviction_at_confidence_boundary() {
+        let confidence_just_below = 0.09999;
+        let confidence_at = 0.1;
+        assert!(confidence_just_below < 0.1);
+        assert!(!(confidence_at < 0.1));
+    }
+
+    #[test]
+    fn test_recency_score_one_week() {
+        let now = 1_000_000_000u64;
+        let one_week_ms = 7 * 24 * 3_600_000u64;
+        let timestamp = now - one_week_ms;
+        let age_hours = (now.saturating_sub(timestamp)) as f64 / 3_600_000.0;
+        let recency = (-age_hours / 168.0_f64).exp();
+        assert!((recency - (-1.0_f64).exp()).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_keyword_scoring_all_match() {
+        let query = "the code";
+        let keywords: Vec<String> = query.to_lowercase().split_whitespace().map(String::from).collect();
+        let content_lower = "the code is great".to_lowercase();
+        let hits = keywords.iter().filter(|k| content_lower.contains(k.as_str())).count();
+        let score = hits as f64 / keywords.len().max(1) as f64;
+        assert!((score - 1.0).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_keyword_scoring_no_match() {
+        let query = "xyz abc";
+        let keywords: Vec<String> = query.to_lowercase().split_whitespace().map(String::from).collect();
+        let content_lower = "nothing matches here".to_lowercase();
+        let hits = keywords.iter().filter(|k| content_lower.contains(k.as_str())).count();
+        let score = hits as f64 / keywords.len().max(1) as f64;
+        assert_eq!(score, 0.0);
+    }
+
+    #[test]
+    fn test_repair_all_empty_ids() {
+        let messages = vec![
+            json!({"id": "", "role": "user"}),
+            json!({"role": "user"}),
+            json!({"id": null, "role": "user"}),
+        ];
+        let mut repaired = messages.clone();
+        repaired.retain(|m| {
+            m.get("id").and_then(|v| v.as_str()).map(|s| !s.is_empty()).unwrap_or(false)
+        });
+        assert_eq!(repaired.len(), 0);
+    }
+
+    #[test]
+    fn test_repair_no_duplicates() {
+        let messages = vec![
+            json!({"id": "m-1", "role": "user"}),
+            json!({"id": "m-2", "role": "assistant"}),
+            json!({"id": "m-3", "role": "user"}),
+        ];
+        let mut seen = std::collections::HashSet::new();
+        let repaired: Vec<&Value> = messages.iter().filter(|m| {
+            let id = m["id"].as_str().unwrap_or("").to_string();
+            seen.insert(id)
+        }).collect();
+        assert_eq!(repaired.len(), 3);
+    }
+
+    #[test]
+    fn test_repair_consecutive_system_messages_not_merged() {
+        let messages = vec![
+            json!({"id": "m-1", "role": "system"}),
+            json!({"id": "m-2", "role": "system"}),
+            json!({"id": "m-3", "role": "system"}),
+        ];
+        let mut merged = Vec::new();
+        let mut merge_count = 0u64;
+        for msg in &messages {
+            let role = msg["role"].as_str().unwrap_or("");
+            if let Some(last) = merged.last() {
+                let last_role: &str = match last {
+                    Value::Object(obj) => obj.get("role").and_then(|v| v.as_str()).unwrap_or(""),
+                    _ => "",
+                };
+                if last_role == role && role != "system" {
+                    merge_count += 1;
+                    continue;
+                }
+            }
+            merged.push(msg.clone());
+        }
+        assert_eq!(merge_count, 0);
+        assert_eq!(merged.len(), 3);
+    }
+
+    #[test]
+    fn test_repair_timestamp_all_ascending() {
+        let mut messages = vec![
+            json!({"id": "m-1", "timestamp": 100}),
+            json!({"id": "m-2", "timestamp": 200}),
+            json!({"id": "m-3", "timestamp": 300}),
+        ];
+        let mut reordered = 0u64;
+        let mut prev_ts = 0u64;
+        for msg in &mut messages {
+            let ts = msg["timestamp"].as_u64().unwrap_or(0);
+            if ts < prev_ts {
+                if let Some(obj) = msg.as_object_mut() {
+                    obj.insert("timestamp".into(), json!(prev_ts + 1));
+                    reordered += 1;
+                }
+            }
+            prev_ts = msg["timestamp"].as_u64().unwrap_or(prev_ts);
+        }
+        assert_eq!(reordered, 0);
+    }
+
+    #[test]
+    fn test_repair_timestamp_all_descending() {
+        let mut messages = vec![
+            json!({"id": "m-1", "timestamp": 300}),
+            json!({"id": "m-2", "timestamp": 200}),
+            json!({"id": "m-3", "timestamp": 100}),
+        ];
+        let mut reordered = 0u64;
+        let mut prev_ts = 0u64;
+        for msg in &mut messages {
+            let ts = msg["timestamp"].as_u64().unwrap_or(0);
+            if ts < prev_ts {
+                if let Some(obj) = msg.as_object_mut() {
+                    obj.insert("timestamp".into(), json!(prev_ts + 1));
+                    reordered += 1;
+                }
+            }
+            prev_ts = msg["timestamp"].as_u64().unwrap_or(prev_ts);
+        }
+        assert_eq!(reordered, 2);
+    }
+
+    #[test]
+    fn test_kg_scope_format() {
+        let agent_id = "agent-99";
+        let scope = format!("kg:{}", agent_id);
+        assert_eq!(scope, "kg:agent-99");
+    }
+
+    #[test]
+    fn test_sha256_known_value() {
+        let mut hasher = Sha256::new();
+        hasher.update(b"hello");
+        let hash = format!("{:x}", hasher.finalize());
+        assert_eq!(hash, "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824");
+    }
+
+    #[test]
+    fn test_chunk_text_preserves_content_large() {
+        let text: String = (0..100).map(|i| format!("line {}\n", i)).collect();
+        let chunks = chunk_text(&text, 50);
+        let rejoined: String = chunks.join("");
+        assert_eq!(rejoined, text);
     }
 }

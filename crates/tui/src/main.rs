@@ -1509,4 +1509,268 @@ mod tests {
         let result = truncate("abc", 100);
         assert_eq!(result, "abc");
     }
+
+    #[test]
+    fn test_status_cell_disconnected() {
+        let span = status_cell("disconnected");
+        assert_eq!(span.content.as_ref(), "disconnected");
+    }
+
+    #[test]
+    fn test_status_cell_waiting() {
+        let span = status_cell("waiting");
+        assert_eq!(span.content.as_ref(), "waiting");
+    }
+
+    #[test]
+    fn test_status_cell_idle() {
+        let span = status_cell("idle");
+        assert_eq!(span.content.as_ref(), "idle");
+    }
+
+    #[test]
+    fn test_status_cell_empty_string() {
+        let span = status_cell("");
+        assert_eq!(span.content.as_ref(), "");
+    }
+
+    #[test]
+    fn test_screen_hands_label() {
+        assert_eq!(Screen::Hands.label(), "Hands");
+    }
+
+    #[test]
+    fn test_screen_audit_label() {
+        assert_eq!(Screen::Audit.label(), "Audit");
+    }
+
+    #[test]
+    fn test_screen_peers_label() {
+        assert_eq!(Screen::Peers.label(), "Peers");
+    }
+
+    #[test]
+    fn test_screen_extensions_label() {
+        assert_eq!(Screen::Extensions.label(), "Extensions");
+    }
+
+    #[test]
+    fn test_screen_triggers_label() {
+        assert_eq!(Screen::Triggers.label(), "Triggers");
+    }
+
+    #[test]
+    fn test_screen_templates_label() {
+        assert_eq!(Screen::Templates.label(), "Templates");
+    }
+
+    #[test]
+    fn test_screen_usage_label() {
+        assert_eq!(Screen::Usage.label(), "Usage");
+    }
+
+    #[test]
+    fn test_screen_hands_key() {
+        assert_eq!(Screen::Hands.key(), "6");
+    }
+
+    #[test]
+    fn test_screen_workflows_key() {
+        assert_eq!(Screen::Workflows.key(), "7");
+    }
+
+    #[test]
+    fn test_screen_sessions_key() {
+        assert_eq!(Screen::Sessions.key(), "8");
+    }
+
+    #[test]
+    fn test_screen_channels_key() {
+        assert_eq!(Screen::Channels.key(), "4");
+    }
+
+    #[test]
+    fn test_screen_skills_key() {
+        assert_eq!(Screen::Skills.key(), "5");
+    }
+
+    #[test]
+    fn test_screen_keys_unique_nonblank() {
+        let keys: Vec<&str> = Screen::all().iter().map(|s| s.key()).filter(|k| !k.is_empty()).collect();
+        let mut deduped = keys.clone();
+        deduped.sort();
+        deduped.dedup();
+        assert_eq!(keys.len(), deduped.len());
+    }
+
+    #[test]
+    fn test_screen_all_ends_with_workflow_builder() {
+        let all = Screen::all();
+        assert_eq!(all[all.len() - 1], Screen::WorkflowBuilder);
+    }
+
+    #[test]
+    fn test_truncate_zero_max() {
+        let result = truncate("hello", 0);
+        assert_eq!(result, "...");
+    }
+
+    #[test]
+    fn test_truncate_very_long_string() {
+        let long = "x".repeat(10000);
+        let result = truncate(&long, 20);
+        assert_eq!(result.len(), 20);
+        assert!(result.ends_with("..."));
+    }
+
+    #[test]
+    fn test_app_new_defaults() {
+        let app = App::new();
+        assert_eq!(app.screen, Screen::Welcome);
+        assert_eq!(app.selected, 0);
+        assert!(app.agents.is_empty());
+        assert!(app.skills.is_empty());
+        assert!(app.logs.is_empty());
+        assert!(app.chat_input.is_empty());
+        assert!(app.running);
+    }
+
+    #[test]
+    fn test_screen_all_contains_all_variants() {
+        let all = Screen::all();
+        assert!(all.contains(&Screen::Dashboard));
+        assert!(all.contains(&Screen::Agents));
+        assert!(all.contains(&Screen::Chat));
+        assert!(all.contains(&Screen::Channels));
+        assert!(all.contains(&Screen::Skills));
+        assert!(all.contains(&Screen::Hands));
+        assert!(all.contains(&Screen::Workflows));
+        assert!(all.contains(&Screen::Sessions));
+        assert!(all.contains(&Screen::Approvals));
+        assert!(all.contains(&Screen::Logs));
+        assert!(all.contains(&Screen::Memory));
+        assert!(all.contains(&Screen::Audit));
+        assert!(all.contains(&Screen::Security));
+        assert!(all.contains(&Screen::Peers));
+        assert!(all.contains(&Screen::Extensions));
+        assert!(all.contains(&Screen::Triggers));
+        assert!(all.contains(&Screen::Templates));
+        assert!(all.contains(&Screen::Usage));
+        assert!(all.contains(&Screen::Settings));
+        assert!(all.contains(&Screen::Welcome));
+        assert!(all.contains(&Screen::Wizard));
+        assert!(all.contains(&Screen::WorkflowBuilder));
+    }
+
+    #[test]
+    fn test_screen_clone() {
+        let s = Screen::Memory;
+        let cloned = s;
+        assert_eq!(s, cloned);
+    }
+
+    #[test]
+    fn test_screen_debug_format() {
+        let s = Screen::Dashboard;
+        let debug = format!("{:?}", s);
+        assert_eq!(debug, "Dashboard");
+    }
+
+    #[test]
+    fn test_screen_debug_format_workflow_builder() {
+        let s = Screen::WorkflowBuilder;
+        let debug = format!("{:?}", s);
+        assert_eq!(debug, "WorkflowBuilder");
+    }
+
+    #[test]
+    fn test_screen_key_maps_to_digit_or_empty() {
+        for screen in Screen::all() {
+            let k = screen.key();
+            assert!(k.is_empty() || (k.len() == 1 && k.chars().next().unwrap().is_ascii_digit()),
+                "Screen {:?} has unexpected key '{}'", screen, k);
+        }
+    }
+
+    #[test]
+    fn test_screen_label_non_empty() {
+        for screen in Screen::all() {
+            assert!(!screen.label().is_empty(), "Screen {:?} has empty label", screen);
+        }
+    }
+
+    #[test]
+    fn test_truncate_four_char_max() {
+        let result = truncate("hello world", 4);
+        assert!(result.len() <= 4);
+    }
+
+    #[test]
+    fn test_truncate_exactly_at_boundary() {
+        let result = truncate("abcdef", 6);
+        assert_eq!(result, "abcdef");
+        let result2 = truncate("abcdefg", 6);
+        assert_eq!(result2.len(), 6);
+        assert!(result2.ends_with("..."));
+    }
+
+    #[test]
+    fn test_truncate_multibyte_safe() {
+        let result = truncate("abc", 100);
+        assert_eq!(result, "abc");
+    }
+
+    #[test]
+    fn test_status_cell_error() {
+        let span = status_cell("error");
+        assert_eq!(span.content.as_ref(), "error");
+    }
+
+    #[test]
+    fn test_status_cell_failed() {
+        let span = status_cell("failed");
+        assert_eq!(span.content.as_ref(), "failed");
+    }
+
+    #[test]
+    fn test_status_cell_completed() {
+        let span = status_cell("completed");
+        assert_eq!(span.content.as_ref(), "completed");
+    }
+
+    #[test]
+    fn test_app_new_chat_messages_empty() {
+        let app = App::new();
+        assert!(app.chat_messages.is_empty());
+    }
+
+    #[test]
+    fn test_app_new_channels_empty() {
+        let app = App::new();
+        assert!(app.channels.is_empty());
+    }
+
+    #[test]
+    fn test_app_new_workflows_empty() {
+        let app = App::new();
+        assert!(app.workflows.is_empty());
+    }
+
+    #[test]
+    fn test_app_new_sessions_empty() {
+        let app = App::new();
+        assert!(app.sessions.is_empty());
+    }
+
+    #[test]
+    fn test_app_new_scroll_offset_zero() {
+        let app = App::new();
+        assert_eq!(app.scroll_offset, 0);
+    }
+
+    #[test]
+    fn test_app_new_wizard_step_zero() {
+        let app = App::new();
+        assert_eq!(app.wizard_step, 0);
+    }
 }

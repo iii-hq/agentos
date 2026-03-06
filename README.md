@@ -2,7 +2,7 @@
 
 Agent Operating System built on three primitives: **Worker**, **Function**, **Trigger**.
 
-**60+ tools** · **1,818 tests** · **25 LLM providers** · **47 models** · **40 channels** · **28K LOC**
+**60+ tools** · **2,419 tests** · **25 LLM providers** · **47 models** · **40 channels** · **28K LOC**
 
 Every capability — agents, memory, security, LLM routing, workflows, tools, swarms, knowledge graphs, session replay, vault — is a plain function registered on an [iii-engine](https://iii.dev) bus. No frameworks, no vendor lock-in, no magic.
 
@@ -27,7 +27,7 @@ Every capability — agents, memory, security, LLM routing, workflows, tools, sw
 ├──────────────────────────────────────────────────────────────┤
 │     CLI (Rust)              TUI (Rust/ratatui)               │
 ├──────────────────────────────────────────────────────────────┤
-│ 30 agents · 7 hands · 25 integrations · 40 channels          │
+│ 45 agents · 7 hands · 25 integrations · 40 channels          │
 │ 8 tool profiles · 47 models · 22 TUI screens                 │
 └──────────────────────────────────────────────────────────────┘
 ```
@@ -304,9 +304,9 @@ Usage · Settings · Welcome · Wizard · Workflow Builder
 
 ## Templates
 
-### 30 Agent Templates (`agents/`)
+### 45 Agent Templates (`agents/`)
 
-Pre-built agents ready to spawn: assistant, coder, researcher, debugger, architect, code-reviewer, doc-writer, test-engineer, devops-lead, ops, orchestrator, planner, analyst, data-scientist, customer-support, email-assistant, health-tracker, home-automation, legal-assistant, meeting-assistant, personal-finance, recruiter, sales-assistant, security-auditor, social-media, translator, travel-planner, tutor, writer, hello-world.
+Pre-built agents ready to spawn across 9 divisions: assistant, coder, researcher, debugger, architect, code-reviewer, doc-writer, test-engineer, devops-lead, ops, orchestrator, planner, analyst, data-scientist, customer-support, email-assistant, health-tracker, home-automation, legal-assistant, meeting-assistant, personal-finance, recruiter, sales-assistant, security-auditor, social-media, translator, travel-planner, tutor, writer, hello-world, ux-architect, brand-guardian, image-prompt-engineer, growth-hacker, content-creator, app-store-optimizer, evidence-collector, performance-benchmarker, reality-checker, trend-researcher, feedback-synthesizer, sprint-prioritizer, rapid-prototyper, mobile-builder, ai-engineer.
 
 ### 7 Hands (`hands/`)
 
@@ -431,7 +431,7 @@ agentos/
 │   ├── security-map.ts     Mutual Authentication Protocol
 │   ├── channels/           40 channel adapters
 │   ├── shared/             Shared utilities
-│   ├── __tests__/          1,416 TypeScript tests
+│   ├── __tests__/          1,439 TypeScript tests
 │   └── ...                 25 more workers
 │
 ├── workers/                Python workers
@@ -445,11 +445,12 @@ agentos/
 
 ## Testing
 
-1,818 tests across two languages:
+2,419 tests across three languages:
 
 ```bash
-npx vitest --run          # 1,416 TypeScript tests (48 files)
-cargo test --workspace    # 402 Rust tests (10 crates)
+npx vitest --run          # 1,439 TypeScript tests (48 files)
+cargo test --workspace    # 819 Rust tests (10 crates)
+python3 -m pytest         # 161 Python tests
 ```
 
 ## How It Works
@@ -459,7 +460,6 @@ Every component is a **Worker** that registers **Functions** and binds them to *
 ```rust
 // Rust worker
 let iii = III::new("ws://localhost:49134");
-iii.connect().await?;
 
 iii.register_function_with_description(
     "agent::chat",

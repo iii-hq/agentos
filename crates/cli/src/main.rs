@@ -1572,4 +1572,254 @@ mod tests {
     fn test_validate_id_start_with_underscore() {
         assert!(validate_id("_agent").is_ok());
     }
+
+    #[test]
+    fn test_validate_id_colons() {
+        assert!(validate_id("bad:id").is_err());
+    }
+
+    #[test]
+    fn test_validate_id_hash() {
+        assert!(validate_id("bad#id").is_err());
+    }
+
+    #[test]
+    fn test_validate_id_percent() {
+        assert!(validate_id("bad%id").is_err());
+    }
+
+    #[test]
+    fn test_validate_id_newline() {
+        assert!(validate_id("bad\nid").is_err());
+    }
+
+    #[test]
+    fn test_validate_id_tab() {
+        assert!(validate_id("bad\tid").is_err());
+    }
+
+    #[test]
+    fn test_validate_id_exactly_256_chars() {
+        let id = "a".repeat(256);
+        assert!(validate_id(&id).is_ok());
+    }
+
+    #[test]
+    fn test_validate_id_boundary_255() {
+        let id = "a".repeat(255);
+        assert!(validate_id(&id).is_ok());
+    }
+
+    #[test]
+    fn test_cli_has_trigger_subcommand() {
+        let cmd = Cli::command();
+        let subs: Vec<&str> = cmd.get_subcommands().map(|s| s.get_name()).collect();
+        assert!(subs.contains(&"trigger"));
+    }
+
+    #[test]
+    fn test_cli_has_channel_subcommand() {
+        let cmd = Cli::command();
+        let subs: Vec<&str> = cmd.get_subcommands().map(|s| s.get_name()).collect();
+        assert!(subs.contains(&"channel"));
+    }
+
+    #[test]
+    fn test_cli_has_config_subcommand() {
+        let cmd = Cli::command();
+        let subs: Vec<&str> = cmd.get_subcommands().map(|s| s.get_name()).collect();
+        assert!(subs.contains(&"config"));
+    }
+
+    #[test]
+    fn test_cli_has_models_subcommand() {
+        let cmd = Cli::command();
+        let subs: Vec<&str> = cmd.get_subcommands().map(|s| s.get_name()).collect();
+        assert!(subs.contains(&"models"));
+    }
+
+    #[test]
+    fn test_cli_has_approvals_subcommand() {
+        let cmd = Cli::command();
+        let subs: Vec<&str> = cmd.get_subcommands().map(|s| s.get_name()).collect();
+        assert!(subs.contains(&"approvals"));
+    }
+
+    #[test]
+    fn test_cli_has_cron_subcommand() {
+        let cmd = Cli::command();
+        let subs: Vec<&str> = cmd.get_subcommands().map(|s| s.get_name()).collect();
+        assert!(subs.contains(&"cron"));
+    }
+
+    #[test]
+    fn test_cli_has_sessions_subcommand() {
+        let cmd = Cli::command();
+        let subs: Vec<&str> = cmd.get_subcommands().map(|s| s.get_name()).collect();
+        assert!(subs.contains(&"sessions"));
+    }
+
+    #[test]
+    fn test_format_epoch_ms_zero() {
+        assert_eq!(format_epoch_ms(0), "-");
+    }
+
+    #[test]
+    fn test_format_epoch_ms_one_second() {
+        assert_eq!(format_epoch_ms(1000), "0:00:01");
+    }
+
+    #[test]
+    fn test_format_epoch_ms_one_minute() {
+        assert_eq!(format_epoch_ms(60_000), "0:01:00");
+    }
+
+    #[test]
+    fn test_format_epoch_ms_one_hour() {
+        assert_eq!(format_epoch_ms(3_600_000), "1:00:00");
+    }
+
+    #[test]
+    fn test_format_epoch_ms_complex() {
+        assert_eq!(format_epoch_ms(3_661_000), "1:01:01");
+    }
+
+    #[test]
+    fn test_agentos_config_path_ends_with_config() {
+        let path = agentos_config_path().unwrap();
+        assert!(path.ends_with(".agentos/config.toml"));
+    }
+
+    #[test]
+    fn test_print_log_entry_unknown_level() {
+        let entry = json!({"level": "TRACE", "timestamp": "2026-01-01T00:00:00Z", "message": "trace msg"});
+        print_log_entry(&entry);
+    }
+
+    #[test]
+    fn test_validate_id_emoji_rejected() {
+        assert!(validate_id("\u{1f600}").is_err());
+    }
+
+    #[test]
+    fn test_validate_id_chinese_chars_accepted() {
+        assert!(validate_id("\u{4e16}\u{754c}").is_ok());
+    }
+
+    #[test]
+    fn test_validate_id_only_hyphens() {
+        assert!(validate_id("---").is_ok());
+    }
+
+    #[test]
+    fn test_validate_id_only_underscores() {
+        assert!(validate_id("___").is_ok());
+    }
+
+    #[test]
+    fn test_validate_id_mixed_hyphen_underscore() {
+        assert!(validate_id("a-b_c-d_e").is_ok());
+    }
+
+    #[test]
+    fn test_validate_id_null_byte() {
+        assert!(validate_id("bad\0id").is_err());
+    }
+
+    #[test]
+    fn test_validate_id_backslash() {
+        assert!(validate_id("bad\\id").is_err());
+    }
+
+    #[test]
+    fn test_validate_id_equals_sign() {
+        assert!(validate_id("key=value").is_err());
+    }
+
+    #[test]
+    fn test_validate_id_question_mark() {
+        assert!(validate_id("query?param").is_err());
+    }
+
+    #[test]
+    fn test_format_epoch_ms_half_second() {
+        assert_eq!(format_epoch_ms(500), "0:00:00");
+    }
+
+    #[test]
+    fn test_format_epoch_ms_23h_59m_59s() {
+        let ms = (23 * 3600 + 59 * 60 + 59) * 1000;
+        assert_eq!(format_epoch_ms(ms), "23:59:59");
+    }
+
+    #[test]
+    fn test_format_epoch_ms_large_value_days() {
+        let ms: u64 = 20000 * 86400 * 1000;
+        let result = format_epoch_ms(ms);
+        assert!(result.contains("d "));
+    }
+
+    #[test]
+    fn test_format_epoch_ms_one_ms() {
+        assert_eq!(format_epoch_ms(1), "0:00:00");
+    }
+
+    #[test]
+    fn test_cli_has_chat_subcommand() {
+        let cmd = Cli::command();
+        let subs: Vec<&str> = cmd.get_subcommands().map(|s| s.get_name()).collect();
+        assert!(subs.contains(&"chat"));
+    }
+
+    #[test]
+    fn test_cli_has_message_subcommand() {
+        let cmd = Cli::command();
+        let subs: Vec<&str> = cmd.get_subcommands().map(|s| s.get_name()).collect();
+        assert!(subs.contains(&"message"));
+    }
+
+    #[test]
+    fn test_cli_has_dashboard_subcommand() {
+        let cmd = Cli::command();
+        let subs: Vec<&str> = cmd.get_subcommands().map(|s| s.get_name()).collect();
+        assert!(subs.contains(&"dashboard"));
+    }
+
+    #[test]
+    fn test_cli_has_doctor_subcommand() {
+        let cmd = Cli::command();
+        let subs: Vec<&str> = cmd.get_subcommands().map(|s| s.get_name()).collect();
+        assert!(subs.contains(&"doctor"));
+    }
+
+    #[test]
+    fn test_cli_has_logs_subcommand() {
+        let cmd = Cli::command();
+        let subs: Vec<&str> = cmd.get_subcommands().map(|s| s.get_name()).collect();
+        assert!(subs.contains(&"logs"));
+    }
+
+    #[test]
+    fn test_cli_has_replay_subcommand() {
+        let cmd = Cli::command();
+        let subs: Vec<&str> = cmd.get_subcommands().map(|s| s.get_name()).collect();
+        assert!(subs.contains(&"replay"));
+    }
+
+    #[test]
+    fn test_cli_has_migrate_subcommand() {
+        let cmd = Cli::command();
+        let subs: Vec<&str> = cmd.get_subcommands().map(|s| s.get_name()).collect();
+        assert!(subs.contains(&"migrate"));
+    }
+
+    #[test]
+    fn test_api_base_is_localhost() {
+        assert!(API_BASE.starts_with("http://localhost"));
+    }
+
+    #[test]
+    fn test_api_base_port() {
+        assert!(API_BASE.contains("3111"));
+    }
 }

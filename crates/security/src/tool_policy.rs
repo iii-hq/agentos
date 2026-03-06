@@ -303,6 +303,313 @@ mod tests {
         assert_eq!(check_policy(&agent_rules, &global_rules, "file::delete"), PolicyAction::Deny);
         assert_eq!(check_policy(&agent_rules, &global_rules, "file::read"), PolicyAction::Allow);
     }
+
+    #[test]
+    fn test_glob_matches_empty_pattern_nonempty_name() {
+        assert!(!glob_matches("", "something"));
+    }
+
+    #[test]
+    fn test_glob_matches_nonempty_pattern_empty_name() {
+        assert!(!glob_matches("file::read", ""));
+    }
+
+    #[test]
+    fn test_glob_matches_star_empty_name() {
+        assert!(glob_matches("*", ""));
+    }
+
+    #[test]
+    fn test_glob_matches_multiple_wildcards() {
+        assert!(glob_matches("*::*::*", "a::b::c"));
+        assert!(glob_matches("*::*", "file::read"));
+    }
+
+    #[test]
+    fn test_glob_matches_consecutive_stars() {
+        assert!(glob_matches("file**read", "fileXXXread"));
+    }
+
+    #[test]
+    fn test_evaluate_rules_multiple_matches_returns_first() {
+        let rules = vec![
+            deny_rule("*"),
+            allow_rule("file::read"),
+        ];
+        assert_eq!(evaluate_rules(&rules, "file::read"), Some(PolicyAction::Deny));
+    }
+
+    #[test]
+    fn test_check_policy_both_empty_defaults_deny() {
+        assert_eq!(
+            check_policy(&[], &[], "any::tool"),
+            PolicyAction::Deny
+        );
+    }
+
+    #[test]
+    fn test_check_policy_agent_allow_global_deny_agent_wins() {
+        let agent = vec![allow_rule("net::*")];
+        let global = vec![deny_rule("net::*")];
+        assert_eq!(check_policy(&agent, &global, "net::send"), PolicyAction::Allow);
+    }
+
+    #[test]
+    fn test_check_policy_no_agent_match_global_deny() {
+        let agent = vec![allow_rule("file::*")];
+        let global = vec![deny_rule("network::*")];
+        assert_eq!(check_policy(&agent, &global, "network::send"), PolicyAction::Deny);
+    }
+
+    #[test]
+    fn test_check_policy_no_agent_match_no_global_match_deny() {
+        let agent = vec![allow_rule("file::*")];
+        let global = vec![allow_rule("network::*")];
+        assert_eq!(check_policy(&agent, &global, "memory::store"), PolicyAction::Deny);
+    }
+
+    #[test]
+    fn test_policy_config_roundtrip() {
+        let config = PolicyConfig {
+            rules: vec![
+                allow_rule("file::*"),
+                deny_rule("network::*"),
+            ],
+            max_subagent_depth: Some(7),
+            max_concurrency: Some(15),
+        };
+        let json_str = serde_json::to_string(&config).unwrap();
+        let roundtrip: PolicyConfig = serde_json::from_str(&json_str).unwrap();
+        assert_eq!(roundtrip.rules.len(), 2);
+        assert_eq!(roundtrip.max_subagent_depth, Some(7));
+        assert_eq!(roundtrip.max_concurrency, Some(15));
+    }
+
+    #[test]
+    fn test_policy_config_zero_depth_and_concurrency() {
+        let config = PolicyConfig {
+            rules: vec![],
+            max_subagent_depth: Some(0),
+            max_concurrency: Some(0),
+        };
+        let val = serde_json::to_value(&config).unwrap();
+        assert_eq!(val["maxSubagentDepth"], 0);
+        assert_eq!(val["maxConcurrency"], 0);
+    }
+
+    #[test]
+    fn test_glob_matches_long_pattern_short_name() {
+        assert!(!glob_matches("file::read::v2::subresource", "file"));
+    }
+
+    #[test]
+    fn test_policy_action_serialization() {
+        let allow_json = serde_json::to_string(&PolicyAction::Allow).unwrap();
+        let deny_json = serde_json::to_string(&PolicyAction::Deny).unwrap();
+        assert_eq!(allow_json, "\"Allow\"");
+        assert_eq!(deny_json, "\"Deny\"");
+    }
+
+    #[test]
+    fn test_policy_scope_serialization() {
+        let agent_json = serde_json::to_string(&PolicyScope::Agent).unwrap();
+        let global_json = serde_json::to_string(&PolicyScope::Global).unwrap();
+        assert_eq!(agent_json, "\"Agent\"");
+        assert_eq!(global_json, "\"Global\"");
+    }
+
+    fn global_allow(pattern: &str) -> PolicyRule {
+        PolicyRule {
+            pattern: pattern.to_string(),
+            action: PolicyAction::Allow,
+            scope: PolicyScope::Global,
+        }
+    }
+
+    fn agent_deny(pattern: &str) -> PolicyRule {
+        PolicyRule {
+            pattern: pattern.to_string(),
+            action: PolicyAction::Deny,
+            scope: PolicyScope::Agent,
+        }
+    }
+
+    #[test]
+    fn test_glob_matches_special_chars_colons() {
+        assert!(glob_matches("ns::tool::v2", "ns::tool::v2"));
+        assert!(!glob_matches("ns::tool::v2", "ns::tool::v3"));
+    }
+
+    #[test]
+    fn test_glob_matches_dots_in_pattern() {
+        assert!(glob_matches("file.read", "file.read"));
+        assert!(!glob_matches("file.read", "file_read"));
+    }
+
+    #[test]
+    fn test_glob_matches_hyphens_underscores() {
+        assert!(glob_matches("my-tool_v2*", "my-tool_v2.1"));
+        assert!(glob_matches("my-tool_v2*", "my-tool_v2"));
+    }
+
+    #[test]
+    fn test_glob_star_at_both_ends() {
+        assert!(glob_matches("*read*", "file::read::v2"));
+        assert!(glob_matches("*read*", "readall"));
+        assert!(glob_matches("*read*", "preread"));
+    }
+
+    #[test]
+    fn test_glob_matches_single_char_segments() {
+        assert!(glob_matches("a*b", "aXb"));
+        assert!(glob_matches("a*b", "ab"));
+        assert!(!glob_matches("a*b", "aXc"));
+    }
+
+    #[test]
+    fn test_evaluate_rules_many_rules_first_match() {
+        let rules: Vec<PolicyRule> = (0..100)
+            .map(|i| allow_rule(&format!("tool-{}", i)))
+            .chain(std::iter::once(deny_rule("tool-50")))
+            .collect();
+        assert_eq!(evaluate_rules(&rules, "tool-50"), Some(PolicyAction::Allow));
+    }
+
+    #[test]
+    fn test_evaluate_rules_many_rules_last_match() {
+        let mut rules: Vec<PolicyRule> = (0..99)
+            .map(|i| allow_rule(&format!("tool-{}", i)))
+            .collect();
+        rules.push(deny_rule("special-tool"));
+        assert_eq!(evaluate_rules(&rules, "special-tool"), Some(PolicyAction::Deny));
+    }
+
+    #[test]
+    fn test_policy_config_large_rule_set() {
+        let rules: Vec<PolicyRule> = (0..1000)
+            .map(|i| PolicyRule {
+                pattern: format!("tool::category{}::*", i),
+                action: if i % 2 == 0 { PolicyAction::Allow } else { PolicyAction::Deny },
+                scope: PolicyScope::Agent,
+            })
+            .collect();
+        let config = PolicyConfig {
+            rules,
+            max_subagent_depth: Some(10),
+            max_concurrency: Some(50),
+        };
+        let serialized = serde_json::to_string(&config).unwrap();
+        let deserialized: PolicyConfig = serde_json::from_str(&serialized).unwrap();
+        assert_eq!(deserialized.rules.len(), 1000);
+        assert_eq!(deserialized.rules[0].action, PolicyAction::Allow);
+        assert_eq!(deserialized.rules[1].action, PolicyAction::Deny);
+    }
+
+    #[test]
+    fn test_check_policy_mixed_allow_deny_patterns() {
+        let agent_rules = vec![
+            deny_rule("file::delete"),
+            deny_rule("file::chmod"),
+            allow_rule("file::*"),
+        ];
+        let global_rules = vec![deny_rule("*")];
+        assert_eq!(check_policy(&agent_rules, &global_rules, "file::read"), PolicyAction::Allow);
+        assert_eq!(check_policy(&agent_rules, &global_rules, "file::delete"), PolicyAction::Deny);
+        assert_eq!(check_policy(&agent_rules, &global_rules, "file::chmod"), PolicyAction::Deny);
+        assert_eq!(check_policy(&agent_rules, &global_rules, "network::send"), PolicyAction::Deny);
+    }
+
+    #[test]
+    fn test_glob_no_wildcard_exact_match_only() {
+        assert!(glob_matches("exact_tool", "exact_tool"));
+        assert!(!glob_matches("exact_tool", "exact_tool2"));
+        assert!(!glob_matches("exact_tool", "exact_too"));
+        assert!(!glob_matches("exact_tool", ""));
+    }
+
+    #[test]
+    fn test_glob_multiple_wildcards_complex() {
+        assert!(glob_matches("a*b*c*d", "aXbYcZd"));
+        assert!(glob_matches("a*b*c*d", "abcd"));
+        assert!(!glob_matches("a*b*c*d", "aXbYcZ"));
+        assert!(!glob_matches("a*b*c*d", "XaXbYcZd"));
+    }
+
+    #[test]
+    fn test_check_policy_agent_specific_override() {
+        let agent_rules = vec![
+            allow_rule("dangerous::tool"),
+        ];
+        let global_rules = vec![
+            deny_rule("dangerous::*"),
+            allow_rule("*"),
+        ];
+        assert_eq!(check_policy(&agent_rules, &global_rules, "dangerous::tool"), PolicyAction::Allow);
+        assert_eq!(check_policy(&agent_rules, &global_rules, "dangerous::other"), PolicyAction::Deny);
+        assert_eq!(check_policy(&agent_rules, &global_rules, "safe::tool"), PolicyAction::Allow);
+    }
+
+    #[test]
+    fn test_policy_action_deserialization() {
+        let allow: PolicyAction = serde_json::from_str("\"Allow\"").unwrap();
+        let deny: PolicyAction = serde_json::from_str("\"Deny\"").unwrap();
+        assert_eq!(allow, PolicyAction::Allow);
+        assert_eq!(deny, PolicyAction::Deny);
+    }
+
+    #[test]
+    fn test_policy_scope_deserialization() {
+        let agent: PolicyScope = serde_json::from_str("\"Agent\"").unwrap();
+        let global: PolicyScope = serde_json::from_str("\"Global\"").unwrap();
+        assert_eq!(agent, PolicyScope::Agent);
+        assert_eq!(global, PolicyScope::Global);
+    }
+
+    #[test]
+    fn test_policy_config_null_optional_fields_roundtrip() {
+        let config = PolicyConfig {
+            rules: vec![allow_rule("*")],
+            max_subagent_depth: None,
+            max_concurrency: None,
+        };
+        let serialized = serde_json::to_string(&config).unwrap();
+        let deserialized: PolicyConfig = serde_json::from_str(&serialized).unwrap();
+        assert_eq!(deserialized.max_subagent_depth, None);
+        assert_eq!(deserialized.max_concurrency, None);
+        assert_eq!(deserialized.rules.len(), 1);
+    }
+
+    #[test]
+    fn test_policy_config_max_u32_values() {
+        let config = PolicyConfig {
+            rules: vec![],
+            max_subagent_depth: Some(u32::MAX),
+            max_concurrency: Some(u32::MAX),
+        };
+        let val = serde_json::to_value(&config).unwrap();
+        assert_eq!(val["maxSubagentDepth"], u32::MAX);
+        assert_eq!(val["maxConcurrency"], u32::MAX);
+    }
+
+    #[test]
+    fn test_glob_matches_very_long_pattern() {
+        let long_pattern = format!("prefix::{}::suffix", "mid".repeat(100));
+        let long_name = format!("prefix::{}::suffix", "mid".repeat(100));
+        assert!(glob_matches(&long_pattern, &long_name));
+    }
+
+    #[test]
+    fn test_check_policy_cascading_rules() {
+        let agent_rules = vec![
+            deny_rule("admin::*"),
+        ];
+        let global_rules = vec![
+            allow_rule("admin::read"),
+            deny_rule("admin::*"),
+        ];
+        assert_eq!(check_policy(&agent_rules, &global_rules, "admin::read"), PolicyAction::Deny);
+        assert_eq!(check_policy(&agent_rules, &global_rules, "admin::write"), PolicyAction::Deny);
+    }
 }
 
 pub fn register(iii: &III) {

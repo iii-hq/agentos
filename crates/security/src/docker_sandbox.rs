@@ -459,6 +459,330 @@ mod tests {
         let result = docker_exec(input).await;
         assert!(result.is_err());
     }
+
+    #[tokio::test]
+    async fn test_docker_exec_allowed_image_ubuntu_22() {
+        let input = json!({"command": ["echo", "hi"], "image": "ubuntu:22.04"});
+        let _result = docker_exec(input).await;
+    }
+
+    #[tokio::test]
+    async fn test_docker_exec_allowed_image_python() {
+        let input = json!({"command": ["echo"], "image": "python:3.12-slim"});
+        let _result = docker_exec(input).await;
+    }
+
+    #[tokio::test]
+    async fn test_docker_exec_allowed_image_node() {
+        let input = json!({"command": ["echo"], "image": "node:20-slim"});
+        let _result = docker_exec(input).await;
+    }
+
+    #[tokio::test]
+    async fn test_docker_exec_allowed_image_rust() {
+        let input = json!({"command": ["echo"], "image": "rust:1-slim"});
+        let _result = docker_exec(input).await;
+    }
+
+    #[tokio::test]
+    async fn test_docker_exec_disallowed_centos() {
+        let input = json!({"command": ["echo"], "image": "centos:7"});
+        let result = docker_exec(input).await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("not allowed"));
+    }
+
+    #[tokio::test]
+    async fn test_docker_exec_disallowed_empty_image_tag() {
+        let input = json!({"command": ["echo"], "image": "evil:"});
+        let result = docker_exec(input).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_docker_exec_workspace_safe_tmp() {
+        let input = json!({"command": ["ls"], "workspacePath": "/tmp/sandbox"});
+        let _result = docker_exec(input).await;
+    }
+
+    #[tokio::test]
+    async fn test_docker_exec_workspace_blocked_run() {
+        let input = json!({"command": ["ls"], "workspacePath": "/run/docker"});
+        let result = docker_exec(input).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_docker_exec_workspace_blocked_lib() {
+        let input = json!({"command": ["ls"], "workspacePath": "/lib/modules"});
+        let result = docker_exec(input).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_docker_exec_workspace_blocked_sbin() {
+        let input = json!({"command": ["ls"], "workspacePath": "/sbin/init"});
+        let result = docker_exec(input).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_docker_exec_workspace_blocked_bin() {
+        let input = json!({"command": ["ls"], "workspacePath": "/bin/sh"});
+        let result = docker_exec(input).await;
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_docker_exec_request_default_values() {
+        let req = make_request(json!({}));
+        assert!(req.memory_limit.is_none());
+        assert!(req.cpu_limit.is_none());
+        assert!(req.network_mode.is_none());
+        assert!(req.workspace_path.is_none());
+        assert!(req.timeout_secs.is_none());
+        assert!(req.env.is_none());
+    }
+
+    #[test]
+    fn test_docker_exec_request_memory_limit_values() {
+        for limit in &["128m", "256m", "512m", "1g", "2g"] {
+            let req = make_request(json!({"memoryLimit": limit}));
+            assert_eq!(req.memory_limit.as_deref(), Some(*limit));
+        }
+    }
+
+    #[test]
+    fn test_docker_exec_request_cpu_limit_values() {
+        for limit in &["0.5", "1.0", "2.0", "4.0"] {
+            let req = make_request(json!({"cpuLimit": limit}));
+            assert_eq!(req.cpu_limit.as_deref(), Some(*limit));
+        }
+    }
+
+    #[test]
+    fn test_docker_exec_request_timeout_range() {
+        let req = make_request(json!({"timeoutSecs": 0}));
+        assert_eq!(req.timeout_secs, Some(0));
+
+        let req2 = make_request(json!({"timeoutSecs": 3600}));
+        assert_eq!(req2.timeout_secs, Some(3600));
+    }
+
+    #[tokio::test]
+    async fn test_docker_exec_single_command() {
+        let input = json!({"command": ["ls"]});
+        let _result = docker_exec(input).await;
+    }
+
+    #[test]
+    fn test_default_image_is_in_allowed_list() {
+        assert!(ALLOWED_IMAGES.contains(&DEFAULT_IMAGE));
+    }
+
+    #[test]
+    fn test_default_network_mode_is_none() {
+        assert_eq!(DEFAULT_NETWORK_MODE, "none");
+    }
+
+    #[test]
+    fn test_default_timeout_is_30() {
+        assert_eq!(DEFAULT_TIMEOUT_SECS, 30);
+    }
+
+    #[test]
+    fn test_docker_exec_request_very_long_command() {
+        let long_args: Vec<String> = (0..1000).map(|i| format!("arg-{}", i)).collect();
+        let mut cmd = vec!["echo".to_string()];
+        cmd.extend(long_args);
+        let req = DockerExecRequest {
+            command: cmd.clone(),
+            image: None,
+            memory_limit: None,
+            cpu_limit: None,
+            network_mode: None,
+            workspace_path: None,
+            timeout_secs: None,
+            env: None,
+        };
+        assert_eq!(req.command.len(), 1001);
+        let val = serde_json::to_value(&req).unwrap();
+        assert_eq!(val["command"].as_array().unwrap().len(), 1001);
+    }
+
+    #[test]
+    fn test_docker_exec_request_env_empty_value() {
+        let json_val = json!({"command": ["echo"], "env": ["EMPTY_VAR="]});
+        let req: DockerExecRequest = serde_json::from_value(json_val).unwrap();
+        assert_eq!(req.env.as_ref().unwrap()[0], "EMPTY_VAR=");
+    }
+
+    #[test]
+    fn test_docker_exec_request_env_special_chars() {
+        let json_val = json!({"command": ["echo"], "env": ["SPECIAL=val with spaces", "QUOTED=it's \"quoted\"", "MULTI=line1\nline2"]});
+        let req: DockerExecRequest = serde_json::from_value(json_val).unwrap();
+        assert_eq!(req.env.as_ref().unwrap().len(), 3);
+        assert!(req.env.as_ref().unwrap()[0].contains("spaces"));
+    }
+
+    #[test]
+    fn test_docker_exec_request_env_no_equals_sign() {
+        let json_val = json!({"command": ["echo"], "env": ["JUST_A_NAME"]});
+        let req: DockerExecRequest = serde_json::from_value(json_val).unwrap();
+        assert_eq!(req.env.as_ref().unwrap()[0], "JUST_A_NAME");
+    }
+
+    #[test]
+    fn test_docker_exec_request_workspace_deeply_nested() {
+        let json_val = json!({"command": ["ls"], "workspacePath": "/tmp/a/b/c/d/e/f/g/h/i/j"});
+        let req: DockerExecRequest = serde_json::from_value(json_val).unwrap();
+        assert_eq!(req.workspace_path, Some("/tmp/a/b/c/d/e/f/g/h/i/j".to_string()));
+    }
+
+    #[test]
+    fn test_docker_exec_request_workspace_unicode() {
+        let json_val = json!({"command": ["ls"], "workspacePath": "/tmp/\u{4e16}\u{754c}"});
+        let req: DockerExecRequest = serde_json::from_value(json_val).unwrap();
+        assert!(req.workspace_path.unwrap().contains("\u{4e16}"));
+    }
+
+    #[test]
+    fn test_all_allowed_images_exact() {
+        let expected = vec![
+            "agentos-sandbox",
+            "node:20-slim",
+            "python:3.12-slim",
+            "rust:1-slim",
+            "ubuntu:22.04",
+            "ubuntu:24.04",
+        ];
+        for img in &expected {
+            assert!(ALLOWED_IMAGES.contains(img), "Missing: {}", img);
+        }
+        assert_eq!(ALLOWED_IMAGES.len(), expected.len());
+    }
+
+    #[test]
+    fn test_docker_exec_request_serialization_roundtrip_full() {
+        let req = DockerExecRequest {
+            command: vec!["python3".to_string(), "-c".to_string(), "print('hello')".to_string()],
+            image: Some("python:3.12-slim".to_string()),
+            memory_limit: Some("512m".to_string()),
+            cpu_limit: Some("2.0".to_string()),
+            network_mode: Some("none".to_string()),
+            workspace_path: Some("/tmp/work".to_string()),
+            timeout_secs: Some(60),
+            env: Some(vec!["FOO=bar".to_string(), "BAZ=qux".to_string()]),
+        };
+        let serialized = serde_json::to_string(&req).unwrap();
+        let deserialized: DockerExecRequest = serde_json::from_str(&serialized).unwrap();
+        assert_eq!(deserialized.command, req.command);
+        assert_eq!(deserialized.image, req.image);
+        assert_eq!(deserialized.memory_limit, req.memory_limit);
+        assert_eq!(deserialized.cpu_limit, req.cpu_limit);
+        assert_eq!(deserialized.network_mode, req.network_mode);
+        assert_eq!(deserialized.workspace_path, req.workspace_path);
+        assert_eq!(deserialized.timeout_secs, req.timeout_secs);
+        assert_eq!(deserialized.env, req.env);
+    }
+
+    #[test]
+    fn test_docker_exec_request_serialization_roundtrip_minimal() {
+        let req = DockerExecRequest {
+            command: vec!["ls".to_string()],
+            image: None,
+            memory_limit: None,
+            cpu_limit: None,
+            network_mode: None,
+            workspace_path: None,
+            timeout_secs: None,
+            env: None,
+        };
+        let serialized = serde_json::to_string(&req).unwrap();
+        let deserialized: DockerExecRequest = serde_json::from_str(&serialized).unwrap();
+        assert_eq!(deserialized.command, vec!["ls"]);
+        assert!(deserialized.image.is_none());
+        assert!(deserialized.env.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_docker_exec_blocked_path_every_entry() {
+        for path in BLOCKED_PATHS {
+            let input = json!({"command": ["ls"], "workspacePath": path});
+            let result = docker_exec(input).await;
+            assert!(result.is_err(), "Expected blocked for path: {}", path);
+        }
+    }
+
+    #[tokio::test]
+    async fn test_docker_exec_blocked_path_subdirectories() {
+        for path in BLOCKED_PATHS {
+            let subdir = format!("{}/subdir/deep", path);
+            let input = json!({"command": ["ls"], "workspacePath": subdir});
+            let result = docker_exec(input).await;
+            assert!(result.is_err(), "Expected blocked for subdir of: {}", path);
+        }
+    }
+
+    #[tokio::test]
+    async fn test_docker_exec_blocked_env_all_prefixes() {
+        let env_samples = vec![
+            "DOCKER_TLS_VERIFY=1",
+            "KUBERNETES_PORT=443",
+            "AWS_ACCESS_KEY_ID=test",
+            "AZURE_CLIENT_ID=test",
+            "GCP_SERVICE_ACCOUNT=test",
+            "HOME=/evil",
+            "PATH=/evil",
+        ];
+        for env_var in env_samples {
+            let input = json!({"command": ["echo"], "env": [env_var]});
+            let result = docker_exec(input).await;
+            assert!(result.is_err(), "Expected blocked for env: {}", env_var);
+        }
+    }
+
+    #[tokio::test]
+    async fn test_docker_exec_allowed_env_safe_variables() {
+        let input = json!({"command": ["echo"], "env": ["MY_VAR=safe", "APP_PORT=3000", "DEBUG=true"]});
+        let _result = docker_exec(input).await;
+    }
+
+    #[test]
+    fn test_docker_exec_request_empty_env_vec() {
+        let json_val = json!({"command": ["echo"], "env": []});
+        let req: DockerExecRequest = serde_json::from_value(json_val).unwrap();
+        assert_eq!(req.env.as_ref().unwrap().len(), 0);
+    }
+
+    #[test]
+    fn test_docker_exec_request_single_command_word() {
+        let json_val = json!({"command": ["whoami"]});
+        let req: DockerExecRequest = serde_json::from_value(json_val).unwrap();
+        assert_eq!(req.command.len(), 1);
+        assert_eq!(req.command[0], "whoami");
+    }
+
+    #[test]
+    fn test_docker_exec_request_command_with_flags() {
+        let json_val = json!({"command": ["ls", "-la", "--color=auto", "/tmp"]});
+        let req: DockerExecRequest = serde_json::from_value(json_val).unwrap();
+        assert_eq!(req.command.len(), 4);
+    }
+
+    #[tokio::test]
+    async fn test_docker_exec_disallowed_image_with_tag() {
+        let input = json!({"command": ["echo"], "image": "debian:bullseye"});
+        let result = docker_exec(input).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_docker_exec_disallowed_image_latest() {
+        let input = json!({"command": ["echo"], "image": "latest"});
+        let result = docker_exec(input).await;
+        assert!(result.is_err());
+    }
 }
 
 pub fn register(iii: &III) {

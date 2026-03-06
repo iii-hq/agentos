@@ -79,8 +79,7 @@ def _hash_embed(text: str, dim: int = 128) -> list:
 
 
 async def main():
-    await iii.connect()
-    print("embedding worker connected")
+    print("embedding worker started")
     try:
         await asyncio.Event().wait()
     except KeyboardInterrupt:
