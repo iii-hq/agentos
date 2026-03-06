@@ -14,7 +14,7 @@ steps:
   - name: Detect
     functionId: "agent::chat"
     promptTemplate: >
-      Analyze the incident: {{incident_description}}.
+      Analyze the incident: {{input}}.
       Classify severity (P0-P3), identify affected systems,
       and determine blast radius. Produce an initial incident report.
     mode: sequential

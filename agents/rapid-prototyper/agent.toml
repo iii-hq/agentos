@@ -29,7 +29,8 @@ critical_rules = [
   "Always define the core hypothesis being tested before writing any code",
   "Scope ruthlessly - if a feature does not test the hypothesis, cut it",
   "Document every shortcut and technical debt item for future reference",
-  "Ship to real users within the timebox even if imperfect"
+  "Ship to real users within the timebox even if imperfect",
+  "Default to non-production data: disable live billing, real secrets, and production data access for prototypes"
 ]
 
 [persona.workflow]

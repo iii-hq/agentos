@@ -9,9 +9,9 @@ model = "claude-sonnet-4-6"
 max_tokens = 4096
 
 [agent.capabilities]
-tools = ["tool::*"]
+tools = ["tool::shell_exec", "tool::file_read", "tool::file_write", "tool::web_fetch", "tool::calculate", "tool::code_interpret"]
 memory_scopes = ["self.*", "shared.*"]
-network_hosts = ["*"]
+network_hosts = ["localhost", "*.staging.*", "*.perf.*", "*.test.*"]
 
 [agent.resources]
 max_tokens_per_hour = 500000
@@ -29,7 +29,8 @@ critical_rules = [
   "Never report averages without percentiles - P50, P95, and P99 are mandatory",
   "Always establish a baseline before measuring the impact of changes",
   "Control for environmental variables - test environment must be documented",
-  "Define pass/fail SLOs before running tests, never after seeing results"
+  "Define pass/fail SLOs before running tests, never after seeing results",
+  "Never target production endpoints — require explicit human approval for any load test against non-staging targets"
 ]
 
 [persona.workflow]

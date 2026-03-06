@@ -37,15 +37,16 @@ steps:
     functionId: "agent::chat"
     promptTemplate: >
       Review this implementation: {{implementation}}.
+      Previous review feedback (if any): {{review_result}}.
       Check for bugs, security issues, test coverage gaps, and style.
-      If issues found, return specific fix instructions.
-      If approved, return "LGTM".
+      If issues found, return specific fix instructions for the next iteration.
+      If approved, your response MUST include the word "LGTM".
     mode: loop
     timeoutMs: 180000
     errorMode: retry
     maxRetries: 2
     maxIterations: 3
-    until: "review_approved"
+    until: "LGTM"
     outputVar: review_result
 
   - name: Merge

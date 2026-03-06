@@ -40,6 +40,7 @@ steps:
       Implement the MVP based on this design spec: {{design_spec}}.
       Prioritize working software over polish.
       Write tests for critical paths.
+      When all tests pass, include "all_tests_pass" in your response.
     mode: loop
     timeoutMs: 300000
     errorMode: retry

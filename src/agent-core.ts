@@ -912,7 +912,7 @@ registerFunction(
     description: "List agents filtered by division",
     metadata: { category: "agent" },
   },
-  async ({ division }: { division: Division }) => {
+  async ({ division }: { division?: Division }) => {
     const agents: AgentConfig[] = await trigger("state::list", {
       scope: "agents",
     });
