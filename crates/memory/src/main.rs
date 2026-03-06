@@ -755,23 +755,35 @@ fn estimate_importance(content: &str, role: &str) -> f64 {
 }
 
 fn chunk_text(text: &str, max_chars: usize) -> Vec<String> {
-    if text.len() <= max_chars {
+    if text.chars().count() <= max_chars {
         return vec![text.to_string()];
     }
+    let char_indices: Vec<(usize, char)> = text.char_indices().collect();
+    let total_chars = char_indices.len();
     let mut chunks = Vec::new();
-    let mut start = 0;
-    while start < text.len() {
-        let end = (start + max_chars).min(text.len());
-        let mut split_at = if end < text.len() {
-            text[start..end].rfind('\n').map(|p| start + p + 1).unwrap_or(end)
+    let mut start_char = 0;
+    while start_char < total_chars {
+        let end_char = (start_char + max_chars).min(total_chars);
+        let start_byte = char_indices[start_char].0;
+        let end_byte = if end_char < total_chars { char_indices[end_char].0 } else { text.len() };
+        let slice = &text[start_byte..end_byte];
+        let mut split_char = if end_char < total_chars {
+            slice.rfind('\n').map(|byte_pos| {
+                char_indices[start_char..end_char]
+                    .iter()
+                    .position(|(b, _)| *b == start_byte + byte_pos)
+                    .map(|p| start_char + p + 1)
+                    .unwrap_or(end_char)
+            }).unwrap_or(end_char)
         } else {
-            end
+            end_char
         };
-        if split_at <= start {
-            split_at = end;
+        if split_char <= start_char {
+            split_char = end_char;
         }
-        chunks.push(text[start..split_at].to_string());
-        start = split_at;
+        let split_byte = if split_char < total_chars { char_indices[split_char].0 } else { text.len() };
+        chunks.push(text[start_byte..split_byte].to_string());
+        start_char = split_char;
     }
     chunks
 }

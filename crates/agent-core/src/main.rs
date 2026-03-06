@@ -277,12 +277,14 @@ async fn list_tools(iii: &III, agent_id: &str) -> Result<Value, IIIError> {
         .map(|c| c.tools.clone())
         .unwrap_or_else(|| vec!["*".into()]);
 
+    let allowed: Vec<String> = allowed.into_iter().filter(|s| !s.trim().is_empty()).collect();
+
     let all_functions: Value = iii
         .trigger("engine::functions::list", json!({}))
         .await
         .unwrap_or(json!([]));
 
-    if allowed.contains(&"*".to_string()) {
+    if allowed.is_empty() || allowed.contains(&"*".to_string()) {
         return Ok(all_functions);
     }
 
@@ -1084,10 +1086,13 @@ mod tests {
 
     #[test]
     fn test_tool_filter_empty_string_prefix() {
-        let allowed = vec!["".to_string()];
+        let allowed: Vec<String> = vec!["".to_string()]
+            .into_iter()
+            .filter(|s| !s.trim().is_empty())
+            .collect();
         let tool_id = "file::read";
         let matches = allowed.iter().any(|a| tool_id.starts_with(a.as_str()));
-        assert!(matches);
+        assert!(!matches, "empty string should be filtered out and not match");
     }
 
     #[test]

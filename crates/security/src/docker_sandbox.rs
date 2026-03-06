@@ -400,6 +400,19 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_docker_exec_blocked_env_without_equals() {
+        let input = json!({"command": ["echo"], "env": ["HOME"]});
+        let result = docker_exec(input).await;
+        assert!(result.is_err());
+        let input2 = json!({"command": ["echo"], "env": ["PATH"]});
+        let result2 = docker_exec(input2).await;
+        assert!(result2.is_err());
+        let input3 = json!({"command": ["echo"], "env": ["DOCKER_HOST"]});
+        let result3 = docker_exec(input3).await;
+        assert!(result3.is_err());
+    }
+
+    #[tokio::test]
     async fn test_docker_exec_blocked_env_gcp() {
         let input = json!({"command": ["echo"], "env": ["GCP_PROJECT=evil"]});
         let result = docker_exec(input).await;
@@ -861,10 +874,12 @@ async fn docker_exec(input: Value) -> Result<Value, IIIError> {
     if let Some(env_vars) = &req.env {
         for var in env_vars {
             let upper = var.to_uppercase();
-            if BLOCKED_ENV_PREFIXES
-                .iter()
-                .any(|p| upper.starts_with(p))
-            {
+            let name_upper = upper.split('=').next().unwrap_or(&upper);
+            let blocked = BLOCKED_ENV_PREFIXES.iter().any(|p| {
+                let prefix = p.trim_end_matches('=');
+                name_upper.starts_with(prefix)
+            });
+            if blocked {
                 return Err(IIIError::Handler(format!(
                     "Blocked env var: {}",
                     var.split('=').next().unwrap_or("")

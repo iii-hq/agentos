@@ -582,7 +582,7 @@ class TestGenerateEmbeddingEdgeCases:
         result = _run(mod.generate_embedding({"batch": ["one", "two", "three"]}))
         for emb in result["embeddings"]:
             for v in emb:
-                assert -1.5 <= v <= 1.5
+                assert -1.0 <= v <= 1.0
 
     def test_whitespace_only_input(self):
         result = _run(mod.generate_embedding({"text": "   \t  \n  "}))
@@ -627,13 +627,13 @@ class TestComputeSimilarityEdgeCases:
         a = [1.0, float("nan"), 3.0]
         b = [1.0, 2.0, 3.0]
         result = _run(mod.compute_similarity({"a": a, "b": b}))
-        assert math.isnan(result["similarity"]) or isinstance(result["similarity"], float)
+        assert result["similarity"] == 0.0
 
     def test_nan_in_vector_b(self):
         a = [1.0, 2.0, 3.0]
         b = [1.0, float("nan"), 3.0]
         result = _run(mod.compute_similarity({"a": a, "b": b}))
-        assert math.isnan(result["similarity"]) or isinstance(result["similarity"], float)
+        assert result["similarity"] == 0.0
 
     def test_infinity_in_vector(self):
         a = [1.0, float("inf"), 3.0]

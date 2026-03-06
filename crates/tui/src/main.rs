@@ -1268,8 +1268,11 @@ fn status_cell(status: &str) -> Span<'_> {
 }
 
 fn truncate(s: &str, max: usize) -> String {
-    if s.len() > max {
-        format!("{}...", &s[..max.saturating_sub(3)])
+    let char_count = s.chars().count();
+    if char_count > max {
+        let take = max.saturating_sub(3);
+        let truncated: String = s.chars().take(take).collect();
+        format!("{}...", truncated)
     } else {
         s.to_string()
     }
@@ -1718,6 +1721,9 @@ mod tests {
     fn test_truncate_multibyte_safe() {
         let result = truncate("abc", 100);
         assert_eq!(result, "abc");
+        let cjk = truncate("\u{65e5}\u{672c}\u{8a9e}\u{3067}\u{3059}", 4);
+        assert!(cjk.ends_with("..."));
+        assert!(cjk.chars().count() <= 4);
     }
 
     #[test]
