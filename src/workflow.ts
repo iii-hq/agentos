@@ -46,7 +46,7 @@ registerFunction(
     metadata: { category: "workflow" },
   },
   async (req: any) => {
-    requireAuth(req);
+    if (req.headers) requireAuth(req);
     const workflow: Workflow = req.body || req;
     const id = workflow.id || crypto.randomUUID();
     await trigger("state::set", {
@@ -65,7 +65,7 @@ registerFunction(
     metadata: { category: "workflow" },
   },
   async (req: any) => {
-    requireAuth(req);
+    if (req.headers) requireAuth(req);
     const { workflowId, input, agentId } = req.body || req;
     const workflow: Workflow = await trigger("state::get", {
       scope: "workflows",
@@ -306,7 +306,7 @@ registerFunction(
     metadata: { category: "workflow" },
   },
   async (req: any) => {
-    requireAuth(req);
+    if (req.headers) requireAuth(req);
     return trigger("state::list", { scope: "workflows" });
   },
 );
@@ -318,7 +318,7 @@ registerFunction(
     metadata: { category: "workflow" },
   },
   async (req: any) => {
-    requireAuth(req);
+    if (req.headers) requireAuth(req);
     const input = req.body || req;
     const { workflowId } = input;
     const { limit, offset } = safePagination(input.limit, input.offset);

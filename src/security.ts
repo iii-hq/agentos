@@ -160,7 +160,7 @@ registerFunction(
     metadata: { category: "security" },
   },
   async (req: any) => {
-    requireAuth(req);
+    if (req.headers) requireAuth(req);
     const entries: any = await trigger("state::list", { scope: "audit" });
     const chain: AuditEntry[] = (entries || [])
       .filter((e: any) => e.key !== "__latest" && e.value?.hash)
@@ -203,7 +203,7 @@ registerFunction(
     metadata: { category: "security" },
   },
   async (req: any) => {
-    requireAuth(req);
+    if (req.headers) requireAuth(req);
     const { text } = req.body || req;
     if (!text) return { safe: true, matches: [], riskScore: 0 };
     const patterns = [

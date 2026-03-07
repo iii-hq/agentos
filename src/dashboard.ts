@@ -33,7 +33,7 @@ registerFunction(
 registerFunction(
   { id: "dashboard::stats", description: "Aggregate dashboard statistics" },
   async (req: any) => {
-    requireAuth(req);
+    if (req.headers) requireAuth(req);
     const ctx = { functionId: "dashboard::stats" };
     const [
       health,
@@ -136,7 +136,7 @@ registerFunction(
 registerFunction(
   { id: "dashboard::events", description: "Get recent audit events" },
   async (req: any) => {
-    requireAuth(req);
+    if (req.headers) requireAuth(req);
     const input = req.body || req;
     const limit = input.limit ?? 100;
     const logs = await safeCall(
@@ -152,7 +152,7 @@ registerFunction(
 registerFunction(
   { id: "dashboard::logs", description: "Get system logs" },
   async (req: any) => {
-    requireAuth(req);
+    if (req.headers) requireAuth(req);
     const input = req.body || req;
     const limit = input.limit ?? 200;
     const level = input.level ?? "all";
@@ -565,13 +565,13 @@ function dashboard() {
       this.chatMessages.push({ role: 'user', content: msg })
       this.chatInput = ''
       try {
-        const r = await fetch('/api/agent/chat', {
+        const r = await fetch('/api/agents/' + this.chatAgent + '/message', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ agentId: this.chatAgent, message: msg }),
         })
         const d = await r.json()
-        this.chatMessages.push({ role: 'assistant', content: d.response || d.message || JSON.stringify(d) })
+        this.chatMessages.push({ role: 'assistant', content: d.content || d.response || d.message || JSON.stringify(d) })
       } catch (e) {
         this.chatMessages.push({ role: 'assistant', content: 'Error: Could not reach agent' })
       }

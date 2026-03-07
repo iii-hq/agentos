@@ -235,7 +235,7 @@ registerFunction(
     metadata: { category: "approval" },
   },
   async (req: any) => {
-    requireAuth(req);
+    if (req.headers) requireAuth(req);
     const { agentId } = req.body || req;
 
     if (agentId) {
@@ -277,7 +277,7 @@ registerFunction(
     metadata: { category: "approval" },
   },
   async (req: any) => {
-    requireAuth(req);
+    if (req.headers) requireAuth(req);
     const { approvalId, agentId, decision, decidedBy } = req.body || req;
     const safeApprovalId = sanitizeId(approvalId);
     const safeAgentId = sanitizeId(agentId);

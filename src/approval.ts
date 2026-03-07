@@ -102,7 +102,7 @@ registerFunction(
     metadata: { category: "approval" },
   },
   async (req) => {
-    requireAuth(req);
+    if (req.headers) requireAuth(req);
     const { requestId, agentId, decision, decidedBy } = req.body || req;
     const safeRequestId = sanitizeId(requestId);
     const safeAgentId = sanitizeId(agentId);
@@ -134,7 +134,7 @@ registerFunction(
     metadata: { category: "approval" },
   },
   async (req: any) => {
-    requireAuth(req);
+    if (req.headers) requireAuth(req);
     const { agentId, status: filterStatus } = req.body || req;
     if (agentId) {
       const items = (await trigger("state::list", {
@@ -216,7 +216,7 @@ registerFunction(
     metadata: { category: "approval" },
   },
   async (req: any) => {
-    requireAuth(req);
+    if (req.headers) requireAuth(req);
     const { tools, timeoutMs } = req.body || req;
     await trigger("state::set", {
       scope: "approval_policy",

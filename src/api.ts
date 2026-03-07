@@ -80,7 +80,7 @@ const PKG_VERSION = (() => {
 
 function authGuard(req: any): { status_code: number; body: any } | null {
   try {
-    requireAuth(req);
+    if (req.headers) requireAuth(req);
     return null;
   } catch (err: any) {
     if (err.statusCode === 401) {

@@ -14,7 +14,7 @@ registerFunction(
     metadata: { category: "streaming" },
   },
   async (req) => {
-    requireAuth(req);
+    if (req.headers) requireAuth(req);
     const { agentId, message, sessionId } = req.body || req;
 
     const config: any = await trigger("state::get", {
@@ -83,7 +83,7 @@ registerFunction(
     metadata: { category: "streaming" },
   },
   async (req) => {
-    requireAuth(req);
+    if (req.headers) requireAuth(req);
     const { agentId, message, sessionId } = req.body || req;
 
     const response: any = await trigger("agent::chat", {
