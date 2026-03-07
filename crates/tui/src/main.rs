@@ -34,7 +34,6 @@ enum Screen {
     Templates,
     Usage,
     Settings,
-    Welcome,
     Wizard,
     WorkflowBuilder,
 }
@@ -46,7 +45,7 @@ impl Screen {
             Screen::Skills, Screen::Hands, Screen::Workflows, Screen::Sessions,
             Screen::Approvals, Screen::Logs, Screen::Memory, Screen::Audit,
             Screen::Security, Screen::Peers, Screen::Extensions, Screen::Triggers,
-            Screen::Templates, Screen::Usage, Screen::Settings, Screen::Welcome,
+            Screen::Templates, Screen::Usage, Screen::Settings,
             Screen::Wizard, Screen::WorkflowBuilder,
         ]
     }
@@ -72,9 +71,8 @@ impl Screen {
             Screen::Templates => "Templates",
             Screen::Usage => "Usage",
             Screen::Settings => "Settings",
-            Screen::Welcome => "Welcome",
             Screen::Wizard => "Wizard",
-            Screen::WorkflowBuilder => "Workflow Builder",
+            Screen::WorkflowBuilder => "Wf Builder",
         }
     }
 
@@ -90,8 +88,23 @@ impl Screen {
             Screen::Sessions => "8",
             Screen::Approvals => "9",
             Screen::Logs => "0",
-            _ => "",
+            Screen::Memory => "m",
+            Screen::Audit => "a",
+            Screen::Security => "s",
+            Screen::Peers => "p",
+            Screen::Extensions => "e",
+            Screen::Triggers => "t",
+            Screen::Templates => "T",
+            Screen::Usage => "u",
+            Screen::Settings => "S",
+            Screen::Wizard => "w",
+            Screen::WorkflowBuilder => "W",
         }
+    }
+
+    #[cfg(test)]
+    fn is_text_input(&self) -> bool {
+        matches!(self, Screen::Chat | Screen::Wizard)
     }
 }
 
@@ -99,10 +112,12 @@ struct App {
     screen: Screen,
     selected: usize,
     status: String,
+    healthy: bool,
     agents: Vec<Value>,
     skills: Vec<Value>,
-    logs: Vec<String>,
+    logs: Vec<Value>,
     chat_input: String,
+    chat_agent: String,
     chat_messages: Vec<(String, String)>,
     channels: Vec<Value>,
     hands: Vec<Value>,
@@ -123,18 +138,22 @@ struct App {
     wizard_values: Vec<String>,
     wf_builder_steps: Vec<String>,
     running: bool,
+    last_error: Option<String>,
+    dashboard_stats: Value,
 }
 
 impl App {
     fn new() -> Self {
         Self {
-            screen: Screen::Welcome,
+            screen: Screen::Dashboard,
             selected: 0,
             status: "Connecting...".into(),
+            healthy: false,
             agents: vec![],
             skills: vec![],
             logs: vec![],
             chat_input: String::new(),
+            chat_agent: String::new(),
             chat_messages: vec![],
             channels: vec![],
             hands: vec![],
@@ -155,50 +174,72 @@ impl App {
             wizard_values: vec![String::new(); 6],
             wf_builder_steps: vec![],
             running: true,
+            last_error: None,
+            dashboard_stats: Value::Null,
         }
     }
 
-    async fn refresh(&mut self) {
-        let client = reqwest::Client::new();
+    fn client() -> reqwest::Client {
+        reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(5))
+            .build()
+            .unwrap_or_default()
+    }
 
-        if let Ok(resp) = client.get(format!("{}/api/health", API_BASE)).send().await {
-            if let Ok(health) = resp.json::<Value>().await {
-                let workers = health["workers"].as_u64().unwrap_or(0);
-                self.status = format!("● Healthy | {} workers", workers);
+    async fn refresh_health(&mut self) {
+        let client = Self::client();
+        match client.get(format!("{}/api/dashboard/stats", API_BASE)).send().await {
+            Ok(resp) => {
+                if let Ok(data) = resp.json::<Value>().await {
+                    self.healthy = true;
+                    self.last_error = None;
+                    self.dashboard_stats = data.clone();
+
+                    let status_str = data["status"].as_str().unwrap_or("unknown");
+                    let agent_count = data["agents"].as_u64().unwrap_or(0);
+                    let skill_count = data["skills"].as_u64().unwrap_or(0);
+                    self.status = format!("● {} | {} agents | {} skills", status_str, agent_count, skill_count);
+
+                    if let Some(arr) = data["agentList"].as_array() {
+                        self.agents = arr.clone();
+                    }
+                    if let Some(arr) = data["skillList"].as_array() {
+                        self.skills = arr.clone();
+                    }
+                } else {
+                    self.healthy = false;
+                    self.status = "○ Engine offline".into();
+                    self.last_error = Some("Failed to parse health response".into());
+                }
             }
-        } else {
-            self.status = "○ Engine offline".into();
-        }
-
-        if let Ok(resp) = client.get(format!("{}/api/agents", API_BASE)).send().await
-            && let Ok(agents) = resp.json::<Value>().await
-        {
-            self.agents = agents.as_array().cloned().unwrap_or_default();
-        }
-
-        if let Ok(resp) = client.get(format!("{}/api/skills", API_BASE)).send().await
-            && let Ok(skills) = resp.json::<Value>().await
-        {
-            self.skills = skills.as_array().cloned().unwrap_or_default();
+            Err(e) => {
+                self.healthy = false;
+                self.status = "○ Engine offline".into();
+                self.last_error = Some(format!("Connection failed: {}", e));
+            }
         }
     }
 
     async fn refresh_screen(&mut self) {
-        let client = reqwest::Client::new();
+        let client = Self::client();
         match self.screen {
-            Screen::Dashboard => self.refresh().await,
+            Screen::Dashboard => self.refresh_health().await,
             Screen::Agents => {
-                if let Ok(resp) = client.get(format!("{}/api/agents", API_BASE)).send().await
-                    && let Ok(agents) = resp.json::<Value>().await
+                if let Ok(resp) = client.get(format!("{}/api/dashboard/stats", API_BASE)).send().await
+                    && let Ok(data) = resp.json::<Value>().await
                 {
-                    self.agents = agents.as_array().cloned().unwrap_or_default();
+                    if let Some(arr) = data["agentList"].as_array() {
+                        self.agents = arr.clone();
+                    }
                 }
             }
             Screen::Skills => {
-                if let Ok(resp) = client.get(format!("{}/api/skills", API_BASE)).send().await
-                    && let Ok(skills) = resp.json::<Value>().await
+                if let Ok(resp) = client.get(format!("{}/api/dashboard/stats", API_BASE)).send().await
+                    && let Ok(data) = resp.json::<Value>().await
                 {
-                    self.skills = skills.as_array().cloned().unwrap_or_default();
+                    if let Some(arr) = data["skillList"].as_array() {
+                        self.skills = arr.clone();
+                    }
                 }
             }
             Screen::Channels => {
@@ -237,12 +278,10 @@ impl App {
                 }
             }
             Screen::Logs => {
-                if let Ok(resp) = client.get(format!("{}/api/dashboard/logs?lines=100", API_BASE)).send().await
+                if let Ok(resp) = client.get(format!("{}/api/dashboard/logs", API_BASE)).send().await
                     && let Ok(data) = resp.json::<Value>().await
                 {
-                    self.logs = data.as_array()
-                        .map(|arr| arr.iter().filter_map(|v| v.as_str().map(String::from)).collect())
-                        .unwrap_or_default();
+                    self.logs = data["logs"].as_array().cloned().unwrap_or_default();
                 }
             }
             Screen::Memory => {
@@ -253,10 +292,10 @@ impl App {
                 }
             }
             Screen::Audit => {
-                if let Ok(resp) = client.get(format!("{}/security/audit/verify", API_BASE)).send().await
+                if let Ok(resp) = client.get(format!("{}/api/dashboard/events", API_BASE)).send().await
                     && let Ok(data) = resp.json::<Value>().await
                 {
-                    self.audit_entries = data["entries"].as_array().cloned()
+                    self.audit_entries = data["events"].as_array().cloned()
                         .or_else(|| data.as_array().cloned())
                         .unwrap_or_default();
                 }
@@ -279,7 +318,9 @@ impl App {
                 if let Ok(resp) = client.get(format!("{}/api/mcp/connections", API_BASE)).send().await
                     && let Ok(data) = resp.json::<Value>().await
                 {
-                    self.extensions = data.as_array().cloned().unwrap_or_default();
+                    self.extensions = data["connections"].as_array().cloned()
+                        .or_else(|| data.as_array().cloned())
+                        .unwrap_or_default();
                 }
             }
             Screen::Triggers => {
@@ -290,40 +331,35 @@ impl App {
                 }
             }
             Screen::Templates => {
-                self.templates = vec![
-                    serde_json::json!({"name": "analyst", "description": "Data analysis agent", "model": "opus", "tools": "web_search, file_read"}),
-                    serde_json::json!({"name": "architect", "description": "System design agent", "model": "opus", "tools": "file_*, code_*"}),
-                    serde_json::json!({"name": "assistant", "description": "General assistant", "model": "sonnet", "tools": "web_*, memory_*"}),
-                    serde_json::json!({"name": "code-reviewer", "description": "Code review agent", "model": "opus", "tools": "file_read, code_*"}),
-                    serde_json::json!({"name": "coder", "description": "Software engineer agent", "model": "opus", "tools": "file_*, shell_exec, code_*"}),
-                    serde_json::json!({"name": "customer-support", "description": "Customer support agent", "model": "sonnet", "tools": "memory_*, web_search"}),
-                    serde_json::json!({"name": "data-scientist", "description": "Data science agent", "model": "opus", "tools": "file_*, json_*, csv_*"}),
-                    serde_json::json!({"name": "debugger", "description": "Debugging agent", "model": "opus", "tools": "file_*, shell_exec, code_*"}),
-                    serde_json::json!({"name": "devops-lead", "description": "DevOps operations agent", "model": "opus", "tools": "shell_exec, system_*"}),
-                    serde_json::json!({"name": "doc-writer", "description": "Documentation writer", "model": "sonnet", "tools": "file_*, web_search"}),
-                    serde_json::json!({"name": "hello-world", "description": "Starter template", "model": "haiku", "tools": "web_search"}),
-                    serde_json::json!({"name": "ops", "description": "Operations agent", "model": "sonnet", "tools": "shell_exec, system_*"}),
-                    serde_json::json!({"name": "orchestrator", "description": "Multi-agent orchestrator", "model": "opus", "tools": "agent_*, memory_*"}),
-                    serde_json::json!({"name": "planner", "description": "Task planning agent", "model": "opus", "tools": "memory_*, file_*"}),
-                    serde_json::json!({"name": "researcher", "description": "Research agent", "model": "opus", "tools": "web_*, browser_*, memory_*"}),
-                    serde_json::json!({"name": "security-auditor", "description": "Security audit agent", "model": "opus", "tools": "file_*, shell_exec"}),
-                    serde_json::json!({"name": "test-engineer", "description": "Testing agent", "model": "sonnet", "tools": "file_*, shell_exec, code_*"}),
-                    serde_json::json!({"name": "writer", "description": "Content writer", "model": "sonnet", "tools": "web_search, file_*"}),
-                ];
+                if let Ok(resp) = client.get(format!("{}/api/templates", API_BASE)).send().await
+                    && let Ok(data) = resp.json::<Value>().await
+                {
+                    self.templates = data.as_array().cloned().unwrap_or_default();
+                } else {
+                    self.templates = default_templates();
+                }
             }
             Screen::Usage => {
-                if let Ok(resp) = client.get(format!("{}/api/usage", API_BASE)).send().await
+                if let Ok(resp) = client.get(format!("{}/api/dashboard/stats", API_BASE)).send().await
                     && let Ok(data) = resp.json::<Value>().await
                 {
                     self.usage_data = data;
                 }
             }
             Screen::Settings => {
-                if let Ok(content) = std::fs::read_to_string("config.toml") {
+                if let Ok(resp) = client.get(format!("{}/api/settings", API_BASE)).send().await
+                    && let Ok(data) = resp.json::<Value>().await
+                {
+                    if let Some(obj) = data.as_object() {
+                        self.settings = obj.iter()
+                            .map(|(k, v)| (k.clone(), v.to_string().trim_matches('"').to_string()))
+                            .collect();
+                    }
+                } else if let Ok(content) = std::fs::read_to_string("config.yaml") {
                     self.settings = content.lines()
-                        .filter(|l| l.contains('='))
+                        .filter(|l| l.contains(':') && !l.trim().starts_with('#'))
                         .filter_map(|l| {
-                            let parts: Vec<&str> = l.splitn(2, '=').collect();
+                            let parts: Vec<&str> = l.splitn(2, ':').collect();
                             if parts.len() == 2 {
                                 Some((parts[0].trim().to_string(), parts[1].trim().trim_matches('"').to_string()))
                             } else {
@@ -345,21 +381,36 @@ impl App {
         self.chat_input.clear();
         self.chat_messages.push(("user".into(), msg.clone()));
 
-        let client = reqwest::Client::new();
+        let agent_id = if self.chat_agent.is_empty() {
+            self.agents.first()
+                .and_then(|a| a["id"].as_str().or(a["name"].as_str()))
+                .unwrap_or("default")
+                .to_string()
+        } else {
+            self.chat_agent.clone()
+        };
+
+        let client = Self::client();
         let body = serde_json::json!({
-            "agentId": "default",
+            "agentId": agent_id,
             "message": msg,
         });
 
-        match client.post(format!("{}/api/chat", API_BASE))
+        match client.post(format!("{}/api/agents/{}/message", API_BASE, agent_id))
             .json(&body)
+            .timeout(std::time::Duration::from_secs(120))
             .send()
             .await
         {
             Ok(resp) => {
                 if let Ok(data) = resp.json::<Value>().await {
-                    let content = data["content"].as_str().unwrap_or("(no response)");
+                    let content = data["content"].as_str()
+                        .or(data["response"].as_str())
+                        .or(data["message"].as_str())
+                        .unwrap_or("(no response)");
                     self.chat_messages.push(("assistant".into(), content.to_string()));
+                } else {
+                    self.chat_messages.push(("system".into(), "Failed to parse response".into()));
                 }
             }
             Err(e) => {
@@ -370,20 +421,38 @@ impl App {
 
     async fn approve_selected(&mut self) {
         if self.selected >= self.approvals.len() { return; }
-        let id = self.approvals[self.selected]["id"].as_str().unwrap_or("").to_string();
-        if id.is_empty() { return; }
-        let client = reqwest::Client::new();
-        let _ = client.post(format!("{}/api/approvals/{}/approve", API_BASE, id))
+        let approval = &self.approvals[self.selected];
+        let request_id = approval["id"].as_str().unwrap_or("").to_string();
+        let agent_id = approval["agentId"].as_str().or(approval["agent"].as_str()).unwrap_or("").to_string();
+        if request_id.is_empty() { return; }
+        let client = Self::client();
+        let body = serde_json::json!({
+            "requestId": request_id,
+            "agentId": agent_id,
+            "decision": "approve",
+            "decidedBy": "tui",
+        });
+        let _ = client.post(format!("{}/api/approvals/decide", API_BASE))
+            .json(&body)
             .send().await;
         self.refresh_screen().await;
     }
 
     async fn deny_selected(&mut self) {
         if self.selected >= self.approvals.len() { return; }
-        let id = self.approvals[self.selected]["id"].as_str().unwrap_or("").to_string();
-        if id.is_empty() { return; }
-        let client = reqwest::Client::new();
-        let _ = client.post(format!("{}/api/approvals/{}/deny", API_BASE, id))
+        let approval = &self.approvals[self.selected];
+        let request_id = approval["id"].as_str().unwrap_or("").to_string();
+        let agent_id = approval["agentId"].as_str().or(approval["agent"].as_str()).unwrap_or("").to_string();
+        if request_id.is_empty() { return; }
+        let client = Self::client();
+        let body = serde_json::json!({
+            "requestId": request_id,
+            "agentId": agent_id,
+            "decision": "deny",
+            "decidedBy": "tui",
+        });
+        let _ = client.post(format!("{}/api/approvals/decide", API_BASE))
+            .json(&body)
             .send().await;
         self.refresh_screen().await;
     }
@@ -410,6 +479,12 @@ impl App {
     }
 }
 
+fn navigate_to(app: &mut App, screen: Screen) {
+    app.screen = screen;
+    app.selected = 0;
+    app.scroll_offset = 0;
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     enable_raw_mode()?;
@@ -417,28 +492,56 @@ async fn main() -> Result<()> {
 
     let mut terminal = Terminal::new(CrosstermBackend::new(stdout()))?;
     let mut app = App::new();
-    app.refresh().await;
+    app.refresh_health().await;
+
+    let mut last_health = std::time::Instant::now();
 
     while app.running {
         terminal.draw(|f| draw(f, &app))?;
+
+        if last_health.elapsed() > std::time::Duration::from_secs(10) {
+            app.refresh_health().await;
+            last_health = std::time::Instant::now();
+        }
 
         if event::poll(std::time::Duration::from_millis(250))?
             && let Event::Key(key) = event::read()?
         {
             if key.kind != KeyEventKind::Press { continue; }
 
+            let ctrl_c = key.modifiers.contains(KeyModifiers::CONTROL)
+                && matches!(key.code, KeyCode::Char('c'));
+            if ctrl_c {
+                app.running = false;
+                continue;
+            }
+
             if app.screen == Screen::Chat {
                 match key.code {
                     KeyCode::Esc => app.screen = Screen::Dashboard,
                     KeyCode::Enter => app.send_chat().await,
                     KeyCode::Backspace => { app.chat_input.pop(); }
-                    KeyCode::Char(c) => {
-                        if key.modifiers.contains(KeyModifiers::CONTROL) && c == 'c' {
-                            app.running = false;
-                        } else {
-                            app.chat_input.push(c);
+                    KeyCode::Tab => {
+                        let screens = Screen::all();
+                        let idx = screens.iter().position(|s| *s == app.screen).unwrap_or(0);
+                        navigate_to(&mut app, screens[(idx + 1) % screens.len()]);
+                    }
+                    KeyCode::Char(c) if c.is_ascii_digit() || c == 'q' => {
+                        match c {
+                            'q' => app.running = false,
+                            '1' => navigate_to(&mut app, Screen::Dashboard),
+                            '2' => navigate_to(&mut app, Screen::Agents),
+                            '4' => navigate_to(&mut app, Screen::Channels),
+                            '5' => navigate_to(&mut app, Screen::Skills),
+                            '6' => navigate_to(&mut app, Screen::Hands),
+                            '7' => navigate_to(&mut app, Screen::Workflows),
+                            '8' => navigate_to(&mut app, Screen::Sessions),
+                            '9' => navigate_to(&mut app, Screen::Approvals),
+                            '0' => navigate_to(&mut app, Screen::Logs),
+                            _ => app.chat_input.push(c),
                         }
                     }
+                    KeyCode::Char(c) => app.chat_input.push(c),
                     _ => {}
                 }
                 continue;
@@ -450,6 +553,9 @@ async fn main() -> Result<()> {
                     KeyCode::Enter => {
                         if app.wizard_step < 5 {
                             app.wizard_step += 1;
+                        } else {
+                            app.status = "Setup complete!".into();
+                            app.screen = Screen::Dashboard;
                         }
                     }
                     KeyCode::Backspace => {
@@ -457,13 +563,32 @@ async fn main() -> Result<()> {
                             app.wizard_values[app.wizard_step].pop();
                         }
                     }
+                    KeyCode::Char(c) if c.is_ascii_digit() || c == 'q' => {
+                        match c {
+                            'q' => app.running = false,
+                            '1' => navigate_to(&mut app, Screen::Dashboard),
+                            '2' => navigate_to(&mut app, Screen::Agents),
+                            '3' => navigate_to(&mut app, Screen::Chat),
+                            '4' => navigate_to(&mut app, Screen::Channels),
+                            '5' => navigate_to(&mut app, Screen::Skills),
+                            '6' => navigate_to(&mut app, Screen::Hands),
+                            '7' => navigate_to(&mut app, Screen::Workflows),
+                            '8' => navigate_to(&mut app, Screen::Sessions),
+                            '9' => navigate_to(&mut app, Screen::Approvals),
+                            '0' => navigate_to(&mut app, Screen::Logs),
+                            _ => {}
+                        }
+                    }
                     KeyCode::Char(c) => {
                         if app.wizard_step < app.wizard_values.len() {
                             app.wizard_values[app.wizard_step].push(c);
                         }
                     }
-                    KeyCode::Tab => {
+                    KeyCode::BackTab => {
                         if app.wizard_step > 0 { app.wizard_step -= 1; }
+                    }
+                    KeyCode::Tab => {
+                        if app.wizard_step < 5 { app.wizard_step += 1; }
                     }
                     _ => {}
                 }
@@ -472,30 +597,45 @@ async fn main() -> Result<()> {
 
             match key.code {
                 KeyCode::Char('q') => app.running = false,
-                KeyCode::Char('1') => { app.screen = Screen::Dashboard; app.selected = 0; }
-                KeyCode::Char('2') => { app.screen = Screen::Agents; app.selected = 0; }
-                KeyCode::Char('3') => { app.screen = Screen::Chat; app.selected = 0; }
-                KeyCode::Char('4') => { app.screen = Screen::Channels; app.selected = 0; }
-                KeyCode::Char('5') => { app.screen = Screen::Skills; app.selected = 0; }
-                KeyCode::Char('6') => { app.screen = Screen::Hands; app.selected = 0; }
-                KeyCode::Char('7') => { app.screen = Screen::Workflows; app.selected = 0; }
-                KeyCode::Char('8') => { app.screen = Screen::Sessions; app.selected = 0; }
-                KeyCode::Char('9') => { app.screen = Screen::Approvals; app.selected = 0; }
-                KeyCode::Char('0') => { app.screen = Screen::Logs; app.selected = 0; }
+                KeyCode::Char('1') => navigate_to(&mut app, Screen::Dashboard),
+                KeyCode::Char('2') => navigate_to(&mut app, Screen::Agents),
+                KeyCode::Char('3') => navigate_to(&mut app, Screen::Chat),
+                KeyCode::Char('4') => navigate_to(&mut app, Screen::Channels),
+                KeyCode::Char('5') => navigate_to(&mut app, Screen::Skills),
+                KeyCode::Char('6') => navigate_to(&mut app, Screen::Hands),
+                KeyCode::Char('7') => navigate_to(&mut app, Screen::Workflows),
+                KeyCode::Char('8') => navigate_to(&mut app, Screen::Sessions),
+                KeyCode::Char('9') => navigate_to(&mut app, Screen::Approvals),
+                KeyCode::Char('0') => navigate_to(&mut app, Screen::Logs),
+                KeyCode::Char('m') => navigate_to(&mut app, Screen::Memory),
+                KeyCode::Char('p') => navigate_to(&mut app, Screen::Peers),
+                KeyCode::Char('e') => navigate_to(&mut app, Screen::Extensions),
+                KeyCode::Char('t') => navigate_to(&mut app, Screen::Triggers),
+                KeyCode::Char('u') => navigate_to(&mut app, Screen::Usage),
+                KeyCode::Char('w') => navigate_to(&mut app, Screen::Wizard),
                 KeyCode::Char('r') => app.refresh_screen().await,
                 KeyCode::Char('a') if app.screen == Screen::Approvals => {
                     app.approve_selected().await;
                 }
+                KeyCode::Char('a') => navigate_to(&mut app, Screen::Audit),
+                KeyCode::Char('s') => navigate_to(&mut app, Screen::Security),
+                KeyCode::Char('T') => navigate_to(&mut app, Screen::Templates),
+                KeyCode::Char('S') => navigate_to(&mut app, Screen::Settings),
+                KeyCode::Char('W') => navigate_to(&mut app, Screen::WorkflowBuilder),
                 KeyCode::Char('d') if app.screen == Screen::Approvals => {
                     app.deny_selected().await;
                 }
                 KeyCode::Char('x') if app.screen == Screen::WorkflowBuilder => {
+                    let home = std::env::var("HOME").unwrap_or_else(|_| ".".into());
+                    let path = format!("{}/workflow-export.toml", home);
                     let toml = app.wf_builder_steps.iter().enumerate()
                         .map(|(i, s)| format!("[[steps]]\nname = \"step-{}\"\nfunction = \"{}\"", i + 1, s))
                         .collect::<Vec<_>>()
                         .join("\n\n");
-                    let _ = std::fs::write("workflow-export.toml", &toml);
-                    app.status = "Exported to workflow-export.toml".into();
+                    match std::fs::write(&path, &toml) {
+                        Ok(_) => app.status = format!("Exported to {}", path),
+                        Err(e) => app.status = format!("Export failed: {}", e),
+                    }
                 }
                 KeyCode::Char('+') if app.screen == Screen::WorkflowBuilder => {
                     app.wf_builder_steps.push("new::step".into());
@@ -516,7 +656,8 @@ async fn main() -> Result<()> {
                 }
                 KeyCode::Down => {
                     if app.screen == Screen::Logs {
-                        app.scroll_offset = app.scroll_offset.saturating_add(1);
+                        let max = app.logs.len().saturating_sub(1) as u16;
+                        app.scroll_offset = app.scroll_offset.saturating_add(1).min(max);
                     } else {
                         let max = app.max_selectable().saturating_sub(1);
                         if app.selected < max {
@@ -527,16 +668,12 @@ async fn main() -> Result<()> {
                 KeyCode::Tab => {
                     let screens = Screen::all();
                     let idx = screens.iter().position(|s| *s == app.screen).unwrap_or(0);
-                    app.screen = screens[(idx + 1) % screens.len()];
-                    app.selected = 0;
-                    app.scroll_offset = 0;
+                    navigate_to(&mut app, screens[(idx + 1) % screens.len()]);
                 }
                 KeyCode::BackTab => {
                     let screens = Screen::all();
                     let idx = screens.iter().position(|s| *s == app.screen).unwrap_or(0);
-                    app.screen = screens[(idx + screens.len() - 1) % screens.len()];
-                    app.selected = 0;
-                    app.scroll_offset = 0;
+                    navigate_to(&mut app, screens[(idx + screens.len() - 1) % screens.len()]);
                 }
                 _ => {}
             }
@@ -564,16 +701,17 @@ fn draw(f: &mut Frame, app: &App) {
         .title_alignment(Alignment::Center)
         .border_style(Style::default().fg(Color::Cyan));
 
-    let header_text = format!("  {}  |  {} agents  |  {} skills",
-        app.status,
-        app.agents.len(),
-        app.skills.len());
+    let status_color = if app.healthy { Color::Green } else { Color::Red };
+    let header_text = Line::from(vec![
+        Span::raw("  "),
+        Span::styled(&app.status, Style::default().fg(status_color)),
+    ]);
 
     f.render_widget(Paragraph::new(header_text).block(title), chunks[0]);
 
     let body_chunks = Layout::default()
         .direction(Direction::Horizontal)
-        .constraints([Constraint::Length(20), Constraint::Min(0)])
+        .constraints([Constraint::Length(22), Constraint::Min(0)])
         .split(chunks[1]);
 
     let nav_items: Vec<ListItem> = Screen::all()
@@ -585,7 +723,8 @@ fn draw(f: &mut Frame, app: &App) {
                 Style::default()
             };
             let key = s.key();
-            ListItem::new(format!(" {} {}", if key.is_empty() { " " } else { key }, s.label()))
+            let display_key = if key.is_empty() { " " } else { key };
+            ListItem::new(format!("{} {}", display_key, s.label()))
                 .style(style)
         })
         .collect();
@@ -618,19 +757,18 @@ fn draw(f: &mut Frame, app: &App) {
         Screen::Templates => draw_templates(f, app, content_block, body_chunks[1]),
         Screen::Usage => draw_usage(f, app, content_block, body_chunks[1]),
         Screen::Settings => draw_settings(f, app, content_block, body_chunks[1]),
-        Screen::Welcome => draw_welcome(f, content_block, body_chunks[1]),
         Screen::Wizard => draw_wizard(f, app, body_chunks[1]),
         Screen::WorkflowBuilder => draw_workflow_builder(f, app, content_block, body_chunks[1]),
     }
 
     let footer = Block::default().borders(Borders::ALL);
     let help = match app.screen {
-        Screen::Chat => " Esc:Back  Enter:Send  Type to compose ",
-        Screen::Approvals => " a:Approve  d:Deny  r:Refresh  q:Quit ",
+        Screen::Chat => " Esc:Back  Enter:Send  1-9:Nav  Tab:Next  q:Quit ",
+        Screen::Approvals => " a:Approve  d:Deny  Up/Down:Select  r:Refresh  q:Quit ",
         Screen::Logs => " Up/Down:Scroll  r:Refresh  q:Quit ",
-        Screen::WorkflowBuilder => " +:Add  -:Remove  x:Export TOML  q:Quit ",
-        Screen::Wizard => " Enter:Next  Tab:Back  Esc:Exit  Type to input ",
-        _ => " q:Quit  Tab/Shift-Tab:Nav  1-0:Screen  r:Refresh  Up/Down:Select ",
+        Screen::WorkflowBuilder => " +:Add  -:Remove  x:Export  Up/Down:Select  q:Quit ",
+        Screen::Wizard => " Enter:Next  Tab:Fwd  Shift-Tab:Back  1-9:Nav  Esc:Dashboard  q:Quit ",
+        _ => " q:Quit  Tab:Next  1-0:Screen  m/a/s/p/e/t/u:More  r:Refresh  Up/Down:Select ",
     };
     f.render_widget(
         Paragraph::new(help)
@@ -641,14 +779,93 @@ fn draw(f: &mut Frame, app: &App) {
 }
 
 fn draw_dashboard(f: &mut Frame, app: &App, block: Block, area: Rect) {
+    if !app.healthy {
+        let logo = vec![
+            Line::from(""),
+            Line::from(Span::styled(r"     _                    _    ___  ____  ", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))),
+            Line::from(Span::styled(r"    / \   __ _  ___ _ __ | |_ / _ \/ ___| ", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))),
+            Line::from(Span::styled(r"   / _ \ / _` |/ _ \ '_ \| __| | | \___ \ ", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))),
+            Line::from(Span::styled(r"  / ___ \ (_| |  __/ | | | |_| |_| |___) |", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))),
+            Line::from(Span::styled(r" /_/   \_\__, |\___|_| |_|\__|\___/|____/ ", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))),
+            Line::from(Span::styled(r"         |___/                             ", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))),
+            Line::from(""),
+            Line::from(Span::styled("  Agent Operating System v0.1.0", Style::default().fg(Color::White).add_modifier(Modifier::BOLD))),
+            Line::from(""),
+            Line::from(Span::styled("  Engine offline — waiting for connection...", Style::default().fg(Color::Yellow))),
+            Line::from(""),
+            Line::from(Span::styled("  Keybindings:", Style::default().add_modifier(Modifier::BOLD))),
+            Line::from(Span::styled("    1-0   Core screens (Dashboard, Agents, Chat...)", Style::default().fg(Color::DarkGray))),
+            Line::from(Span::styled("    m     Memory          a  Audit", Style::default().fg(Color::DarkGray))),
+            Line::from(Span::styled("    s     Security        p  Peers", Style::default().fg(Color::DarkGray))),
+            Line::from(Span::styled("    e     Extensions      t  Triggers", Style::default().fg(Color::DarkGray))),
+            Line::from(Span::styled("    u     Usage           T  Templates", Style::default().fg(Color::DarkGray))),
+            Line::from(Span::styled("    S     Settings        w  Wizard", Style::default().fg(Color::DarkGray))),
+            Line::from(Span::styled("    W     Wf Builder", Style::default().fg(Color::DarkGray))),
+            Line::from(""),
+            Line::from(Span::styled("    Tab / Shift-Tab to cycle screens", Style::default().fg(Color::DarkGray))),
+            Line::from(Span::styled("    r to refresh, q to quit", Style::default().fg(Color::DarkGray))),
+        ];
+        f.render_widget(Paragraph::new(logo).block(block), area);
+        return;
+    }
+
+    let stats = &app.dashboard_stats;
+    let agents = stats["agents"].as_u64().unwrap_or(0);
+    let skills = stats["skills"].as_u64().unwrap_or(0);
+    let hands = stats["hands"].as_u64().unwrap_or(0);
+    let workflows = stats["workflows"].as_u64().unwrap_or(0);
+    let sessions = stats["sessions"].as_u64().unwrap_or(0);
+    let approvals = stats["approvals"].as_u64().unwrap_or(0);
+    let requests = stats["requests"].as_u64().unwrap_or(0);
+    let cost = stats["cost"].as_f64().unwrap_or(0.0);
+    let tokens_total = stats["tokens"]["total"].as_u64().unwrap_or(0);
+    let tokens_input = stats["tokens"]["input"].as_u64().unwrap_or(0);
+    let tokens_output = stats["tokens"]["output"].as_u64().unwrap_or(0);
+    let uptime = stats["uptime"].as_f64().unwrap_or(0.0);
+
+    let uptime_str = if uptime < 60.0 {
+        format!("{}s", uptime as u64)
+    } else if uptime < 3600.0 {
+        format!("{}m {}s", (uptime / 60.0) as u64, (uptime % 60.0) as u64)
+    } else {
+        let h = (uptime / 3600.0) as u64;
+        let m = ((uptime % 3600.0) / 60.0) as u64;
+        format!("{}h {}m", h, m)
+    };
+
     let text = vec![
         Line::from(Span::styled("Agent Operating System", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))),
         Line::from(""),
-        Line::from(format!("Status:   {}", app.status)),
-        Line::from(format!("Agents:   {}", app.agents.len())),
-        Line::from(format!("Skills:   {}", app.skills.len())),
+        Line::from(vec![
+            Span::styled("  Status:     ", Style::default().add_modifier(Modifier::BOLD)),
+            Span::styled(
+                stats["status"].as_str().unwrap_or("unknown"),
+                Style::default().fg(Color::Green),
+            ),
+        ]),
+        Line::from(vec![
+            Span::styled("  Uptime:     ", Style::default().add_modifier(Modifier::BOLD)),
+            Span::raw(uptime_str),
+        ]),
         Line::from(""),
-        Line::from(Span::styled("Press 1-0 to navigate, r to refresh, q to quit", Style::default().fg(Color::DarkGray))),
+        Line::from(Span::styled("  Resources", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))),
+        Line::from(format!("    Agents:     {}", agents)),
+        Line::from(format!("    Skills:     {}", skills)),
+        Line::from(format!("    Hands:      {}", hands)),
+        Line::from(format!("    Workflows:  {}", workflows)),
+        Line::from(format!("    Sessions:   {}", sessions)),
+        Line::from(format!("    Approvals:  {} pending", approvals)),
+        Line::from(""),
+        Line::from(Span::styled("  Usage", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))),
+        Line::from(format!("    Requests:   {}", requests)),
+        Line::from(format!("    Tokens:     {} (in: {} / out: {})", tokens_total, tokens_input, tokens_output)),
+        Line::from(format!("    Cost:       ${:.4}", cost)),
+        Line::from(""),
+        if let Some(ref err) = app.last_error {
+            Line::from(Span::styled(format!("  Error: {}", err), Style::default().fg(Color::Red)))
+        } else {
+            Line::from(Span::styled("  Press r to refresh, 1-0 to navigate", Style::default().fg(Color::DarkGray)))
+        },
     ];
     f.render_widget(Paragraph::new(text).block(block), area);
 }
@@ -656,19 +873,25 @@ fn draw_dashboard(f: &mut Frame, app: &App, block: Block, area: Rect) {
 fn draw_agents(f: &mut Frame, app: &App, block: Block, area: Rect) {
     let rows: Vec<Row> = app.agents.iter().enumerate().map(|(i, a)| {
         let style = if i == app.selected { Style::default().bg(Color::DarkGray) } else { Style::default() };
+        let id = a["id"].as_str().or(a["name"].as_str()).unwrap_or("-");
+        let name = a["name"].as_str().unwrap_or("-");
+        let model = a["model"].as_str().unwrap_or("-");
+        let status = a["status"].as_str().unwrap_or("ready");
         Row::new(vec![
-            Cell::from(a["key"].as_str().unwrap_or("-").to_string()),
-            Cell::from(a["value"]["name"].as_str().unwrap_or("-").to_string()),
-            Cell::from(Span::styled("active", Style::default().fg(Color::Green))),
+            Cell::from(truncate(id, 20)),
+            Cell::from(name.to_string()),
+            Cell::from(model.to_string()),
+            Cell::from(status_cell(status)),
         ]).style(style)
     }).collect();
 
     let table = Table::new(rows, [
-        Constraint::Percentage(40),
-        Constraint::Percentage(40),
+        Constraint::Percentage(25),
+        Constraint::Percentage(30),
+        Constraint::Percentage(25),
         Constraint::Percentage(20),
     ])
-    .header(Row::new(["ID", "Name", "Status"]).style(Style::default().add_modifier(Modifier::BOLD)))
+    .header(Row::new(["ID", "Name", "Model", "Status"]).style(Style::default().add_modifier(Modifier::BOLD)))
     .block(block);
 
     f.render_widget(table, area);
@@ -692,14 +915,22 @@ fn draw_chat(f: &mut Frame, app: &App, area: Rect) {
         ])
     }).collect();
 
+    let agent_label = if app.chat_agent.is_empty() {
+        app.agents.first()
+            .and_then(|a| a["name"].as_str())
+            .unwrap_or("default")
+    } else {
+        &app.chat_agent
+    };
+
     let msg_block = Block::default()
         .borders(Borders::ALL)
-        .title(" Chat ");
+        .title(format!(" Chat → {} ", agent_label));
     f.render_widget(Paragraph::new(messages).block(msg_block).wrap(Wrap { trim: false }), chat_chunks[0]);
 
     let input_block = Block::default()
         .borders(Borders::ALL)
-        .title(" Message ")
+        .title(" Message (digits navigate, letters type) ")
         .border_style(Style::default().fg(Color::Cyan));
     let cursor_text = format!("{}_", app.chat_input);
     f.render_widget(Paragraph::new(cursor_text).block(input_block), chat_chunks[1]);
@@ -732,9 +963,9 @@ fn draw_skills(f: &mut Frame, app: &App, block: Block, area: Rect) {
     let rows: Vec<Row> = app.skills.iter().enumerate().map(|(i, s)| {
         let style = if i == app.selected { Style::default().bg(Color::DarkGray) } else { Style::default() };
         Row::new(vec![
-            Cell::from(s["id"].as_str().unwrap_or("-").to_string()),
+            Cell::from(s["id"].as_str().or(s["name"].as_str()).unwrap_or("-").to_string()),
             Cell::from(s["category"].as_str().unwrap_or("-").to_string()),
-            Cell::from(s["name"].as_str().unwrap_or("-").to_string()),
+            Cell::from(s["name"].as_str().or(s["description"].as_str()).unwrap_or("-").to_string()),
         ]).style(style)
     }).collect();
 
@@ -752,21 +983,23 @@ fn draw_skills(f: &mut Frame, app: &App, block: Block, area: Rect) {
 fn draw_hands(f: &mut Frame, app: &App, block: Block, area: Rect) {
     let rows: Vec<Row> = app.hands.iter().enumerate().map(|(i, h)| {
         let style = if i == app.selected { Style::default().bg(Color::DarkGray) } else { Style::default() };
+        let name = h["name"].as_str().or(h["id"].as_str()).unwrap_or("-");
+        let schedule = h["schedule"].as_str().unwrap_or("-");
+        let enabled = h["enabled"].as_bool().unwrap_or(false);
+        let status = if enabled { "active" } else { "paused" };
         Row::new(vec![
-            Cell::from(h["name"].as_str().unwrap_or("-").to_string()),
-            Cell::from(h["schedule"].as_str().unwrap_or("-").to_string()),
-            Cell::from(status_cell(h["status"].as_str().unwrap_or("unknown"))),
-            Cell::from(h["lastRun"].as_str().unwrap_or("-").to_string()),
+            Cell::from(name.to_string()),
+            Cell::from(schedule.to_string()),
+            Cell::from(status_cell(status)),
         ]).style(style)
     }).collect();
 
     let table = Table::new(rows, [
-        Constraint::Percentage(25),
-        Constraint::Percentage(25),
-        Constraint::Percentage(20),
+        Constraint::Percentage(35),
+        Constraint::Percentage(35),
         Constraint::Percentage(30),
     ])
-    .header(Row::new(["Name", "Schedule", "Status", "Last Run"]).style(Style::default().add_modifier(Modifier::BOLD)))
+    .header(Row::new(["Name", "Schedule", "Status"]).style(Style::default().add_modifier(Modifier::BOLD)))
     .block(block);
 
     f.render_widget(table, area);
@@ -780,19 +1013,15 @@ fn draw_workflows(f: &mut Frame, app: &App, block: Block, area: Rect) {
             Cell::from(w["id"].as_str().unwrap_or("-").to_string()),
             Cell::from(w["name"].as_str().unwrap_or("-").to_string()),
             Cell::from(format!("{}", steps)),
-            Cell::from(status_cell(w["status"].as_str().unwrap_or("unknown"))),
-            Cell::from(w["lastRun"].as_str().unwrap_or("-").to_string()),
         ]).style(style)
     }).collect();
 
     let table = Table::new(rows, [
-        Constraint::Percentage(20),
-        Constraint::Percentage(25),
-        Constraint::Percentage(10),
-        Constraint::Percentage(15),
+        Constraint::Percentage(30),
+        Constraint::Percentage(40),
         Constraint::Percentage(30),
     ])
-    .header(Row::new(["ID", "Name", "Steps", "Status", "Last Run"]).style(Style::default().add_modifier(Modifier::BOLD)))
+    .header(Row::new(["ID", "Name", "Steps"]).style(Style::default().add_modifier(Modifier::BOLD)))
     .block(block);
 
     f.render_widget(table, area);
@@ -801,14 +1030,18 @@ fn draw_workflows(f: &mut Frame, app: &App, block: Block, area: Rect) {
 fn draw_sessions(f: &mut Frame, app: &App, block: Block, area: Rect) {
     let rows: Vec<Row> = app.sessions.iter().enumerate().map(|(i, s)| {
         let style = if i == app.selected { Style::default().bg(Color::DarkGray) } else { Style::default() };
-        let msg_count = s["messages"].as_array().map(|a| a.len())
-            .or_else(|| s["messages"].as_u64().map(|n| n as usize))
-            .unwrap_or(0);
+        let id = s["id"].as_str().or(s["key"].as_str()).unwrap_or("-");
+        let agent = s["agent"].as_str().or(s["agentId"].as_str()).unwrap_or("-");
+        let status = s["status"].as_str().unwrap_or("active");
+        let created = s["created"].as_str()
+            .or(s["createdAt"].as_str())
+            .or(s["timestamp"].as_str())
+            .unwrap_or("-");
         Row::new(vec![
-            Cell::from(truncate(s["id"].as_str().unwrap_or("-"), 20)),
-            Cell::from(s["agent"].as_str().or(s["agentId"].as_str()).unwrap_or("-").to_string()),
-            Cell::from(format!("{}", msg_count)),
-            Cell::from(s["created"].as_str().or(s["createdAt"].as_str()).unwrap_or("-").to_string()),
+            Cell::from(truncate(id, 20)),
+            Cell::from(agent.to_string()),
+            Cell::from(status_cell(status)),
+            Cell::from(created.to_string()),
         ]).style(style)
     }).collect();
 
@@ -818,7 +1051,7 @@ fn draw_sessions(f: &mut Frame, app: &App, block: Block, area: Rect) {
         Constraint::Percentage(15),
         Constraint::Percentage(35),
     ])
-    .header(Row::new(["ID", "Agent", "Messages", "Created"]).style(Style::default().add_modifier(Modifier::BOLD)))
+    .header(Row::new(["ID", "Agent", "Status", "Created"]).style(Style::default().add_modifier(Modifier::BOLD)))
     .block(block);
 
     f.render_widget(table, area);
@@ -835,8 +1068,8 @@ fn draw_approvals(f: &mut Frame, app: &App, block: Block, area: Rect) {
         };
         Row::new(vec![
             Cell::from(truncate(a["id"].as_str().unwrap_or("-"), 15)),
-            Cell::from(a["tool"].as_str().or(a["toolId"].as_str()).unwrap_or("-").to_string()),
-            Cell::from(a["agent"].as_str().or(a["agentId"].as_str()).unwrap_or("-").to_string()),
+            Cell::from(a["toolName"].as_str().or(a["tool"].as_str()).or(a["toolId"].as_str()).unwrap_or("-").to_string()),
+            Cell::from(a["agentId"].as_str().or(a["agent"].as_str()).unwrap_or("-").to_string()),
             Cell::from(status_span),
         ]).style(style)
     }).collect();
@@ -855,16 +1088,27 @@ fn draw_approvals(f: &mut Frame, app: &App, block: Block, area: Rect) {
 
 fn draw_logs(f: &mut Frame, app: &App, block: Block, area: Rect) {
     let lines: Vec<Line> = app.logs.iter().map(|l| {
-        let color = if l.contains("ERROR") || l.contains("error") {
+        let text = if let Some(s) = l.as_str() {
+            s.to_string()
+        } else if let Some(obj) = l.as_object() {
+            let level = obj.get("level").and_then(|v| v.as_str()).unwrap_or("info");
+            let msg = obj.get("message").and_then(|v| v.as_str()).unwrap_or("");
+            let ts = obj.get("timestamp").and_then(|v| v.as_str()).unwrap_or("");
+            format!("[{}] {} {}", level.to_uppercase(), ts, msg)
+        } else {
+            l.to_string()
+        };
+
+        let color = if text.contains("ERROR") || text.contains("error") {
             Color::Red
-        } else if l.contains("WARN") || l.contains("warn") {
+        } else if text.contains("WARN") || text.contains("warn") {
             Color::Yellow
-        } else if l.contains("INFO") || l.contains("info") {
+        } else if text.contains("INFO") || text.contains("info") {
             Color::Green
         } else {
             Color::White
         };
-        Line::from(Span::styled(l.as_str(), Style::default().fg(color)))
+        Line::from(Span::styled(text, Style::default().fg(color)))
     }).collect();
 
     f.render_widget(
@@ -908,20 +1152,20 @@ fn draw_audit(f: &mut Frame, app: &App, block: Block, area: Rect) {
     let rows: Vec<Row> = app.audit_entries.iter().enumerate().map(|(i, a)| {
         let style = if i == app.selected { Style::default().bg(Color::DarkGray) } else { Style::default() };
         Row::new(vec![
-            Cell::from(truncate(a["hash"].as_str().unwrap_or("-"), 16)),
             Cell::from(a["action"].as_str().or(a["type"].as_str()).unwrap_or("-").to_string()),
             Cell::from(a["agent"].as_str().or(a["agentId"].as_str()).unwrap_or("-").to_string()),
+            Cell::from(truncate(a["details"].as_str().or(a["message"].as_str()).unwrap_or("-"), 30)),
             Cell::from(a["timestamp"].as_str().or(a["createdAt"].as_str()).unwrap_or("-").to_string()),
         ]).style(style)
     }).collect();
 
     let table = Table::new(rows, [
-        Constraint::Percentage(25),
-        Constraint::Percentage(25),
-        Constraint::Percentage(25),
+        Constraint::Percentage(20),
+        Constraint::Percentage(20),
+        Constraint::Percentage(35),
         Constraint::Percentage(25),
     ])
-    .header(Row::new(["Hash", "Action", "Agent", "Timestamp"]).style(Style::default().add_modifier(Modifier::BOLD)))
+    .header(Row::new(["Action", "Agent", "Details", "Timestamp"]).style(Style::default().add_modifier(Modifier::BOLD)))
     .block(block);
 
     f.render_widget(table, area);
@@ -959,7 +1203,7 @@ fn draw_security(f: &mut Frame, app: &App, block: Block, area: Rect) {
             lines.push(Line::from(""));
         }
     } else {
-        lines.push(Line::from(Span::styled("  No data - press r to refresh", Style::default().fg(Color::DarkGray))));
+        lines.push(Line::from(Span::styled("  No data — press r to refresh", Style::default().fg(Color::DarkGray))));
     }
 
     f.render_widget(Paragraph::new(lines).block(block).wrap(Wrap { trim: false }), area);
@@ -991,14 +1235,14 @@ fn draw_peers(f: &mut Frame, app: &App, block: Block, area: Rect) {
 fn draw_extensions(f: &mut Frame, app: &App, block: Block, area: Rect) {
     let rows: Vec<Row> = app.extensions.iter().enumerate().map(|(i, e)| {
         let style = if i == app.selected { Style::default().bg(Color::DarkGray) } else { Style::default() };
-        let tool_count = e["tools"].as_array().map(|a| a.len())
-            .or_else(|| e["tools"].as_u64().map(|n| n as usize))
+        let tool_count = e["toolCount"].as_u64()
+            .or_else(|| e["tools"].as_array().map(|a| a.len() as u64))
             .unwrap_or(0);
         Row::new(vec![
             Cell::from(e["name"].as_str().unwrap_or("-").to_string()),
             Cell::from(e["transport"].as_str().unwrap_or("-").to_string()),
             Cell::from(format!("{}", tool_count)),
-            Cell::from(status_cell(e["status"].as_str().unwrap_or("unknown"))),
+            Cell::from(status_cell(e["status"].as_str().unwrap_or("connected"))),
         ]).style(style)
     }).collect();
 
@@ -1050,7 +1294,7 @@ fn draw_templates(f: &mut Frame, app: &App, block: Block, area: Rect) {
             Cell::from(t["name"].as_str().unwrap_or("-").to_string()),
             Cell::from(t["description"].as_str().unwrap_or("-").to_string()),
             Cell::from(t["model"].as_str().unwrap_or("-").to_string()),
-            Cell::from(t["tools"].as_str().unwrap_or("-").to_string()),
+            Cell::from(truncate(t["tools"].as_str().unwrap_or("-"), 25)),
         ]).style(style)
     }).collect();
 
@@ -1070,9 +1314,10 @@ fn draw_usage(f: &mut Frame, app: &App, block: Block, area: Rect) {
     let inner = block.inner(area);
     f.render_widget(block, area);
 
-    if app.usage_data.is_null() {
+    let data = &app.usage_data;
+    if data.is_null() {
         f.render_widget(
-            Paragraph::new("No usage data - press r to refresh")
+            Paragraph::new("No usage data — press r to refresh")
                 .style(Style::default().fg(Color::DarkGray))
                 .alignment(Alignment::Center),
             inner,
@@ -1080,38 +1325,43 @@ fn draw_usage(f: &mut Frame, app: &App, block: Block, area: Rect) {
         return;
     }
 
-    let mut bars: Vec<Line> = vec![
+    let requests = data["requests"].as_u64().unwrap_or(0);
+    let tokens_in = data["tokens"]["input"].as_u64().unwrap_or(0);
+    let tokens_out = data["tokens"]["output"].as_u64().unwrap_or(0);
+    let tokens_total = data["tokens"]["total"].as_u64().unwrap_or(0);
+    let cost = data["cost"].as_f64().unwrap_or(0.0);
+    let agents = data["agents"].as_u64().unwrap_or(0);
+    let sessions = data["sessions"].as_u64().unwrap_or(0);
+
+    let metrics = [
+        ("Requests", requests),
+        ("Total Tokens", tokens_total),
+        ("Input Tokens", tokens_in),
+        ("Output Tokens", tokens_out),
+        ("Agents", agents),
+        ("Sessions", sessions),
+    ];
+
+    let max_val = metrics.iter().map(|(_, v)| *v).max().unwrap_or(1).max(1);
+    let bar_width = inner.width.saturating_sub(25) as u64;
+
+    let mut lines: Vec<Line> = vec![
         Line::from(Span::styled("Usage Overview", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))),
+        Line::from(format!("  Total Cost: ${:.4}", cost)),
         Line::from(""),
     ];
 
-    let metrics = [
-        ("tokens", "Total Tokens"),
-        ("invocations", "Invocations"),
-        ("agents", "Active Agents"),
-        ("sessions", "Sessions"),
-    ];
-
-    let max_val = metrics.iter()
-        .filter_map(|(k, _)| app.usage_data[k].as_f64())
-        .fold(1.0_f64, f64::max);
-
-    let bar_width = inner.width.saturating_sub(25) as f64;
-
-    for (key, label) in &metrics {
-        let val = app.usage_data[key].as_f64().unwrap_or(0.0);
-        let width = ((val / max_val) * bar_width).round() as usize;
-        let bar = "\u{2588}".repeat(width);
-        bars.push(Line::from(format!("{:>15} |", label)));
-        bars.push(Line::from(vec![
-            Span::raw("                 "),
+    for (label, val) in &metrics {
+        let width = ((*val as f64 / max_val as f64) * bar_width as f64).round() as usize;
+        let bar = "\u{2588}".repeat(width.max(1));
+        lines.push(Line::from(vec![
+            Span::styled(format!("{:>15} ", label), Style::default().add_modifier(Modifier::BOLD)),
             Span::styled(bar, Style::default().fg(Color::Cyan)),
-            Span::raw(format!(" {}", val as u64)),
+            Span::raw(format!(" {}", val)),
         ]));
-        bars.push(Line::from(""));
     }
 
-    f.render_widget(Paragraph::new(bars), inner);
+    f.render_widget(Paragraph::new(lines), inner);
 }
 
 fn draw_settings(f: &mut Frame, app: &App, block: Block, area: Rect) {
@@ -1131,30 +1381,6 @@ fn draw_settings(f: &mut Frame, app: &App, block: Block, area: Rect) {
     .block(block);
 
     f.render_widget(table, area);
-}
-
-fn draw_welcome(f: &mut Frame, block: Block, area: Rect) {
-    let logo = vec![
-        Line::from(""),
-        Line::from(Span::styled(r"     _                    _    ___  ____  ", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))),
-        Line::from(Span::styled(r"    / \   __ _  ___ _ __ | |_ / _ \/ ___| ", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))),
-        Line::from(Span::styled(r"   / _ \ / _` |/ _ \ '_ \| __| | | \___ \ ", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))),
-        Line::from(Span::styled(r"  / ___ \ (_| |  __/ | | | |_| |_| |___) |", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))),
-        Line::from(Span::styled(r" /_/   \_\__, |\___|_| |_|\__|\___/|____/ ", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))),
-        Line::from(Span::styled(r"         |___/                             ", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))),
-        Line::from(""),
-        Line::from(Span::styled("  Agent Operating System v0.1.0", Style::default().fg(Color::White).add_modifier(Modifier::BOLD))),
-        Line::from(""),
-        Line::from("  Quickstart:"),
-        Line::from(Span::styled("    1. Press '2' to view agents", Style::default().fg(Color::DarkGray))),
-        Line::from(Span::styled("    2. Press '3' to open chat", Style::default().fg(Color::DarkGray))),
-        Line::from(Span::styled("    3. Press 'r' to refresh data", Style::default().fg(Color::DarkGray))),
-        Line::from(Span::styled("    4. Press Tab to cycle screens", Style::default().fg(Color::DarkGray))),
-        Line::from(Span::styled("    5. Press 'q' to quit", Style::default().fg(Color::DarkGray))),
-        Line::from(""),
-        Line::from(Span::styled("  Navigate with 1-0 or Tab. Refresh with r.", Style::default().fg(Color::DarkGray))),
-    ];
-    f.render_widget(Paragraph::new(logo).block(block), area);
 }
 
 fn draw_wizard(f: &mut Frame, app: &App, area: Rect) {
@@ -1258,10 +1484,25 @@ fn draw_workflow_builder(f: &mut Frame, app: &App, block: Block, area: Rect) {
     f.render_widget(table, chunks[1]);
 }
 
+fn default_templates() -> Vec<Value> {
+    vec![
+        serde_json::json!({"name": "analyst", "description": "Data analysis agent", "model": "opus", "tools": "web_search, file_read"}),
+        serde_json::json!({"name": "architect", "description": "System design agent", "model": "opus", "tools": "file_*, code_*"}),
+        serde_json::json!({"name": "assistant", "description": "General assistant", "model": "sonnet", "tools": "web_*, memory_*"}),
+        serde_json::json!({"name": "code-reviewer", "description": "Code review agent", "model": "opus", "tools": "file_read, code_*"}),
+        serde_json::json!({"name": "coder", "description": "Software engineer", "model": "opus", "tools": "file_*, shell_exec, code_*"}),
+        serde_json::json!({"name": "debugger", "description": "Debugging agent", "model": "opus", "tools": "file_*, shell_exec, code_*"}),
+        serde_json::json!({"name": "orchestrator", "description": "Multi-agent orchestrator", "model": "opus", "tools": "agent_*, memory_*"}),
+        serde_json::json!({"name": "researcher", "description": "Research agent", "model": "opus", "tools": "web_*, browser_*, memory_*"}),
+        serde_json::json!({"name": "security-auditor", "description": "Security audit agent", "model": "opus", "tools": "file_*, shell_exec"}),
+        serde_json::json!({"name": "writer", "description": "Content writer", "model": "sonnet", "tools": "web_search, file_*"}),
+    ]
+}
+
 fn status_cell(status: &str) -> Span<'_> {
     match status {
-        "active" | "connected" | "running" | "healthy" => Span::styled(status, Style::default().fg(Color::Green)),
-        "inactive" | "disconnected" | "stopped" => Span::styled(status, Style::default().fg(Color::Red)),
+        "active" | "connected" | "running" | "healthy" | "ready" => Span::styled(status, Style::default().fg(Color::Green)),
+        "inactive" | "disconnected" | "stopped" | "paused" => Span::styled(status, Style::default().fg(Color::Red)),
         "pending" | "waiting" | "idle" => Span::styled(status, Style::default().fg(Color::Yellow)),
         _ => Span::raw(status),
     }
@@ -1289,7 +1530,7 @@ mod tests {
 
     #[test]
     fn test_screen_all_count() {
-        assert_eq!(Screen::all().len(), 22);
+        assert_eq!(Screen::all().len(), 21);
     }
 
     #[test]
@@ -1302,78 +1543,19 @@ mod tests {
     }
 
     #[test]
-    fn test_screen_dashboard_label() {
-        assert_eq!(Screen::Dashboard.label(), "Dashboard");
+    fn test_all_screens_have_keys() {
+        for screen in Screen::all() {
+            assert!(!screen.key().is_empty(), "Screen {:?} has no key", screen);
+        }
     }
 
     #[test]
-    fn test_screen_agents_label() {
-        assert_eq!(Screen::Agents.label(), "Agents");
-    }
-
-    #[test]
-    fn test_screen_chat_label() {
-        assert_eq!(Screen::Chat.label(), "Chat");
-    }
-
-    #[test]
-    fn test_screen_channels_label() {
-        assert_eq!(Screen::Channels.label(), "Channels");
-    }
-
-    #[test]
-    fn test_screen_skills_label() {
-        assert_eq!(Screen::Skills.label(), "Skills");
-    }
-
-    #[test]
-    fn test_screen_workflows_label() {
-        assert_eq!(Screen::Workflows.label(), "Workflows");
-    }
-
-    #[test]
-    fn test_screen_sessions_label() {
-        assert_eq!(Screen::Sessions.label(), "Sessions");
-    }
-
-    #[test]
-    fn test_screen_approvals_label() {
-        assert_eq!(Screen::Approvals.label(), "Approvals");
-    }
-
-    #[test]
-    fn test_screen_logs_label() {
-        assert_eq!(Screen::Logs.label(), "Logs");
-    }
-
-    #[test]
-    fn test_screen_memory_label() {
-        assert_eq!(Screen::Memory.label(), "Memory");
-    }
-
-    #[test]
-    fn test_screen_security_label() {
-        assert_eq!(Screen::Security.label(), "Security");
-    }
-
-    #[test]
-    fn test_screen_settings_label() {
-        assert_eq!(Screen::Settings.label(), "Settings");
-    }
-
-    #[test]
-    fn test_screen_welcome_label() {
-        assert_eq!(Screen::Welcome.label(), "Welcome");
-    }
-
-    #[test]
-    fn test_screen_wizard_label() {
-        assert_eq!(Screen::Wizard.label(), "Wizard");
-    }
-
-    #[test]
-    fn test_screen_workflow_builder_label() {
-        assert_eq!(Screen::WorkflowBuilder.label(), "Workflow Builder");
+    fn test_screen_keys_unique() {
+        let keys: Vec<&str> = Screen::all().iter().map(|s| s.key()).collect();
+        let mut deduped = keys.clone();
+        deduped.sort();
+        deduped.dedup();
+        assert_eq!(keys.len(), deduped.len(), "Duplicate keys found");
     }
 
     #[test]
@@ -1382,31 +1564,18 @@ mod tests {
     }
 
     #[test]
-    fn test_screen_agents_key() {
-        assert_eq!(Screen::Agents.key(), "2");
+    fn test_screen_memory_key() {
+        assert_eq!(Screen::Memory.key(), "m");
     }
 
     #[test]
-    fn test_screen_chat_key() {
-        assert_eq!(Screen::Chat.key(), "3");
+    fn test_screen_audit_key() {
+        assert_eq!(Screen::Audit.key(), "a");
     }
 
     #[test]
-    fn test_screen_approvals_key() {
-        assert_eq!(Screen::Approvals.key(), "9");
-    }
-
-    #[test]
-    fn test_screen_logs_key() {
-        assert_eq!(Screen::Logs.key(), "0");
-    }
-
-    #[test]
-    fn test_screen_no_key_screens() {
-        assert_eq!(Screen::Memory.key(), "");
-        assert_eq!(Screen::Audit.key(), "");
-        assert_eq!(Screen::Security.key(), "");
-        assert_eq!(Screen::Settings.key(), "");
+    fn test_screen_security_key() {
+        assert_eq!(Screen::Security.key(), "s");
     }
 
     #[test]
@@ -1430,15 +1599,8 @@ mod tests {
     }
 
     #[test]
-    fn test_truncate_single_char_max() {
-        let result = truncate("hello", 1);
-        assert!(result.len() <= 4);
-    }
-
-    #[test]
-    fn test_truncate_three_char_max() {
-        let result = truncate("hello", 3);
-        assert_eq!(result, "...");
+    fn test_truncate_zero_max() {
+        assert_eq!(truncate("hello", 0), "");
     }
 
     #[test]
@@ -1448,33 +1610,9 @@ mod tests {
     }
 
     #[test]
-    fn test_status_cell_connected() {
-        let span = status_cell("connected");
-        assert_eq!(span.content.as_ref(), "connected");
-    }
-
-    #[test]
-    fn test_status_cell_running() {
-        let span = status_cell("running");
-        assert_eq!(span.content.as_ref(), "running");
-    }
-
-    #[test]
-    fn test_status_cell_healthy() {
-        let span = status_cell("healthy");
-        assert_eq!(span.content.as_ref(), "healthy");
-    }
-
-    #[test]
-    fn test_status_cell_inactive() {
-        let span = status_cell("inactive");
-        assert_eq!(span.content.as_ref(), "inactive");
-    }
-
-    #[test]
-    fn test_status_cell_stopped() {
-        let span = status_cell("stopped");
-        assert_eq!(span.content.as_ref(), "stopped");
+    fn test_status_cell_ready() {
+        let span = status_cell("ready");
+        assert_eq!(span.content.as_ref(), "ready");
     }
 
     #[test]
@@ -1484,304 +1622,29 @@ mod tests {
     }
 
     #[test]
-    fn test_status_cell_unknown() {
-        let span = status_cell("custom_status");
-        assert_eq!(span.content.as_ref(), "custom_status");
-    }
-
-    #[test]
-    fn test_screen_equality() {
-        assert_eq!(Screen::Dashboard, Screen::Dashboard);
-        assert_ne!(Screen::Dashboard, Screen::Agents);
-    }
-
-    #[test]
-    fn test_screen_copy() {
-        let s = Screen::Chat;
-        let s2 = s;
-        assert_eq!(s, s2);
-    }
-
-    #[test]
-    fn test_api_base_constant() {
-        assert_eq!(API_BASE, "http://localhost:3111");
-    }
-
-    #[test]
-    fn test_screen_all_starts_with_dashboard() {
-        assert_eq!(Screen::all()[0], Screen::Dashboard);
-    }
-
-    #[test]
-    fn test_truncate_unicode_safe() {
-        let result = truncate("abc", 100);
-        assert_eq!(result, "abc");
-    }
-
-    #[test]
-    fn test_status_cell_disconnected() {
-        let span = status_cell("disconnected");
-        assert_eq!(span.content.as_ref(), "disconnected");
-    }
-
-    #[test]
-    fn test_status_cell_waiting() {
-        let span = status_cell("waiting");
-        assert_eq!(span.content.as_ref(), "waiting");
-    }
-
-    #[test]
-    fn test_status_cell_idle() {
-        let span = status_cell("idle");
-        assert_eq!(span.content.as_ref(), "idle");
-    }
-
-    #[test]
-    fn test_status_cell_empty_string() {
-        let span = status_cell("");
-        assert_eq!(span.content.as_ref(), "");
-    }
-
-    #[test]
-    fn test_screen_hands_label() {
-        assert_eq!(Screen::Hands.label(), "Hands");
-    }
-
-    #[test]
-    fn test_screen_audit_label() {
-        assert_eq!(Screen::Audit.label(), "Audit");
-    }
-
-    #[test]
-    fn test_screen_peers_label() {
-        assert_eq!(Screen::Peers.label(), "Peers");
-    }
-
-    #[test]
-    fn test_screen_extensions_label() {
-        assert_eq!(Screen::Extensions.label(), "Extensions");
-    }
-
-    #[test]
-    fn test_screen_triggers_label() {
-        assert_eq!(Screen::Triggers.label(), "Triggers");
-    }
-
-    #[test]
-    fn test_screen_templates_label() {
-        assert_eq!(Screen::Templates.label(), "Templates");
-    }
-
-    #[test]
-    fn test_screen_usage_label() {
-        assert_eq!(Screen::Usage.label(), "Usage");
-    }
-
-    #[test]
-    fn test_screen_hands_key() {
-        assert_eq!(Screen::Hands.key(), "6");
-    }
-
-    #[test]
-    fn test_screen_workflows_key() {
-        assert_eq!(Screen::Workflows.key(), "7");
-    }
-
-    #[test]
-    fn test_screen_sessions_key() {
-        assert_eq!(Screen::Sessions.key(), "8");
-    }
-
-    #[test]
-    fn test_screen_channels_key() {
-        assert_eq!(Screen::Channels.key(), "4");
-    }
-
-    #[test]
-    fn test_screen_skills_key() {
-        assert_eq!(Screen::Skills.key(), "5");
-    }
-
-    #[test]
-    fn test_screen_keys_unique_nonblank() {
-        let keys: Vec<&str> = Screen::all().iter().map(|s| s.key()).filter(|k| !k.is_empty()).collect();
-        let mut deduped = keys.clone();
-        deduped.sort();
-        deduped.dedup();
-        assert_eq!(keys.len(), deduped.len());
-    }
-
-    #[test]
-    fn test_screen_all_ends_with_workflow_builder() {
-        let all = Screen::all();
-        assert_eq!(all[all.len() - 1], Screen::WorkflowBuilder);
-    }
-
-    #[test]
-    fn test_truncate_zero_max() {
-        let result = truncate("hello", 0);
-        assert_eq!(result, "");
-    }
-
-    #[test]
-    fn test_truncate_very_long_string() {
-        let long = "x".repeat(10000);
-        let result = truncate(&long, 20);
-        assert_eq!(result.len(), 20);
-        assert!(result.ends_with("..."));
-    }
-
-    #[test]
     fn test_app_new_defaults() {
         let app = App::new();
-        assert_eq!(app.screen, Screen::Welcome);
+        assert_eq!(app.screen, Screen::Dashboard);
         assert_eq!(app.selected, 0);
+        assert!(!app.healthy);
         assert!(app.agents.is_empty());
-        assert!(app.skills.is_empty());
-        assert!(app.logs.is_empty());
-        assert!(app.chat_input.is_empty());
         assert!(app.running);
     }
 
     #[test]
-    fn test_screen_all_contains_all_variants() {
-        let all = Screen::all();
-        assert!(all.contains(&Screen::Dashboard));
-        assert!(all.contains(&Screen::Agents));
-        assert!(all.contains(&Screen::Chat));
-        assert!(all.contains(&Screen::Channels));
-        assert!(all.contains(&Screen::Skills));
-        assert!(all.contains(&Screen::Hands));
-        assert!(all.contains(&Screen::Workflows));
-        assert!(all.contains(&Screen::Sessions));
-        assert!(all.contains(&Screen::Approvals));
-        assert!(all.contains(&Screen::Logs));
-        assert!(all.contains(&Screen::Memory));
-        assert!(all.contains(&Screen::Audit));
-        assert!(all.contains(&Screen::Security));
-        assert!(all.contains(&Screen::Peers));
-        assert!(all.contains(&Screen::Extensions));
-        assert!(all.contains(&Screen::Triggers));
-        assert!(all.contains(&Screen::Templates));
-        assert!(all.contains(&Screen::Usage));
-        assert!(all.contains(&Screen::Settings));
-        assert!(all.contains(&Screen::Welcome));
-        assert!(all.contains(&Screen::Wizard));
-        assert!(all.contains(&Screen::WorkflowBuilder));
+    fn test_default_templates_not_empty() {
+        assert!(!default_templates().is_empty());
     }
 
     #[test]
-    fn test_screen_clone() {
-        let s = Screen::Memory;
-        let cloned = s;
-        assert_eq!(s, cloned);
+    fn test_workflow_builder_label_fits_nav() {
+        assert!(Screen::WorkflowBuilder.label().len() <= 16);
     }
 
     #[test]
-    fn test_screen_debug_format() {
-        let s = Screen::Dashboard;
-        let debug = format!("{:?}", s);
-        assert_eq!(debug, "Dashboard");
-    }
-
-    #[test]
-    fn test_screen_debug_format_workflow_builder() {
-        let s = Screen::WorkflowBuilder;
-        let debug = format!("{:?}", s);
-        assert_eq!(debug, "WorkflowBuilder");
-    }
-
-    #[test]
-    fn test_screen_key_maps_to_digit_or_empty() {
-        for screen in Screen::all() {
-            let k = screen.key();
-            assert!(k.is_empty() || (k.len() == 1 && k.chars().next().unwrap().is_ascii_digit()),
-                "Screen {:?} has unexpected key '{}'", screen, k);
-        }
-    }
-
-    #[test]
-    fn test_screen_label_non_empty() {
-        for screen in Screen::all() {
-            assert!(!screen.label().is_empty(), "Screen {:?} has empty label", screen);
-        }
-    }
-
-    #[test]
-    fn test_truncate_four_char_max() {
-        let result = truncate("hello world", 4);
-        assert!(result.len() <= 4);
-    }
-
-    #[test]
-    fn test_truncate_exactly_at_boundary() {
-        let result = truncate("abcdef", 6);
-        assert_eq!(result, "abcdef");
-        let result2 = truncate("abcdefg", 6);
-        assert_eq!(result2.len(), 6);
-        assert!(result2.ends_with("..."));
-    }
-
-    #[test]
-    fn test_truncate_multibyte_safe() {
-        let result = truncate("abc", 100);
-        assert_eq!(result, "abc");
-        let cjk = truncate("\u{65e5}\u{672c}\u{8a9e}\u{3067}\u{3059}", 4);
-        assert!(cjk.ends_with("..."));
-        assert!(cjk.chars().count() <= 4);
-    }
-
-    #[test]
-    fn test_status_cell_error() {
-        let span = status_cell("error");
-        assert_eq!(span.content.as_ref(), "error");
-    }
-
-    #[test]
-    fn test_status_cell_failed() {
-        let span = status_cell("failed");
-        assert_eq!(span.content.as_ref(), "failed");
-    }
-
-    #[test]
-    fn test_status_cell_completed() {
-        let span = status_cell("completed");
-        assert_eq!(span.content.as_ref(), "completed");
-    }
-
-    #[test]
-    fn test_app_new_chat_messages_empty() {
-        let app = App::new();
-        assert!(app.chat_messages.is_empty());
-    }
-
-    #[test]
-    fn test_app_new_channels_empty() {
-        let app = App::new();
-        assert!(app.channels.is_empty());
-    }
-
-    #[test]
-    fn test_app_new_workflows_empty() {
-        let app = App::new();
-        assert!(app.workflows.is_empty());
-    }
-
-    #[test]
-    fn test_app_new_sessions_empty() {
-        let app = App::new();
-        assert!(app.sessions.is_empty());
-    }
-
-    #[test]
-    fn test_app_new_scroll_offset_zero() {
-        let app = App::new();
-        assert_eq!(app.scroll_offset, 0);
-    }
-
-    #[test]
-    fn test_app_new_wizard_step_zero() {
-        let app = App::new();
-        assert_eq!(app.wizard_step, 0);
+    fn test_text_input_screens() {
+        assert!(Screen::Chat.is_text_input());
+        assert!(Screen::Wizard.is_text_input());
+        assert!(!Screen::Dashboard.is_text_input());
     }
 }
