@@ -105,6 +105,7 @@ impl Screen {
         }
     }
 
+    #[cfg(test)]
     fn is_text_input(&self) -> bool {
         matches!(self, Screen::Chat | Screen::Wizard)
     }
