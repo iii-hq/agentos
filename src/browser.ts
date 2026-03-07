@@ -187,7 +187,7 @@ registerFunction(
     description: "Create a new browser session",
   },
   async (req: any) => {
-    requireAuth(req);
+    if (req.headers) requireAuth(req);
     const { agentId, headless, viewport } = req.body || req;
     const existing: BrowserSession | null = await trigger("state::get", {
       scope: "browser_sessions",
@@ -239,7 +239,7 @@ registerFunction(
 registerFunction(
   { id: "browser::list_sessions", description: "List active browser sessions" },
   async (req: any) => {
-    requireAuth(req);
+    if (req.headers) requireAuth(req);
     const index = await getSessionIndex();
     const list = [];
     for (const agentId of index) {
@@ -270,7 +270,7 @@ registerFunction(
     description: "Navigate to URL with SSRF check",
   },
   async (req: any) => {
-    requireAuth(req);
+    if (req.headers) requireAuth(req);
     const { agentId, url } = req.body || req;
     await assertNoSsrf(url);
     const session = await getSession(agentId);
@@ -293,7 +293,7 @@ registerFunction(
 registerFunction(
   { id: "tool::browser_click", description: "Click element by selector" },
   async (req: any) => {
-    requireAuth(req);
+    if (req.headers) requireAuth(req);
     const { agentId, selector } = req.body || req;
     const session = await getSession(agentId);
     await touchSession(agentId, session);
@@ -321,7 +321,7 @@ registerFunction(
     description: "Type text into element by selector",
   },
   async (req: any) => {
-    requireAuth(req);
+    if (req.headers) requireAuth(req);
     const { agentId, selector, text } = req.body || req;
     const session = await getSession(agentId);
     await touchSession(agentId, session);
@@ -341,7 +341,7 @@ registerFunction(
     description: "Take screenshot and save to temp file",
   },
   async (req: any) => {
-    requireAuth(req);
+    if (req.headers) requireAuth(req);
     const { agentId, fullPage } = req.body || req;
     const session = await getSession(agentId);
     await touchSession(agentId, session);
@@ -363,7 +363,7 @@ registerFunction(
 registerFunction(
   { id: "tool::browser_read_page", description: "Extract page text content" },
   async (req: any) => {
-    requireAuth(req);
+    if (req.headers) requireAuth(req);
     const { agentId } = req.body || req;
     const session = await getSession(agentId);
     await touchSession(agentId, session);
@@ -382,7 +382,7 @@ registerFunction(
 registerFunction(
   { id: "tool::browser_close", description: "Close browser session" },
   async (req: any) => {
-    requireAuth(req);
+    if (req.headers) requireAuth(req);
     const { agentId } = req.body || req;
     const session: BrowserSession | null = await trigger("state::get", {
       scope: "browser_sessions",

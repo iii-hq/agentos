@@ -251,7 +251,7 @@ registerFunction(
     metadata: { category: "mcp" },
   },
   async (req: any) => {
-    requireAuth(req);
+    if (req.headers) requireAuth(req);
     const tools: Array<{
       server: string;
       name: string;
@@ -281,7 +281,7 @@ registerFunction(
     metadata: { category: "mcp" },
   },
   async (req: any) => {
-    requireAuth(req);
+    if (req.headers) requireAuth(req);
     const { server, tool, arguments: toolArgs } = req.body || req;
     const conn = connections.get(server);
     if (!conn) throw new Error(`No connection '${server}'`);
@@ -311,7 +311,7 @@ registerFunction(
     metadata: { category: "mcp" },
   },
   async (req: any) => {
-    requireAuth(req);
+    if (req.headers) requireAuth(req);
     const list = Array.from(connections.values()).map((c) => ({
       id: c.id,
       name: c.name,

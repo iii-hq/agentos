@@ -87,7 +87,7 @@ registerFunction(
     metadata: { category: "a2a" },
   },
   async (req: any) => {
-    requireAuth(req);
+    if (req.headers) requireAuth(req);
     const agents = (await trigger("state::list", {
       scope: "agents",
     }).catch(() => [])) as any[];

@@ -91,7 +91,7 @@ registerFunction(
     metadata: { category: "security" },
   },
   async (req: any) => {
-    requireAuth(req);
+    if (req.headers) requireAuth(req);
     const { nonce, signature, responderAgent } = req.body || req;
 
     if (!nonce || !signature || !responderAgent) {

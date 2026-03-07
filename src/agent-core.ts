@@ -59,7 +59,7 @@ async function validateRequest(
   const { agentId } = input;
 
   const agentRate: any = await safeCall(
-    () => triggerFn("rate::check_agent", { agentId, operation: "message" }),
+    () => triggerFn("rate::check_agent", { agentId, operation: "message" }, 10_000),
     { allowed: false, retryAfter: 60 },
     { agentId, operation: "rate_check_agent" },
   );
@@ -70,7 +70,7 @@ async function validateRequest(
   }
 
   const concSlot: any = await safeCall(
-    () => triggerFn("rate::acquire_concurrent", { agentId }),
+    () => triggerFn("rate::acquire_concurrent", { agentId }, 10_000),
     { acquired: false, current: 0, limit: 0 },
     { agentId, operation: "acquire_concurrent" },
   );
@@ -101,7 +101,7 @@ async function prepareContext(
   const config: AgentConfig = await triggerFn("state::get", {
     scope: "agents",
     key: agentId,
-  });
+  }, 10_000);
 
   if (!config) {
     return earlyResponse(`Agent ${agentId} not found.`);
@@ -111,9 +111,9 @@ async function prepareContext(
     agentId,
     query: message,
     limit: 20,
-  });
+  }, 30_000);
 
-  const tools: any = await triggerFn("agent::list_tools", { agentId });
+  const tools: any = await triggerFn("agent::list_tools", { agentId }, 10_000);
   const allowedToolIds = new Set<string>(
     tools.map((t: any) => t.function_id || t.id),
   );
@@ -122,7 +122,7 @@ async function prepareContext(
     message,
     toolCount: tools.length,
     config: config?.model,
-  });
+  }, 10_000);
 
   const messages: any[] = [
     ...(memories || []),
@@ -130,7 +130,7 @@ async function prepareContext(
   ];
 
   const injectionScan: any = await safeCall(
-    () => triggerFn("security::scan_injection", { text: message }),
+    () => triggerFn("security::scan_injection", { text: message }, 10_000),
     { riskScore: 1.0, safe: false },
     { agentId, operation: "scan_injection" },
   );
@@ -139,7 +139,7 @@ async function prepareContext(
   }
 
   const budgetStatus: any = await safeCall(
-    () => triggerFn("cost::budget_check", { agentId }),
+    () => triggerFn("cost::budget_check", { agentId }, 10_000),
     { withinBudget: false, spent: 0, limit: 0 },
     { agentId, operation: "budget_check" },
   );
@@ -176,7 +176,7 @@ async function executeLlmCall(
     systemPrompt,
     messages,
     tools,
-  });
+  }, TOOL_TIMEOUT_MS);
 
   try {
     triggerVoidFn("replay::record", {
@@ -227,7 +227,7 @@ async function handleCodeAgent(
   }
 
   const detectResult: any = await safeCall(
-    () => triggerFn("agent::code_detect", { response: response.content }),
+    () => triggerFn("agent::code_detect", { response: response.content }, 10_000),
     { hasCode: false, blocks: [] },
     { agentId, operation: "code_detect" },
   );
@@ -243,7 +243,7 @@ async function handleCodeAgent(
       code: block,
       agentId,
       timeout: 5000,
-    }).catch((err: any) => ({
+    }, 30_000).catch((err: any) => ({
       result: { error: err?.message },
       stdout: "",
       executionTimeMs: 0,
@@ -309,7 +309,7 @@ async function executeToolCall(
   const toolStart = Date.now();
   try {
     const guardResult: any = await safeCall(
-      () => triggerFn("guard::check", { agentId, toolId: tc.id }),
+      () => triggerFn("guard::check", { agentId, toolId: tc.id }, 10_000),
       { decision: "block" },
       { agentId, operation: "guard_check" },
     );
@@ -336,7 +336,7 @@ async function executeToolCall(
           toolId: tc.id,
           agentId,
           args: tc.arguments,
-        }),
+        }, 10_000),
       {
         approved: false,
         tier: "sync",
@@ -367,7 +367,7 @@ async function executeToolCall(
         triggerFn("policy::check", {
           agentId,
           resource: tc.id,
-        }),
+        }, 10_000),
       { action: "deny" },
       { agentId, operation: "policy_check" },
     );
@@ -386,7 +386,7 @@ async function executeToolCall(
           agentId,
           toolId: tc.id,
           arguments: tc.arguments,
-        }),
+        }, 10_000),
       { approved: false, reason: "Approval timeout" },
       { agentId, operation: "approval_check" },
     );
@@ -405,7 +405,7 @@ async function executeToolCall(
           agentId,
           capability: tc.id.split("::")[0],
           resource: tc.id,
-        }),
+        }, 10_000),
       { decision: "block" },
       { agentId, operation: "check_capability" },
     );
@@ -552,7 +552,7 @@ async function toolLoop(
             maxTokens: (model as any).maxTokens
               ? (model as any).maxTokens * 50
               : 200_000,
-          }),
+          }, 30_000),
         { overall: 100 },
         { agentId, operation: "context_health" },
       );
@@ -573,7 +573,7 @@ async function toolLoop(
                   ? (model as any).maxTokens * 50
                   : 200_000) * 0.7,
               ),
-            }),
+            }, 30_000),
           null,
           { agentId, operation: "context_compress" },
         );
@@ -840,7 +840,7 @@ registerFunction(
     const config: AgentConfig = await trigger("state::get", {
       scope: "agents",
       key: agentId,
-    });
+    }, 10_000);
 
     const allowedCapabilities = config?.capabilities?.tools || ["*"];
     const allFunctions = await listFunctions();
@@ -869,7 +869,7 @@ registerFunction(
       scope: "agents",
       key: agentId,
       value: { ...config, id: agentId, createdAt: Date.now() },
-    });
+    }, 10_000);
     triggerVoid("publish", {
       topic: "agent.lifecycle",
       data: { type: "created", agentId },
@@ -886,7 +886,7 @@ registerFunction(
     metadata: { category: "agent" },
   },
   async () => {
-    return trigger("state::list", { scope: "agents" });
+    return trigger("state::list", { scope: "agents" }, 10_000);
   },
 );
 
@@ -897,7 +897,7 @@ registerFunction(
     metadata: { category: "agent" },
   },
   async ({ agentId }: { agentId: string }) => {
-    await trigger("state::delete", { scope: "agents", key: agentId });
+    await trigger("state::delete", { scope: "agents", key: agentId }, 10_000);
     triggerVoid("publish", {
       topic: "agent.lifecycle",
       data: { type: "deleted", agentId },
@@ -915,7 +915,7 @@ registerFunction(
   async ({ division }: { division?: Division }) => {
     const agents: AgentConfig[] = await trigger("state::list", {
       scope: "agents",
-    });
+    }, 10_000);
     if (!division) return agents;
     return agents.filter((a) => a.persona?.division === division);
   },

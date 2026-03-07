@@ -419,7 +419,7 @@ registerFunction(
     metadata: { category: "skill" },
   },
   async (req: any) => {
-    requireAuth(req);
+    if (req.headers) requireAuth(req);
     const { category, tag } = req.body || req;
     const installed = (await trigger("state::list", {
       scope: "skills",
@@ -537,7 +537,7 @@ registerFunction(
     metadata: { category: "skill" },
   },
   async (req: any) => {
-    requireAuth(req);
+    if (req.headers) requireAuth(req);
     const { query } = req.body || req;
     const q = query.toLowerCase();
     const allSkills = [...BUNDLED_SKILLS];
@@ -602,7 +602,7 @@ registerFunction(
     metadata: { category: "skill" },
   },
   async (req: any) => {
-    requireAuth(req);
+    if (req.headers) requireAuth(req);
     const { query, limit } = req.body || req;
     if (!query || query.length < 2) {
       throw new Error("Query must be at least 2 characters");

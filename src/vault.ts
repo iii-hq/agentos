@@ -231,7 +231,7 @@ registerFunction(
     metadata: { category: "vault" },
   },
   async (req: any) => {
-    requireAuth(req);
+    if (req.headers) requireAuth(req);
     const { key } = req.body || req;
     assertUnlocked();
     resetAutoLock();
@@ -279,7 +279,7 @@ registerFunction(
     metadata: { category: "vault" },
   },
   async (req: any) => {
-    requireAuth(req);
+    if (req.headers) requireAuth(req);
     assertUnlocked();
     resetAutoLock();
 

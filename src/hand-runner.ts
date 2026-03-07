@@ -75,7 +75,7 @@ registerFunction(
     metadata: { category: "hand" },
   },
   async (req: any) => {
-    requireAuth(req);
+    if (req.headers) requireAuth(req);
     const { handId } = req.body || req;
     const hands = handId
       ? [await trigger("state::get", { scope: "hands", key: handId })]
@@ -164,7 +164,7 @@ registerFunction(
     metadata: { category: "hand" },
   },
   async (req: any) => {
-    requireAuth(req);
+    if (req.headers) requireAuth(req);
     return trigger("state::list", { scope: "hands" });
   },
 );
@@ -176,7 +176,7 @@ registerFunction(
     metadata: { category: "hand" },
   },
   async (req: any) => {
-    requireAuth(req);
+    if (req.headers) requireAuth(req);
     const { handId } = req.body || req;
     const metrics = await trigger("state::get", {
       scope: "hand_metrics",

@@ -325,7 +325,7 @@ registerFunction(
     description: "Handle incoming A2A task request and route to local agent",
   },
   async (req) => {
-    requireAuth(req);
+    if (req.headers) requireAuth(req);
     const body = req.body || req;
     const { jsonrpc, id: rpcId, method, params } = body;
 

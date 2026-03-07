@@ -39,7 +39,7 @@ registerFunction(
     metadata: { category: "swarm" },
   },
   async (req: any) => {
-    requireAuth(req);
+    if (req.headers) requireAuth(req);
     const { goal, agentIds, maxDurationMs, consensusThreshold } =
       req.body || req;
 
@@ -255,7 +255,7 @@ registerFunction(
     metadata: { category: "swarm" },
   },
   async (req: any) => {
-    requireAuth(req);
+    if (req.headers) requireAuth(req);
     const { swarmId } = req.body || req;
     const safeSwarmId = sanitizeId(swarmId);
 

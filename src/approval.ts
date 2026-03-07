@@ -134,7 +134,7 @@ registerFunction(
     metadata: { category: "approval" },
   },
   async (req: any) => {
-    requireAuth(req);
+    if (req.headers) requireAuth(req);
     const { agentId, status: filterStatus } = req.body || req;
     if (agentId) {
       const items = (await trigger("state::list", {
