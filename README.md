@@ -28,7 +28,7 @@ Every capability — agents, memory, security, LLM routing, workflows, tools, sw
 │     CLI (Rust)              TUI (Rust/ratatui)               │
 ├──────────────────────────────────────────────────────────────┤
 │ 45 agents · 7 hands · 25 integrations · 40 channels          │
-│ 8 tool profiles · 47 models · 22 TUI screens                 │
+│ 8 tool profiles · 47 models · 21 TUI screens                 │
 └──────────────────────────────────────────────────────────────┘
 ```
 
@@ -82,7 +82,7 @@ Every component connects to the iii-engine over WebSocket and registers function
 | `llm-router` | Routes to 25 LLM providers with complexity-based model selection | ~320 |
 | `wasm-sandbox` | Executes untrusted code in WASM via wasmtime | ~180 |
 | `cli` | 50+ commands across 15 subcommand groups | ~700 |
-| `tui` | 22-screen terminal dashboard (ratatui) | ~330 |
+| `tui` | 21-screen terminal dashboard (ratatui) | ~330 |
 | `api` | Rust HTTP API layer | ~200 |
 | `hand-runner` | Autonomous hand execution engine | ~150 |
 | `workflow` | Rust workflow step execution | ~200 |
@@ -247,37 +247,50 @@ agentos channel disable <name>  Disable channel
 agentos config show             Show configuration
 agentos config get <key>        Get config value
 agentos config set <k> <v>      Set config value
+agentos config unset <key>      Remove config value
 agentos config set-key <p> <k>  Set API key
 agentos config keys             List API keys
 
 agentos models list             List available models
-agentos models test <model>     Test a model
+agentos models aliases          List model aliases
+agentos models providers        List LLM providers
+agentos models describe <model> Describe model details
 
-agentos memory query <text>     Query memory
-agentos memory list             List memories
-agentos memory clear [agent]    Clear memory
+agentos memory get <agent> <key>     Get memory entry
+agentos memory set <agent> <k> <v>   Set memory entry
+agentos memory delete <agent> <key>  Delete memory entry
+agentos memory list <agent>          List agent memories
 
 agentos security audit          View audit log
 agentos security verify         Verify audit chain
 agentos security scan <text>    Scan for injection
-agentos security caps <agent>   View capabilities
 
 agentos approvals list          List pending approvals
 agentos approvals approve <id>  Approve action
-agentos approvals deny <id>     Deny action
+agentos approvals reject <id>   Reject action
 
-agentos sessions list           List sessions
-agentos sessions get <id>       Get session details
+agentos sessions list [agent]   List sessions
+agentos sessions delete <id>    Delete session
 
+agentos vault init              Initialize vault
 agentos vault set <k> <v>       Store secret
-agentos vault get <k>           Retrieve secret
 agentos vault list              List secrets
+agentos vault remove <key>      Remove secret
 
 agentos cron list               List cron jobs
 agentos cron create <expr> <fn> Create cron job
 agentos cron delete <id>        Delete cron job
+agentos cron enable <id>        Enable cron job
+agentos cron disable <id>       Disable cron job
 
-agentos migrate run <target>    Run migration
+agentos replay get <session>    Get session replay
+agentos replay list [--agent]   List replays
+agentos replay summary <session>  Replay summary
+
+agentos migrate scan            Scan for migrations
+agentos migrate openclaw [--dry-run]   Migrate from OpenClaw
+agentos migrate langchain [--dry-run]  Migrate from LangChain
+agentos migrate report          Migration report
 
 agentos logs [--lines N] [--follow]  View logs
 agentos integrations [query]    Browse integrations
@@ -293,13 +306,16 @@ agentos dashboard               Open web dashboard
 
 ## TUI Dashboard
 
-22 screens accessible via number keys (1-0) or Tab:
+21 screens accessible via keyboard shortcuts:
 
 ```
-Dashboard · Agents · Chat · Channels · Skills · Hands
-Workflows · Sessions · Approvals · Logs · Memory · Audit
-Security · Peers · Extensions · Triggers · Templates
-Usage · Settings · Welcome · Wizard · Workflow Builder
+1 Dashboard    2 Agents      3 Chat       4 Channels    5 Skills
+6 Hands        7 Workflows   8 Sessions   9 Approvals   0 Logs
+m Memory       a Audit       s Security   p Peers       e Extensions
+t Triggers     T Templates   u Usage      S Settings    w Wizard
+W Wf Builder
+
+Tab/Shift-Tab to cycle · r to refresh · q to quit
 ```
 
 ## Templates
@@ -414,7 +430,7 @@ agentos/
 │   ├── llm-router/         25 LLM providers
 │   ├── memory/             Session memory
 │   ├── security/           RBAC, audit, taint, signing, sandbox
-│   ├── tui/                22-screen terminal dashboard
+│   ├── tui/                21-screen terminal dashboard
 │   ├── wasm-sandbox/       WASM execution
 │   └── workflow/           Workflow engine
 │

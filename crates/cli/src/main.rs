@@ -478,7 +478,7 @@ async fn main() -> Result<()> {
         Commands::Security(cmd) => match cmd {
             SecurityCmd::Audit => {
                 println!("{} Fetching audit trail...", "→".blue());
-                let resp: Value = client.get(format!("{}/security/audit/verify", api_base))
+                let resp: Value = client.get(format!("{}/api/security/audit/verify", api_base))
                     .send().await?.json().await?;
                 let valid = resp["valid"].as_bool().unwrap_or(false);
                 let icon = if valid { "✓".green() } else { "✗".red() };
@@ -488,12 +488,12 @@ async fn main() -> Result<()> {
                     resp["entries"].as_u64().unwrap_or(0));
             }
             SecurityCmd::Verify => {
-                let resp: Value = client.get(format!("{}/security/audit/verify", api_base))
+                let resp: Value = client.get(format!("{}/api/security/audit/verify", api_base))
                     .send().await?.json().await?;
                 println!("{}", serde_json::to_string_pretty(&resp)?);
             }
             SecurityCmd::Scan { text } => {
-                let resp: Value = client.post(format!("{}/security/scan", api_base))
+                let resp: Value = client.post(format!("{}/api/security/scan", api_base))
                     .json(&json!({ "text": text }))
                     .send().await?.json().await?;
                 let safe = resp["safe"].as_bool().unwrap_or(false);
