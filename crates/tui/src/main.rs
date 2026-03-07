@@ -97,8 +97,8 @@ impl Screen {
             Screen::Templates => "T",
             Screen::Usage => "u",
             Screen::Settings => "S",
-            Screen::Wizard => "W",
-            Screen::WorkflowBuilder => "B",
+            Screen::Wizard => "w",
+            Screen::WorkflowBuilder => "W",
         }
     }
 
@@ -612,7 +612,7 @@ async fn main() -> Result<()> {
                 KeyCode::Char('e') => navigate_to(&mut app, Screen::Extensions),
                 KeyCode::Char('t') => navigate_to(&mut app, Screen::Triggers),
                 KeyCode::Char('u') => navigate_to(&mut app, Screen::Usage),
-                KeyCode::Char('w') => navigate_to(&mut app, Screen::Dashboard),
+                KeyCode::Char('w') => navigate_to(&mut app, Screen::Wizard),
                 KeyCode::Char('r') => app.refresh_screen().await,
                 KeyCode::Char('a') if app.screen == Screen::Approvals => {
                     app.approve_selected().await;
@@ -621,8 +621,7 @@ async fn main() -> Result<()> {
                 KeyCode::Char('s') => navigate_to(&mut app, Screen::Security),
                 KeyCode::Char('T') => navigate_to(&mut app, Screen::Templates),
                 KeyCode::Char('S') => navigate_to(&mut app, Screen::Settings),
-                KeyCode::Char('W') => navigate_to(&mut app, Screen::Wizard),
-                KeyCode::Char('B') => navigate_to(&mut app, Screen::WorkflowBuilder),
+                KeyCode::Char('W') => navigate_to(&mut app, Screen::WorkflowBuilder),
                 KeyCode::Char('d') if app.screen == Screen::Approvals => {
                     app.deny_selected().await;
                 }
@@ -800,8 +799,8 @@ fn draw_dashboard(f: &mut Frame, app: &App, block: Block, area: Rect) {
             Line::from(Span::styled("    s     Security        p  Peers", Style::default().fg(Color::DarkGray))),
             Line::from(Span::styled("    e     Extensions      t  Triggers", Style::default().fg(Color::DarkGray))),
             Line::from(Span::styled("    u     Usage           T  Templates", Style::default().fg(Color::DarkGray))),
-            Line::from(Span::styled("    S     Settings        W  Wizard", Style::default().fg(Color::DarkGray))),
-            Line::from(Span::styled("    B     Wf Builder", Style::default().fg(Color::DarkGray))),
+            Line::from(Span::styled("    S     Settings        w  Wizard", Style::default().fg(Color::DarkGray))),
+            Line::from(Span::styled("    W     Wf Builder", Style::default().fg(Color::DarkGray))),
             Line::from(""),
             Line::from(Span::styled("    Tab / Shift-Tab to cycle screens", Style::default().fg(Color::DarkGray))),
             Line::from(Span::styled("    r to refresh, q to quit", Style::default().fg(Color::DarkGray))),
