@@ -31,7 +31,7 @@ registerFunction(
     metadata: { category: "hand" },
   },
   async (req: any) => {
-    if (req.headers) requireAuth(req);
+    requireAuth(req);
     const config: HandConfig = req.body || req;
     const id = config.id || crypto.randomUUID();
     const hand = { ...config, id, registeredAt: Date.now() };

@@ -116,7 +116,7 @@ registerFunction(
     metadata: { category: "mcp" },
   },
   async (req: any) => {
-    if (req.headers) requireAuth(req);
+    requireAuth(req);
     const { name, transport, command, args, url } = req.body || req;
     if (connections.has(name))
       throw new Error(`Connection '${name}' already exists`);
@@ -216,7 +216,7 @@ registerFunction(
     metadata: { category: "mcp" },
   },
   async (req: any) => {
-    if (req.headers) requireAuth(req);
+    requireAuth(req);
     const { name } = req.body || req;
     const conn = connections.get(name);
     if (!conn) throw new Error(`No connection '${name}'`);
@@ -332,7 +332,7 @@ registerFunction(
     metadata: { category: "mcp" },
   },
   async (req: any) => {
-    if (req.headers) requireAuth(req);
+    requireAuth(req);
     const { tools: exposedTools } = req.body || req;
     const toolMap = new Map(exposedTools.map((t: any) => [t.name, t]));
 
@@ -438,7 +438,7 @@ registerFunction(
     description: "Unregister the MCP serve handler and its HTTP trigger",
   },
   async (req: any) => {
-    if (req.headers) requireAuth(req);
+    requireAuth(req);
     if (!serveRefs) {
       return { unserved: false, reason: "not serving" };
     }

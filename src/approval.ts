@@ -102,7 +102,7 @@ registerFunction(
     metadata: { category: "approval" },
   },
   async (req) => {
-    if (req.headers) requireAuth(req);
+    requireAuth(req);
     const { requestId, agentId, decision, decidedBy } = req.body || req;
     const safeRequestId = sanitizeId(requestId);
     const safeAgentId = sanitizeId(agentId);
@@ -216,7 +216,7 @@ registerFunction(
     metadata: { category: "approval" },
   },
   async (req: any) => {
-    if (req.headers) requireAuth(req);
+    requireAuth(req);
     const { tools, timeoutMs } = req.body || req;
     await trigger("state::set", {
       scope: "approval_policy",

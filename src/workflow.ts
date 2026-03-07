@@ -46,7 +46,7 @@ registerFunction(
     metadata: { category: "workflow" },
   },
   async (req: any) => {
-    if (req.headers) requireAuth(req);
+    requireAuth(req);
     const workflow: Workflow = req.body || req;
     const id = workflow.id || crypto.randomUUID();
     await trigger("state::set", {

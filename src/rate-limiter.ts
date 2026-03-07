@@ -187,7 +187,7 @@ registerFunction(
 registerFunction(
   { id: "rate::reset", description: "Reset rate limit for an IP" },
   async (req: any) => {
-    if (req.headers) requireAuth(req);
+    requireAuth(req);
     const { ip } = req.body || req;
     const key = `ip:${ip}`;
     await triggerVoid("state::set", {

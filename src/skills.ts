@@ -447,7 +447,7 @@ registerFunction(
     metadata: { category: "skill" },
   },
   async (req: any) => {
-    if (req.headers) requireAuth(req);
+    requireAuth(req);
     const {
       id,
       name,
@@ -506,7 +506,7 @@ registerFunction(
     metadata: { category: "skill" },
   },
   async (req: any) => {
-    if (req.headers) requireAuth(req);
+    requireAuth(req);
     const { id } = req.body || req;
     const skill = BUNDLED_SKILLS.find((s) => s.id === id);
     if (skill) throw new Error(`Cannot uninstall bundled skill: ${id}`);

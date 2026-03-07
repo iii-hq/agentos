@@ -131,7 +131,7 @@ registerFunction(
     metadata: { category: "vault" },
   },
   async (req: any) => {
-    if (req.headers) requireAuth(req);
+    requireAuth(req);
     const { password, autoLockMinutes } = req.body || req;
     if (!password || password.length < 8) {
       throw new Error("Password must be at least 8 characters");
@@ -185,7 +185,7 @@ registerFunction(
     metadata: { category: "vault" },
   },
   async (req: any) => {
-    if (req.headers) requireAuth(req);
+    requireAuth(req);
     const { key, value } = req.body || req;
     assertUnlocked();
     resetAutoLock();
@@ -306,7 +306,7 @@ registerFunction(
     metadata: { category: "vault" },
   },
   async (req: any) => {
-    if (req.headers) requireAuth(req);
+    requireAuth(req);
     const { key } = req.body || req;
     assertUnlocked();
     resetAutoLock();
@@ -331,7 +331,7 @@ registerFunction(
     metadata: { category: "vault" },
   },
   async (req: any) => {
-    if (req.headers) requireAuth(req);
+    requireAuth(req);
     const { currentPassword, newPassword } = req.body || req;
     assertUnlocked();
 
@@ -464,7 +464,7 @@ registerFunction(
     metadata: { category: "vault" },
   },
   async (req: any) => {
-    if (req.headers) requireAuth(req);
+    requireAuth(req);
     assertUnlocked();
     resetAutoLock();
 
@@ -508,7 +508,7 @@ registerFunction(
     metadata: { category: "vault" },
   },
   async (req: any) => {
-    if (req.headers) requireAuth(req);
+    requireAuth(req);
     const { password } = req.body || req;
 
     const backupMeta: any = await safeCall(
