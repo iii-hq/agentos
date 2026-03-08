@@ -5,11 +5,11 @@ import FadeIn from "./shared/FadeIn";
 import { stats } from "../data/stats";
 
 const TERMINAL_LINES = [
-  { text: "$ agentos init --template coder", type: "command" },
-  { text: "  Agent created: coder-01", type: "success" },
-  { text: '$ agentos run "review PR #42"', type: "command" },
-  { text: "  routing to tools: [git, code, search]", type: "info" },
-  { text: "  streaming response...", type: "info" },
+  { text: "$ cargo install agentos", type: "command" },
+  { text: "  Installed agentos v0.1.0", type: "success" },
+  { text: "$ agentos start", type: "command" },
+  { text: "  18 Rust crates + 39 TS workers started", type: "info" },
+  { text: '$ agentos chat default "review PR #42"', type: "command" },
   { text: "  Review complete. 3 issues found.", type: "success" },
 ];
 
