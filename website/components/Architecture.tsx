@@ -4,8 +4,8 @@ import SectionHeader from "./shared/SectionHeader";
 const layers = [
   {
     lang: "Rust",
-    count: "10 crates",
-    items: ["cli", "tui", "security", "memory", "llm-router", "wasm-sandbox", "knowledge", "session", "vault", "swarm"],
+    count: "18 crates",
+    items: ["cli", "tui", "security", "memory", "llm-router", "wasm-sandbox", "realm", "hierarchy", "directive", "mission", "ledger", "council", "pulse", "bridge"],
     accent: "border-primary/30 bg-primary/5",
     pill: "bg-primary/10 border-primary/20 text-primary/80",
     label: "text-primary",
