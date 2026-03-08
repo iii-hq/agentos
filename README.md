@@ -2,7 +2,7 @@
 
 Agent Operating System built on three primitives: **Worker**, **Function**, **Trigger**.
 
-**60+ tools** · **2,506 tests** · **25 LLM providers** · **47 models** · **40 channels** · **28K LOC**
+**60+ tools** · **2,506 tests** · **25 LLM providers** · **47 models** · **40 channels** · **32K LOC**
 
 Every capability — agents, memory, security, LLM routing, workflows, tools, swarms, knowledge graphs, session replay, vault — is a plain function registered on an [iii-engine](https://iii.dev) bus. No frameworks, no vendor lock-in, no magic.
 
@@ -10,14 +10,18 @@ Every capability — agents, memory, security, LLM routing, workflows, tools, sw
 ┌──────────────────────────────────────────────────────────────┐
 │                        iii-engine                            │
 │              Worker · Function · Trigger                     │
-├─────────┬───────────┬───────────┬───────────┬────────────────┤
-│ agent   │ security  │    llm    │  memory   │     wasm       │
-│ core    │  rbac     │  router   │  store    │    sandbox     │
-│ workflow│  audit    │ 25 LLMs   │  session  │   (wasmtime)   │
-│ api     │  taint    │  catalog  │  recall   │    (Rust)      │
-│ hand    │  sign     │   (Rust)  │  (Rust)   │                │
-│ (Rust)  │  (Rust)   │           │           │                │
-├─────────┴───────────┴───────────┴───────────┴────────────────┤
+├──────────┬───────────┬───────────┬───────────┬───────────────┤
+│ agent    │ security  │    llm    │  memory   │     wasm      │
+│ core     │  rbac     │  router   │  store    │    sandbox    │
+│ workflow │  audit    │ 25 LLMs   │  session  │   (wasmtime)  │
+│ api      │  taint    │  catalog  │  recall   │    (Rust)     │
+│ hand     │  sign     │   (Rust)  │  (Rust)   │               │
+│ (Rust)   │  (Rust)   │           │           │               │
+├──────────┴───────────┴───────────┴───────────┴───────────────┤
+│                   Control Plane (Rust)                       │
+│  realm · hierarchy · directive · mission · ledger            │
+│  council · pulse · bridge (8 crates, 45 functions)           │
+├──────────────────────────────────────────────────────────────┤
 │  api · workflows · tools(60+) · skills · channels · hooks    │
 │  approval · streaming · mcp · a2a · vault · browser · swarm  │
 │  knowledge-graph · session-replay · skillkit · tool-profiles │
@@ -45,16 +49,26 @@ cargo run --release -p agentos-memory &
 cargo run --release -p agentos-llm-router &
 cargo run --release -p agentos-wasm-sandbox &
 
-# 3. Start TypeScript workers
+# 3. Start control plane workers
+cargo run --release -p agentos-realm &
+cargo run --release -p agentos-hierarchy &
+cargo run --release -p agentos-directive &
+cargo run --release -p agentos-mission &
+cargo run --release -p agentos-ledger &
+cargo run --release -p agentos-council &
+cargo run --release -p agentos-pulse &
+cargo run --release -p agentos-bridge &
+
+# 4. Start TypeScript workers
 npx tsx src/api.ts &
 npx tsx src/agent-core.ts &
 npx tsx src/tools.ts &
 npx tsx src/workflow.ts &
 
-# 4. Start Python embedding worker
+# 5. Start Python embedding worker
 python workers/embedding/main.py &
 
-# 5. Chat with an agent
+# 6. Chat with an agent
 cargo run -p agentos-cli -- chat default
 ```
 
@@ -72,7 +86,7 @@ cargo run -p agentos-cli -- message default "What can you do?"
 
 Every component connects to the iii-engine over WebSocket and registers functions. Functions call other functions via `trigger()`. That's it.
 
-### Rust Crates (10)
+### Rust Crates (18)
 
 | Crate | Purpose | LOC |
 |-------|---------|-----|
@@ -86,6 +100,14 @@ Every component connects to the iii-engine over WebSocket and registers function
 | `api` | Rust HTTP API layer | ~200 |
 | `hand-runner` | Autonomous hand execution engine | ~150 |
 | `workflow` | Rust workflow step execution | ~200 |
+| `realm` | Multi-tenant isolation domains with export/import | ~280 |
+| `hierarchy` | Agent org structure with cycle-safe DFS tree building | ~250 |
+| `directive` | Hierarchical goal alignment with optimistic concurrency | ~280 |
+| `mission` | Task lifecycle with state machine and atomic checkout | ~350 |
+| `ledger` | Budget enforcement with soft/hard limits and versioned CAS | ~300 |
+| `council` | Governance proposals with SHA-256 merkle-chained audit trail | ~450 |
+| `pulse` | Scheduled agent invocation with context-aware ticks | ~250 |
+| `bridge` | External runtime adapters (Process/HTTP/ClaudeCode/Codex/Cursor/OpenCode) | ~300 |
 
 ### TypeScript Workers (39)
 
@@ -170,6 +192,34 @@ Profiles filter tools per agent to reduce token overhead:
 | `ops` | shell_exec, system_*, process_*, disk_*, network_* |
 | `data` | json_*, csv_*, yaml_*, regex_*, file_* |
 | `full` | All tools |
+
+## Control Plane
+
+The control plane layer provides full agent orchestration — multi-tenant isolation, org hierarchies, goal alignment, task management, budget enforcement, governance, scheduling, and external runtime adapters.
+
+All 8 crates are Rust workers on iii-sdk, exposing 45 functions via 44 HTTP endpoints and 2 PubSub triggers.
+
+```rust
+trigger("realm::create", json!({ "name": "production", "description": "Prod environment" }))
+trigger("hierarchy::set", json!({ "realmId": "r-1", "agentId": "agent-ceo", "title": "CEO" }))
+trigger("directive::create", json!({ "realmId": "r-1", "title": "Ship v2", "level": "realm" }))
+trigger("mission::create", json!({ "realmId": "r-1", "title": "Build auth", "directiveId": "dir-1" }))
+trigger("ledger::set_budget", json!({ "realmId": "r-1", "monthlyCents": 500000 }))
+trigger("council::submit", json!({ "realmId": "r-1", "kind": "hire_agent", "title": "Hire researcher" }))
+trigger("pulse::register", json!({ "realmId": "r-1", "agentId": "agent-ops", "intervalSecs": 300 }))
+trigger("bridge::invoke", json!({ "realmId": "r-1", "runtimeId": "rt-1", "input": "Review PR #42" }))
+```
+
+| Crate | Endpoints | Key Features |
+|-------|-----------|-------------|
+| `realm` | 7 REST | Multi-tenant isolation, export/import with secret scrubbing |
+| `hierarchy` | 5 REST | Org charts, cycle detection (DFS), capability search, chain-of-command |
+| `directive` | 5 REST | Goal trees, ancestry tracing, optimistic concurrency (CAS) |
+| `mission` | 7 REST | State machine (Backlog→Queued→Active→Review→Complete), atomic checkout |
+| `ledger` | 4 REST + 1 PubSub | Soft/hard budget limits, versioned CAS, spend tracking by agent/model/provider |
+| `council` | 6 REST + 1 PubSub | Proposal governance, SHA-256 merkle audit chain, agent override (pause/resume/terminate) |
+| `pulse` | 4 REST | Scheduled invocation, context modes (thin/full), budget-gated ticks |
+| `bridge` | 5 REST | 6 runtime adapters, path traversal prevention, process timeout, JoinHandle cleanup |
 
 ## Swarms
 
@@ -422,13 +472,21 @@ agentos/
 ├── config.yaml             iii-engine configuration
 ├── vitest.config.ts        Test configuration
 │
-├── crates/                 Rust crates (10 — hot path)
+├── crates/                 Rust crates (18 — hot path + control plane)
 │   ├── agent-core/         ReAct agent loop
 │   ├── api/                Rust HTTP API
+│   ├── bridge/             External runtime adapters (6 runtimes)
 │   ├── cli/                CLI (50+ commands)
+│   ├── council/            Governance proposals + merkle audit chain
+│   ├── directive/          Hierarchical goal alignment
 │   ├── hand-runner/        Autonomous hands
+│   ├── hierarchy/          Agent org structure (cycle-safe)
+│   ├── ledger/             Budget enforcement (soft/hard limits)
 │   ├── llm-router/         25 LLM providers
 │   ├── memory/             Session memory
+│   ├── mission/            Task lifecycle + state machine
+│   ├── pulse/              Scheduled agent invocation
+│   ├── realm/              Multi-tenant isolation domains
 │   ├── security/           RBAC, audit, taint, signing, sandbox
 │   ├── tui/                21-screen terminal dashboard
 │   ├── wasm-sandbox/       WASM execution

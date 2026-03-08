@@ -135,11 +135,21 @@ const rows: { feature: string; values: string[] }[] = [
   {
     feature: "Multi-agent",
     values: [
-      "Swarms, crews, hierarchies",
+      "Swarms + org hierarchy + pulse",
       "Sub-agents (depth-limited)",
       "Crews + Flows",
       "Supervisor + Swarm",
       "Swarm, FSM, hierarchy",
+    ],
+  },
+  {
+    feature: "Control plane",
+    values: [
+      "8 Rust crates (45 functions)",
+      "None",
+      "None",
+      "None",
+      "None",
     ],
   },
   {
