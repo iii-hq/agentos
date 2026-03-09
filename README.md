@@ -135,7 +135,7 @@ Every component connects to the iii-engine over WebSocket and registers function
 | `pulse` | Scheduled agent invocation with context-aware ticks | ~250 |
 | `bridge` | External runtime adapters (Process/HTTP/ClaudeCode/Codex/Cursor/OpenCode) | ~300 |
 
-### TypeScript Workers (39)
+### TypeScript Workers (40)
 
 | Worker | Purpose |
 |--------|---------|
@@ -175,7 +175,8 @@ Every component connects to the iii-engine over WebSocket and registers function
 | `hand-runner.ts` | Autonomous hand execution |
 | `migration.ts` | Framework migration utilities |
 | `dashboard.ts` | Dashboard data aggregation |
-| `telemetry.ts` | OpenTelemetry metrics |
+| `telemetry.ts` | OpenTelemetry metrics (SDK-native, auto worker CPU/memory/event-loop) |
+| `cron.ts` | Scheduled jobs (session cleanup, cost aggregation, rate limit reset) |
 | `code-agent.ts` | Specialized coding agent |
 | `channels/*.ts` | 40 channel adapters |
 
@@ -518,7 +519,7 @@ agentos/
 │   ├── wasm-sandbox/       WASM execution
 │   └── workflow/           Workflow engine
 │
-├── src/                    TypeScript workers (39)
+├── src/                    TypeScript workers (40)
 │   ├── api.ts              OpenAI-compatible API
 │   ├── agent-core.ts       TS agent loop
 │   ├── tools.ts            22 built-in tools
@@ -571,14 +572,21 @@ iii.register_trigger("queue", "agent::chat", json!({ "topic": "agent.inbox" }))?
 ```
 
 ```typescript
-// TypeScript worker
-const { registerFunction, registerTrigger, trigger } = init(
-  'ws://localhost:49134',
-  { workerName: 'api' }
-)
+// TypeScript worker (iii-sdk v0.8.0)
+import { initSDK } from "./shared/config.js";
+
+const { registerFunction, registerTrigger, trigger } = initSDK("api");
 
 registerFunction(
-  { id: 'api::chat_completions', description: 'OpenAI-compatible chat completions' },
+  {
+    id: 'api::chat_completions',
+    description: 'OpenAI-compatible chat completions',
+    metadata: { category: 'api' },
+    request_format: [
+      { name: 'model', type: 'string', required: true },
+      { name: 'messages', type: 'array', required: true },
+    ],
+  },
   async (req) => { /* ... */ }
 )
 
@@ -617,7 +625,7 @@ HTTP POST /v1/chat/completions
 
 ## Requirements
 
-- [iii-engine](https://iii.dev) v0.3+
+- [iii-engine](https://iii.dev) v0.8+ (iii-sdk v0.8.0 with built-in OTel, cron triggers, metadata schemas)
 - Rust 1.75+
 - Node.js 20+
 - Python 3.11+ (optional, for embeddings)

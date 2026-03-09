@@ -61,10 +61,9 @@ export OPENAI_API_KEY=sk-...
 **3. Create your first agent**
 
 \`\`\`typescript
-import { init } from "iii-sdk";
+import { initSDK } from "./shared/config.js";
 
-const { registerFunction, trigger } =
-  init("ws://localhost:49134", { workerName: "greeter" });
+const { registerFunction, trigger } = initSDK("greeter");
 
 registerFunction(
   { id: "greet::reply" },
@@ -118,10 +117,9 @@ AgentOS is built on iii-engine's three primitives. Every agent, tool, and workfl
 A Worker is a long-running process that handles requests. Think of it as a microservice that processes messages.
 
 \`\`\`typescript
-import { init } from "iii-sdk";
+import { initSDK } from "./shared/config.js";
 
-const { registerFunction, trigger } =
-  init("ws://localhost:49134", { workerName: "analyst" });
+const { registerFunction, trigger } = initSDK("analyst");
 
 registerFunction(
   { id: "analyst::analyze", description: "Analyze data from URL" },
@@ -501,10 +499,9 @@ channels = ["support", "general"]
 ## Writing Custom Adapters
 
 \`\`\`typescript
-import { init } from "iii-sdk";
+import { initSDK } from "./shared/config.js";
 
-const { registerFunction, registerTrigger, trigger } =
-  init("ws://localhost:49134", { workerName: "custom-channel" });
+const { registerFunction, registerTrigger, trigger } = initSDK("custom-channel");
 
 registerFunction(
   { id: "channel::webhook_handler" },
@@ -982,10 +979,9 @@ Navigation: Tab to switch screens, / for help, q to quit.`,
 Watches GitHub PRs and posts reviews:
 
 \`\`\`typescript
-import { init } from "iii-sdk";
+import { initSDK } from "./shared/config.js";
 
-const { registerFunction, registerTrigger, trigger } =
-  init("ws://localhost:49134", { workerName: "code-reviewer" });
+const { registerFunction, registerTrigger, trigger } = initSDK("code-reviewer");
 
 registerFunction(
   { id: "review::pr", description: "Review a GitHub PR" },

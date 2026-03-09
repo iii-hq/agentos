@@ -9,13 +9,19 @@ const tabs = [
     label: "TypeScript",
     lang: "typescript",
     filename: "agent.ts",
-    code: `import { init } from "iii-sdk";
+    code: `import { initSDK } from "./shared/config.js";
 
-const { registerFunction, registerTrigger, trigger } =
-  init("ws://localhost:49134", { workerName: "coder" });
+const { registerFunction, registerTrigger, trigger } = initSDK("coder");
 
 registerFunction(
-  { id: "review::analyze", description: "Review a PR" },
+  {
+    id: "review::analyze",
+    description: "Review a PR",
+    metadata: { category: "tools" },
+    request_format: [
+      { name: "pr", type: "number", required: true, description: "PR number" },
+    ],
+  },
   async (input: { pr: number }) => {
     const diff = await trigger("tool::git_diff", { pr: input.pr });
     const issues = await trigger("llm::chat", {
