@@ -10,8 +10,6 @@ import { shutdownManager } from "./shared/shutdown.js";
 
 const log = createLogger("api");
 
-shutdownManager.initShutdown();
-
 function withSecHeaders(response: { status_code: number; body: any }): {
   status_code: number;
   body: any;

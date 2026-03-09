@@ -32,8 +32,6 @@ function earlyResponse(content: string): ChatResponse {
   return { content, model: undefined, usage: undefined, iterations: 0 };
 }
 
-shutdownManager.initShutdown();
-
 const recordMetric = createRecordMetric(triggerVoid);
 
 type TriggerFn = typeof trigger;

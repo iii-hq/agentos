@@ -1,12 +1,13 @@
 import { realpathSync } from "node:fs";
 import { isAbsolute, relative, resolve } from "node:path";
 import { init } from "iii-sdk";
+import { shutdownManager } from "./shutdown.js";
 
 export const ENGINE_URL = process.env.III_ENGINE_URL || "ws://localhost:49134";
 export const WORKSPACE_ROOT = process.env.AGENTOS_WORKSPACE || process.cwd();
 
 export function initSDK(workerName: string) {
-  return init(ENGINE_URL, {
+  const sdk = init(ENGINE_URL, {
     workerName,
     otel: {
       enabled: true,
@@ -16,6 +17,10 @@ export function initSDK(workerName: string) {
       fetchInstrumentationEnabled: true,
     },
   });
+  if (typeof (sdk as any).shutdown === "function") {
+    shutdownManager.registerIIIShutdown((sdk as any).shutdown);
+  }
+  return sdk;
 }
 
 export function assertPathContained(resolved: string) {
