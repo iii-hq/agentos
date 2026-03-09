@@ -1,10 +1,16 @@
-import { metrics } from "@opentelemetry/api";
+import { getContext } from "iii-sdk";
 
 type MetricType = "counter" | "histogram" | "gauge";
 
-const meter = metrics.getMeter("agentos");
-
 const instrumentCache = new Map<string, any>();
+
+function getMeter() {
+  try {
+    return getContext().meter;
+  } catch {
+    return null;
+  }
+}
 
 function getOrCreate(name: string, factory: () => any): any {
   let instrument = instrumentCache.get(name);
@@ -22,6 +28,8 @@ export function recordMetric(
   type: MetricType = "counter",
 ): void {
   try {
+    const meter = getMeter();
+    if (!meter) return;
     if (type === "counter") {
       getOrCreate(name, () => meter.createCounter(name)).add(value, labels);
     } else if (type === "histogram") {

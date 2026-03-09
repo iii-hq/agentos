@@ -84,18 +84,14 @@ vi.mock("iii-sdk", () => ({
     triggerVoid: mockTriggerVoid,
     listFunctions: mockListFunctions,
   }),
-  getContext: vi.fn(() => ({ logger: null })),
-}));
-
-const noopInstrument = { add: vi.fn(), record: vi.fn() };
-vi.mock("@opentelemetry/api", () => ({
-  metrics: {
-    getMeter: vi.fn(() => ({
-      createCounter: vi.fn(() => noopInstrument),
-      createHistogram: vi.fn(() => noopInstrument),
-      createUpDownCounter: vi.fn(() => noopInstrument),
-    })),
-  },
+  getContext: vi.fn(() => ({
+    logger: null,
+    meter: {
+      createCounter: vi.fn(() => ({ add: vi.fn() })),
+      createHistogram: vi.fn(() => ({ record: vi.fn() })),
+      createUpDownCounter: vi.fn(() => ({ add: vi.fn() })),
+    },
+  })),
 }));
 
 vi.mock("../shared/errors.js", () => ({
