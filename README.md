@@ -2,9 +2,9 @@
 
 Agent Operating System built on three primitives: **Worker**, **Function**, **Trigger**.
 
-**60+ tools** · **2,556 tests** · **25 LLM providers** · **47 models** · **40 channels** · **35K LOC**
+**60+ tools** · **2,727 tests** · **25 LLM providers** · **47 models** · **40 channels** · **65K LOC**
 
-Every capability — agents, memory, security, LLM routing, workflows, tools, swarms, knowledge graphs, session replay, vault, **self-evolving functions** — is a plain function registered on an [iii-engine](https://iii.dev) bus. No frameworks, no vendor lock-in, no magic.
+Every capability — agents, memory, security, LLM routing, workflows, tools, swarms, knowledge graphs, session replay, vault, **self-evolving functions**, **DAG-based artifact exchange**, **inter-agent coordination** — is a plain function registered on an [iii-engine](https://iii.dev) bus. No frameworks, no vendor lock-in, no magic.
 
 ```
 ┌──────────────────────────────────────────────────────────────┐
@@ -23,9 +23,13 @@ Every capability — agents, memory, security, LLM routing, workflows, tools, sw
 │  council · pulse · bridge (8 crates, 45 functions)           │
 ├──────────────────────────────────────────────────────────────┤
 │             Evolve / Eval / Feedback Loop                    │
-│  evolve (LLM code gen + vm sandbox + live registration)      │
+│  evolve (LLM code gen + vm sandbox + DAG branching)          │
 │  eval (pluggable scorers + suites + inline auto-scoring)     │
 │  feedback (review + improve + promote/kill + leaderboard)    │
+│                      (TypeScript)                            │
+├──────────────────────────────────────────────────────────────┤
+│  artifact-dag (DAG content exchange + diff + frontier)       │
+│  coordination (channels + threaded posts + pinning)          │
 │                      (TypeScript)                            │
 ├──────────────────────────────────────────────────────────────┤
 │  api · workflows · tools(60+) · skills · channels · hooks    │
@@ -141,7 +145,7 @@ Every component connects to the iii-engine over WebSocket and registers function
 | `pulse` | Scheduled agent invocation with context-aware ticks | ~250 |
 | `bridge` | External runtime adapters (Process/HTTP/ClaudeCode/Codex/Cursor/OpenCode) | ~300 |
 
-### TypeScript Workers (43)
+### TypeScript Workers (46)
 
 | Worker | Purpose |
 |--------|---------|
@@ -184,9 +188,11 @@ Every component connects to the iii-engine over WebSocket and registers function
 | `telemetry.ts` | OpenTelemetry metrics (SDK-native, auto worker CPU/memory/event-loop) |
 | `cron.ts` | Scheduled jobs (session cleanup, cost aggregation, rate limit reset) |
 | `code-agent.ts` | Specialized coding agent |
-| `evolve.ts` | Dynamic function evolution (LLM code gen + vm sandbox + live registration) |
+| `evolve.ts` | Dynamic function evolution (LLM code gen + vm sandbox + DAG branching) |
 | `eval.ts` | Production eval harness (pluggable scorers, suites, inline auto-scoring) |
 | `feedback.ts` | Feedback loop (auto-review, improve/kill, promote, leaderboard) |
+| `artifact-dag.ts` | DAG-based content artifact exchange (push/fetch/diff/leaves/history) |
+| `coordination.ts` | Inter-agent coordination board (channels, threaded posts, pinning) |
 | `channels/*.ts` | 40 channel adapters |
 
 ### Python Workers (1)
@@ -281,6 +287,67 @@ trigger("kg::add_relation", { from: "agentos", to: "iii-engine", type: "built_on
 trigger("kg::query", { entity: "agentos", depth: 2 })
 ```
 
+## Artifact DAG
+
+Git-style DAG-based content exchange for swarms. Agents push versioned artifacts with parent references, enabling branching histories, diffs, and frontier discovery.
+
+```typescript
+const node = await trigger("artifact::push", {
+  content: { report: "Q1 analysis..." },
+  parentIds: ["art_abc123"],
+  agentId: "analyst-1",
+  swarmId: "swarm_research",
+  metadata: { type: "report", format: "markdown" }
+})
+
+const leaves = await trigger("artifact::leaves", { swarmId: "swarm_research" })
+
+const diff = await trigger("artifact::diff", { nodeIdA: "art_abc123", nodeIdB: node.nodeId })
+```
+
+**6 functions**: `artifact::push`, `artifact::fetch`, `artifact::children`, `artifact::leaves`, `artifact::diff`, `artifact::history`
+
+- Content-addressed with SHA-256 hashing (first 16 hex chars)
+- Parent validation on push (all parentIds must exist)
+- Swarm-scoped publishing via PubSub (`artifact:{swarmId}` topic)
+- Frontier discovery (leaves with no children, excluding orphans)
+- 512KB max content size per artifact
+
+## Coordination Board
+
+Persistent inter-agent communication channels with threaded posts and pinning.
+
+```typescript
+await trigger("coord::create_channel", {
+  name: "design-decisions",
+  description: "Architecture discussions",
+  agentId: "architect-1"
+})
+
+await trigger("coord::post", {
+  channelId: "chan_abc123",
+  agentId: "architect-1",
+  content: "Proposal: switch to event sourcing for audit trail"
+})
+
+await trigger("coord::reply", {
+  channelId: "chan_abc123",
+  parentId: "post_xyz789",
+  agentId: "reviewer-1",
+  content: "Agreed — aligns with our immutability requirements"
+})
+
+await trigger("coord::pin", { channelId: "chan_abc123", postId: "post_xyz789" })
+```
+
+**6 functions**: `coord::create_channel`, `coord::post`, `coord::reply`, `coord::list_channels`, `coord::read`, `coord::pin`
+
+- Threaded replies via `parentId`
+- Pin/unpin with 25-pin limit per channel
+- 1,000-post limit per channel
+- Auth enforced on post and reply (HTTP requests)
+- PubSub notifications on `coord:{channelId}` topic
+
 ## Dynamic Function Evolution
 
 Agents can write, register, evaluate, and improve functions at runtime. The evolve-eval-feedback loop turns AgentOS from a static orchestrator into a self-evolving system.
@@ -302,12 +369,16 @@ feedback::review  →  analyze scores → KEEP / IMPROVE / KILL
 feedback::promote →  draft → staging → production
 ```
 
-### Evolve (5 functions, 5 endpoints)
+### Evolve (8 functions, 8 endpoints)
 
 ```typescript
 trigger("evolve::generate", { goal: "Double a number", name: "doubler", agentId: "agent-1" })
 trigger("evolve::register", { functionId: "evolved::doubler_v1" })
 trigger("evolve::list", { status: "production" })
+
+trigger("evolve::fork", { functionId: "evolved::doubler_v1", goal: "Handle negative numbers", agentId: "agent-2" })
+trigger("evolve::leaves", { name: "doubler" })
+trigger("evolve::lineage", { functionId: "evolved::doubler_v3" })
 ```
 
 - LLM generates function code from a goal/spec
@@ -315,6 +386,7 @@ trigger("evolve::list", { status: "production" })
 - Sandboxed `trigger()` proxy only allows `evolved::`, `tool::`, `llm::` prefixes
 - Pre-registration security scan via `skill::pipeline`
 - Lifecycle: `draft` → `staging` → `production` → `deprecated` → `killed`
+- **DAG branching**: fork from any version (not just latest), discover frontier leaves, trace full lineage to root
 
 ### Eval (6 functions, 5 endpoints)
 
@@ -588,14 +660,16 @@ agentos/
 │   ├── wasm-sandbox/       WASM execution
 │   └── workflow/           Workflow engine
 │
-├── src/                    TypeScript workers (43)
+├── src/                    TypeScript workers (46)
 │   ├── api.ts              OpenAI-compatible API
 │   ├── agent-core.ts       TS agent loop
 │   ├── tools.ts            22 built-in tools
 │   ├── tools-extended.ts   38 extended tools
-│   ├── evolve.ts           Dynamic function evolution
+│   ├── evolve.ts           Dynamic function evolution + DAG branching
 │   ├── eval.ts             Production eval harness
 │   ├── feedback.ts         Feedback loop
+│   ├── artifact-dag.ts     DAG-based content artifact exchange
+│   ├── coordination.ts     Inter-agent coordination board
 │   ├── swarm.ts            Multi-agent swarms
 │   ├── knowledge-graph.ts  Entity-relation graph
 │   ├── session-replay.ts   Session recording
@@ -604,7 +678,7 @@ agentos/
 │   ├── security-map.ts     Mutual Authentication Protocol
 │   ├── channels/           40 channel adapters
 │   ├── shared/             Shared utilities
-│   ├── __tests__/          1,489 TypeScript tests
+│   ├── __tests__/          1,660 TypeScript tests (65 files)
 │   └── ...                 25 more workers
 │
 ├── workers/                Python workers
@@ -618,10 +692,10 @@ agentos/
 
 ## Testing
 
-2,556 tests across three languages:
+2,727 tests across three languages:
 
 ```bash
-npx vitest --run          # 1,489 TypeScript tests (51 files)
+npx vitest --run          # 1,660 TypeScript tests (65 files)
 cargo test --workspace    # 906 Rust tests (10 crates)
 python3 -m pytest         # 161 Python tests
 ```

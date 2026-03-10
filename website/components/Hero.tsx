@@ -9,7 +9,7 @@ const TERMINAL_LINES = [
   { text: "  > iii-engine already installed (v0.7.0)", type: "success" },
   { text: "  > agentos v0.1.0 installed to ~/.local/bin", type: "success" },
   { text: "$ agentos start", type: "command" },
-  { text: "  18 Rust crates + 43 TS workers started", type: "info" },
+  { text: "  18 Rust crates + 46 TS workers started", type: "info" },
   { text: '$ agentos chat default "review PR #42"', type: "command" },
   { text: "  Review complete. 3 issues found.", type: "success" },
 ];

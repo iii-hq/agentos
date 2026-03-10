@@ -196,7 +196,7 @@ The pipeline overhead for this chain is just 18% vs direct function calls.`,
   {
     slug: "architecture",
     title: "Architecture",
-    desc: "10 Rust crates, 43 TypeScript workers, and how they connect",
+    desc: "10 Rust crates, 46 TypeScript workers, and how they connect",
     category: "Core Concepts",
     content: `# Architecture
 
@@ -217,13 +217,14 @@ AgentOS is a multi-language system with a Rust core, TypeScript application laye
 | \`agents-core\` | Shared types and utilities |
 | \`agents-desktop\` | Tauri 2.0 native app |
 
-## TypeScript Workers (43)
+## TypeScript Workers (46)
 
 The application logic runs as iii-engine workers:
 
 - **Agent workers** (30): Pre-built agent templates for code review, research, ops, etc.
 - **Tool workers** (6): Browser, filesystem, shell, HTTP, MCP, A2A
 - **Evolution workers** (3): evolve, eval, feedback (self-evolving function loop)
+- **Infrastructure workers** (2): artifact-dag (DAG content exchange), coordination (inter-agent board)
 - **System workers** (4): Orchestrator, session manager, cost tracker, cron
 
 ## Python Worker (1)
@@ -793,6 +794,25 @@ When a function needs improvement, the feedback loop:
 
 A cron job runs \`feedback::auto_review\` every 6 hours, reviewing all staging and production functions.
 
+## DAG Branching
+
+Evolved functions form a non-linear version graph. Fork from any version to create parallel evolution paths.
+
+\`\`\`typescript
+await trigger("evolve::fork", {
+  functionId: "evolved::doubler_v1",
+  goal: "Handle negative numbers",
+  agentId: "agent-2",
+});
+
+const leaves = await trigger("evolve::leaves", { name: "doubler" });
+const lineage = await trigger("evolve::lineage", { functionId: "evolved::doubler_v3" });
+\`\`\`
+
+- **Fork**: Branch from any version, LLM generates improved code with fork context
+- **Leaves**: Find frontier versions (no children, excluding killed)
+- **Lineage**: Trace ancestry back to root with cycle-safe traversal (max depth 100)
+
 ## API Endpoints
 
 | Method | Path | Description |
@@ -802,6 +822,9 @@ A cron job runs \`feedback::auto_review\` every 6 hours, reviewing all staging a
 | POST | \`/api/evolve/unregister\` | Kill a function |
 | GET | \`/api/evolve\` | List evolved functions |
 | GET | \`/api/evolve/:functionId\` | Get function details |
+| POST | \`/api/evolve/fork\` | Fork from any version |
+| GET | \`/api/evolve/leaves/:name\` | Frontier versions |
+| GET | \`/api/evolve/lineage/:functionId\` | Trace ancestry to root |
 | POST | \`/api/eval/run\` | Run single eval |
 | POST | \`/api/eval/suite\` | Run eval suite |
 | GET | \`/api/eval/history/:functionId\` | Eval history |
@@ -813,6 +836,127 @@ A cron job runs \`feedback::auto_review\` every 6 hours, reviewing all staging a
 | POST | \`/api/feedback/demote\` | Demote/kill function |
 | GET | \`/api/feedback/leaderboard\` | Leaderboard |
 | POST | \`/api/feedback/policy\` | Get/set thresholds |`,
+  },
+  {
+    slug: "artifact-dag",
+    title: "Artifact DAG",
+    desc: "Git-style DAG content exchange for swarms with branching, diffs, and frontier discovery",
+    category: "Core Concepts",
+    content: `# Artifact DAG
+
+Git-style DAG-based content exchange for agent swarms. Agents push versioned content artifacts with parent references, enabling branching histories, diffs, and frontier discovery.
+
+## Push Artifacts
+
+\`\`\`typescript
+const node = await trigger("artifact::push", {
+  content: { report: "Q1 analysis..." },
+  parentIds: ["art_abc123"],
+  agentId: "analyst-1",
+  swarmId: "swarm_research",
+  metadata: { type: "report" },
+});
+\`\`\`
+
+- Content-addressed with SHA-256 hashing (first 16 hex chars)
+- Parent validation — all parentIds must exist
+- Swarm-scoped publishing via PubSub (\`artifact:{swarmId}\` topic)
+- 512KB max content size per artifact
+
+## Discover Frontiers
+
+\`\`\`typescript
+const leaves = await trigger("artifact::leaves", { swarmId: "swarm_research" });
+\`\`\`
+
+Returns all artifacts with no children — the current frontier of work.
+
+## Diff Versions
+
+\`\`\`typescript
+const diff = await trigger("artifact::diff", {
+  nodeIdA: "art_abc123",
+  nodeIdB: "art_def456",
+});
+\`\`\`
+
+Returns added, removed, and changed keys between two artifact versions.
+
+## API Endpoints
+
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | \`/api/artifacts/push\` | Push content artifact |
+| GET | \`/api/artifacts/:nodeId\` | Fetch artifact |
+| GET | \`/api/artifacts/:nodeId/children\` | List children |
+| GET | \`/api/artifacts/leaves\` | Frontier artifacts |
+| POST | \`/api/artifacts/diff\` | Diff two versions |
+| GET | \`/api/artifacts/history/:nodeId\` | Full ancestry |`,
+  },
+  {
+    slug: "coordination",
+    title: "Coordination Board",
+    desc: "Persistent inter-agent communication with channels, threaded posts, and pinning",
+    category: "Core Concepts",
+    content: `# Coordination Board
+
+Persistent inter-agent communication channels with threaded posts and pinning. Agents coordinate decisions, share context, and maintain discussion history.
+
+## Create Channels
+
+\`\`\`typescript
+await trigger("coord::create_channel", {
+  name: "design-decisions",
+  description: "Architecture discussions",
+  agentId: "architect-1",
+});
+\`\`\`
+
+## Post and Reply
+
+\`\`\`typescript
+await trigger("coord::post", {
+  channelId: "chan_abc123",
+  agentId: "architect-1",
+  content: "Proposal: switch to event sourcing",
+});
+
+await trigger("coord::reply", {
+  channelId: "chan_abc123",
+  parentId: "post_xyz789",
+  agentId: "reviewer-1",
+  content: "Agreed — aligns with immutability requirements",
+});
+\`\`\`
+
+## Pin Important Posts
+
+\`\`\`typescript
+await trigger("coord::pin", {
+  channelId: "chan_abc123",
+  postId: "post_xyz789",
+});
+\`\`\`
+
+- 25-pin limit per channel
+- Toggle: pin again to unpin
+
+## Limits
+
+- 1,000 posts per channel
+- Auth enforced on post and reply (HTTP requests)
+- PubSub notifications on \`coord:{channelId}\` topic
+
+## API Endpoints
+
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | \`/api/coord/channels\` | Create channel |
+| POST | \`/api/coord/post\` | Post to channel |
+| POST | \`/api/coord/reply\` | Reply to post |
+| GET | \`/api/coord/channels\` | List channels |
+| GET | \`/api/coord/channels/:id\` | Read posts |
+| POST | \`/api/coord/pin\` | Pin/unpin post |`,
   },
   {
     slug: "workflows",
@@ -1065,6 +1209,36 @@ POST   /api/feedback/promote    # Promote function status
 POST   /api/feedback/demote     # Demote or kill function
 GET    /api/feedback/leaderboard # Ranked function scores
 POST   /api/feedback/policy     # Get/set threshold policy
+\`\`\`
+
+## Evolve DAG Branching
+
+\`\`\`
+POST   /api/evolve/fork         # Fork from any version
+GET    /api/evolve/leaves/:name # Frontier versions (no children)
+GET    /api/evolve/lineage/:functionId # Trace ancestry to root
+\`\`\`
+
+## Artifact DAG
+
+\`\`\`
+POST   /api/artifacts/push      # Push content artifact with parents
+GET    /api/artifacts/:nodeId   # Fetch artifact by ID
+GET    /api/artifacts/:nodeId/children # List child artifacts
+GET    /api/artifacts/leaves    # Frontier artifacts (no children)
+POST   /api/artifacts/diff      # Diff two artifact versions
+GET    /api/artifacts/history/:nodeId # Full ancestry chain
+\`\`\`
+
+## Coordination Board
+
+\`\`\`
+POST   /api/coord/channels      # Create coordination channel
+POST   /api/coord/post          # Post to channel
+POST   /api/coord/reply         # Reply to post (threaded)
+GET    /api/coord/channels      # List channels
+GET    /api/coord/channels/:id  # Read channel posts
+POST   /api/coord/pin           # Pin/unpin a post
 \`\`\`
 
 ## Health
