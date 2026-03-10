@@ -506,6 +506,222 @@ registerFunction(
   },
 );
 
+registerFunction(
+  {
+    id: "evolve::fork",
+    description: "Branch from any version to create a new exploration path",
+    metadata: { category: "evolve" },
+  },
+  async (req: any) => {
+    requireAuth(req);
+    const { sourceId, goal, agentId, metadata: extraMeta } = req.body || req;
+    if (!sourceId || !goal || !agentId) {
+      throw Object.assign(
+        new Error("sourceId, goal, and agentId are required"),
+        { statusCode: 400 },
+      );
+    }
+
+    const source: EvolvedFunction | null = await trigger("state::get", {
+      scope: "evolved_functions",
+      key: sourceId,
+    });
+    if (!source) {
+      throw Object.assign(new Error("Source function not found"), {
+        statusCode: 404,
+      });
+    }
+
+    const baseName = source.functionId
+      .replace(/_v\d+$/, "")
+      .replace("evolved::", "");
+    const safeName = sanitizeId(baseName);
+
+    const existing: any[] = await safeCall(
+      () => trigger("state::list", { scope: "evolved_functions" }),
+      [],
+      { operation: "list_evolved" },
+    );
+
+    const sameNameEntries = (Array.isArray(existing) ? existing : []).filter(
+      (e: any) => {
+        const fn = e.value || e;
+        return (
+          typeof fn.functionId === "string" &&
+          fn.functionId.startsWith(`evolved::${safeName}_v`)
+        );
+      },
+    );
+    const maxVersion = sameNameEntries.reduce((max: number, e: any) => {
+      const fn = e.value || e;
+      const match = fn.functionId.match(/_v(\d+)$/);
+      return match ? Math.max(max, parseInt(match[1], 10)) : max;
+    }, 0);
+    const nextVersion = maxVersion + 1;
+    const functionId = `evolved::${safeName}_v${nextVersion}`;
+
+    const prompt = `Improve the following JavaScript function based on the goal below. Return ONLY the function body as an arrow function expression. Do not include markdown, explanations, or code fences.
+
+Current code:
+${source.code}
+
+Current description: ${source.description}
+
+Improvement goal: ${goal}
+
+The function receives a single \`input\` parameter and must return a result.
+It has access to: JSON, Math, Date, Array, Object, String, Number, Boolean, Map, Set, Promise.
+It can call \`await trigger(fnId, data)\` for evolved::, tool::, llm:: prefixes.`;
+
+    const llmResult: any = await trigger("llm::complete", {
+      model: {
+        provider: "anthropic",
+        model: "claude-sonnet-4-20250514",
+        maxTokens: 2048,
+      },
+      systemPrompt:
+        "You are a code generator. Output only a single JavaScript arrow function expression. No markdown, no explanation.",
+      messages: [{ role: "user", content: prompt }],
+    });
+
+    let code = (llmResult?.content || "").trim();
+    code = code.replace(/^```(?:javascript|js|typescript|ts)?\n?/g, "");
+    code = code.replace(/```$/g, "");
+    code = code.trim();
+
+    const record: EvolvedFunction = {
+      functionId,
+      code,
+      description: `${source.description} (fork: ${goal})`,
+      authorAgentId: agentId,
+      version: nextVersion,
+      status: "draft",
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      evalScores: null,
+      securityReport: { scanSafe: false, sandboxPassed: false, findingCount: 0 },
+      parentVersion: sourceId,
+      metadata: { ...(extraMeta || {}), forkedFrom: sourceId },
+    };
+
+    await trigger("state::set", {
+      scope: "evolved_functions",
+      key: functionId,
+      value: record,
+    });
+
+    log.info("Forked evolved function", { functionId, sourceId, agentId });
+    recordMetric("evolved_function_forked", 1, { agentId }, "counter");
+
+    return record;
+  },
+);
+
+registerFunction(
+  {
+    id: "evolve::leaves",
+    description: "Find frontier versions with no children",
+    metadata: { category: "evolve" },
+  },
+  async (req: any) => {
+    requireAuth(req);
+    const { name, status } = req.body || req.query || req;
+
+    const all: any[] = await safeCall(
+      () => trigger("state::list", { scope: "evolved_functions" }),
+      [],
+      { operation: "list_evolved_leaves" },
+    );
+
+    let functions = (Array.isArray(all) ? all : []).map(
+      (e: any) => e.value || e,
+    );
+
+    if (name) {
+      const safeName = sanitizeId(name);
+      functions = functions.filter(
+        (f: any) =>
+          typeof f.functionId === "string" &&
+          f.functionId.startsWith(`evolved::${safeName}_v`),
+      );
+    }
+
+    if (status) {
+      functions = functions.filter((f: any) => f.status === status);
+    }
+
+    const childParents = new Set(
+      functions
+        .map((f: any) => f.parentVersion)
+        .filter(Boolean),
+    );
+
+    const leaves = functions.filter(
+      (f: any) => !childParents.has(f.functionId) && f.status !== "killed",
+    );
+
+    return leaves.map((f: any) => ({
+      functionId: f.functionId,
+      version: f.version,
+      status: f.status,
+      parentVersion: f.parentVersion,
+      description: f.description,
+      evalScores: f.evalScores,
+    }));
+  },
+);
+
+registerFunction(
+  {
+    id: "evolve::lineage",
+    description: "Trace ancestry from a version back to root",
+    metadata: { category: "evolve" },
+  },
+  async (req: any) => {
+    requireAuth(req);
+    const { functionId } = req.body || req.query || req;
+    if (!functionId) {
+      throw Object.assign(new Error("functionId is required"), {
+        statusCode: 400,
+      });
+    }
+
+    const lineage: Array<{
+      functionId: string;
+      version: number;
+      status: string;
+      parentVersion?: string;
+      description: string;
+      evalScores: unknown;
+    }> = [];
+
+    let currentId: string | undefined = functionId;
+    const visited = new Set<string>();
+    const MAX_DEPTH = 100;
+
+    while (currentId && !visited.has(currentId) && lineage.length < MAX_DEPTH) {
+      visited.add(currentId);
+      const fn: EvolvedFunction | null = await trigger("state::get", {
+        scope: "evolved_functions",
+        key: currentId,
+      });
+      if (!fn) break;
+
+      lineage.push({
+        functionId: fn.functionId,
+        version: fn.version,
+        status: fn.status,
+        parentVersion: fn.parentVersion,
+        description: fn.description,
+        evalScores: fn.evalScores,
+      });
+      currentId = fn.parentVersion;
+    }
+
+    return { functionId, depth: lineage.length, lineage };
+  },
+);
+
 async function reloadEvolvedFunctions() {
   const all: any[] = await safeCall(
     () => trigger("state::list", { scope: "evolved_functions" }),
@@ -570,4 +786,19 @@ registerTrigger({
   type: "http",
   function_id: "evolve::get",
   config: { api_path: "api/evolve/:functionId", http_method: "GET" },
+});
+registerTrigger({
+  type: "http",
+  function_id: "evolve::fork",
+  config: { api_path: "api/evolve/fork", http_method: "POST" },
+});
+registerTrigger({
+  type: "http",
+  function_id: "evolve::leaves",
+  config: { api_path: "api/evolve/leaves", http_method: "GET" },
+});
+registerTrigger({
+  type: "http",
+  function_id: "evolve::lineage",
+  config: { api_path: "api/evolve/lineage", http_method: "GET" },
 });

@@ -5,6 +5,8 @@ console.log("AgentOS booting (iii-sdk v0.8.0, OTel enabled)");
 
 import "./agent-core.js";
 import "./api.js";
+import "./artifact-dag.js";
+import "./coordination.js";
 import "./approval.js";
 import "./approval-tiers.js";
 import "./a2a.js";

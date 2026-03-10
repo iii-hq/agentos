@@ -339,3 +339,256 @@ describe("evolve::get", () => {
     ).rejects.toThrow("Function not found");
   });
 });
+
+describe("evolve::fork", () => {
+  it("creates a new version branching from a source", async () => {
+    seedKv("evolved_functions", "evolved::calc_v1", {
+      functionId: "evolved::calc_v1",
+      code: "async (input) => input",
+      description: "calculator",
+      authorAgentId: "agent-1",
+      version: 1,
+      status: "staging",
+      metadata: {},
+    });
+
+    const result = await call(
+      "evolve::fork",
+      authReq({
+        sourceId: "evolved::calc_v1",
+        goal: "add caching",
+        agentId: "agent-2",
+      }),
+    );
+    expect(result.functionId).toBe("evolved::calc_v2");
+    expect(result.parentVersion).toBe("evolved::calc_v1");
+    expect(result.authorAgentId).toBe("agent-2");
+    expect(result.status).toBe("draft");
+    expect(result.metadata.forkedFrom).toBe("evolved::calc_v1");
+  });
+
+  it("forks from non-latest version", async () => {
+    seedKv("evolved_functions", "evolved::math_v1", {
+      functionId: "evolved::math_v1",
+      code: "async (input) => input",
+      description: "math v1",
+      authorAgentId: "agent-1",
+      version: 1,
+      status: "production",
+      metadata: {},
+    });
+    seedKv("evolved_functions", "evolved::math_v2", {
+      functionId: "evolved::math_v2",
+      code: "async (input) => input * 2",
+      description: "math v2",
+      authorAgentId: "agent-1",
+      version: 2,
+      status: "staging",
+      parentVersion: "evolved::math_v1",
+      metadata: {},
+    });
+
+    const result = await call(
+      "evolve::fork",
+      authReq({
+        sourceId: "evolved::math_v1",
+        goal: "try different approach",
+        agentId: "agent-3",
+      }),
+    );
+    expect(result.functionId).toBe("evolved::math_v3");
+    expect(result.parentVersion).toBe("evolved::math_v1");
+    expect(result.version).toBe(3);
+  });
+
+  it("rejects missing required fields", async () => {
+    await expect(
+      call("evolve::fork", authReq({ sourceId: "evolved::x_v1" })),
+    ).rejects.toThrow("sourceId, goal, and agentId are required");
+  });
+
+  it("rejects nonexistent source", async () => {
+    await expect(
+      call(
+        "evolve::fork",
+        authReq({
+          sourceId: "evolved::ghost_v1",
+          goal: "improve",
+          agentId: "agent-1",
+        }),
+      ),
+    ).rejects.toThrow("Source function not found");
+  });
+});
+
+describe("evolve::leaves", () => {
+  it("finds frontier versions with no children", async () => {
+    seedKv("evolved_functions", "evolved::tree_v1", {
+      functionId: "evolved::tree_v1",
+      version: 1,
+      status: "production",
+      description: "root",
+    });
+    seedKv("evolved_functions", "evolved::tree_v2", {
+      functionId: "evolved::tree_v2",
+      version: 2,
+      status: "staging",
+      parentVersion: "evolved::tree_v1",
+      description: "linear child",
+    });
+    seedKv("evolved_functions", "evolved::tree_v3", {
+      functionId: "evolved::tree_v3",
+      version: 3,
+      status: "draft",
+      parentVersion: "evolved::tree_v1",
+      description: "branch child",
+    });
+
+    const result = await call("evolve::leaves", authReq({}));
+    expect(result).toHaveLength(2);
+    const ids = result.map((f: any) => f.functionId);
+    expect(ids).toContain("evolved::tree_v2");
+    expect(ids).toContain("evolved::tree_v3");
+    expect(ids).not.toContain("evolved::tree_v1");
+  });
+
+  it("excludes killed functions", async () => {
+    seedKv("evolved_functions", "evolved::dead_v1", {
+      functionId: "evolved::dead_v1",
+      version: 1,
+      status: "killed",
+      description: "dead",
+    });
+    seedKv("evolved_functions", "evolved::alive_v1", {
+      functionId: "evolved::alive_v1",
+      version: 1,
+      status: "draft",
+      description: "alive",
+    });
+
+    const result = await call("evolve::leaves", authReq({}));
+    expect(result).toHaveLength(1);
+    expect(result[0].functionId).toBe("evolved::alive_v1");
+  });
+
+  it("filters by name", async () => {
+    seedKv("evolved_functions", "evolved::alpha_v1", {
+      functionId: "evolved::alpha_v1",
+      version: 1,
+      status: "draft",
+      description: "alpha",
+    });
+    seedKv("evolved_functions", "evolved::beta_v1", {
+      functionId: "evolved::beta_v1",
+      version: 1,
+      status: "draft",
+      description: "beta",
+    });
+
+    const result = await call(
+      "evolve::leaves",
+      authReq({ name: "alpha" }),
+    );
+    expect(result).toHaveLength(1);
+    expect(result[0].functionId).toBe("evolved::alpha_v1");
+  });
+
+  it("filters by status", async () => {
+    seedKv("evolved_functions", "evolved::status_v1", {
+      functionId: "evolved::status_v1",
+      version: 1,
+      status: "draft",
+      description: "draft",
+    });
+    seedKv("evolved_functions", "evolved::status_v2", {
+      functionId: "evolved::status_v2",
+      version: 2,
+      status: "production",
+      description: "prod",
+    });
+
+    const result = await call(
+      "evolve::leaves",
+      authReq({ status: "production" }),
+    );
+    expect(result).toHaveLength(1);
+    expect(result[0].functionId).toBe("evolved::status_v2");
+  });
+});
+
+describe("evolve::lineage", () => {
+  it("traces ancestry back to root", async () => {
+    seedKv("evolved_functions", "evolved::chain_v1", {
+      functionId: "evolved::chain_v1",
+      version: 1,
+      status: "deprecated",
+      description: "root",
+      evalScores: null,
+    });
+    seedKv("evolved_functions", "evolved::chain_v2", {
+      functionId: "evolved::chain_v2",
+      version: 2,
+      status: "staging",
+      parentVersion: "evolved::chain_v1",
+      description: "mid",
+      evalScores: null,
+    });
+    seedKv("evolved_functions", "evolved::chain_v3", {
+      functionId: "evolved::chain_v3",
+      version: 3,
+      status: "production",
+      parentVersion: "evolved::chain_v2",
+      description: "leaf",
+      evalScores: { overall: 0.9 },
+    });
+
+    const result = await call(
+      "evolve::lineage",
+      authReq({ functionId: "evolved::chain_v3" }),
+    );
+    expect(result.depth).toBe(3);
+    expect(result.lineage[0].functionId).toBe("evolved::chain_v3");
+    expect(result.lineage[1].functionId).toBe("evolved::chain_v2");
+    expect(result.lineage[2].functionId).toBe("evolved::chain_v1");
+  });
+
+  it("handles single node with no parent", async () => {
+    seedKv("evolved_functions", "evolved::solo_v1", {
+      functionId: "evolved::solo_v1",
+      version: 1,
+      status: "draft",
+      description: "solo",
+      evalScores: null,
+    });
+
+    const result = await call(
+      "evolve::lineage",
+      authReq({ functionId: "evolved::solo_v1" }),
+    );
+    expect(result.depth).toBe(1);
+    expect(result.lineage[0].functionId).toBe("evolved::solo_v1");
+  });
+
+  it("stops at missing node", async () => {
+    seedKv("evolved_functions", "evolved::broken_v2", {
+      functionId: "evolved::broken_v2",
+      version: 2,
+      status: "draft",
+      parentVersion: "evolved::broken_v1",
+      description: "broken chain",
+      evalScores: null,
+    });
+
+    const result = await call(
+      "evolve::lineage",
+      authReq({ functionId: "evolved::broken_v2" }),
+    );
+    expect(result.depth).toBe(1);
+  });
+
+  it("rejects missing functionId", async () => {
+    await expect(
+      call("evolve::lineage", authReq({})),
+    ).rejects.toThrow("functionId is required");
+  });
+});
