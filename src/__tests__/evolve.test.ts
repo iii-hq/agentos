@@ -90,7 +90,7 @@ vi.mock("../shared/metrics.js", () => ({
 }));
 
 vi.mock("../shared/errors.js", () => ({
-  safeCall: async (fn: Function, fallback: any) => {
+  safeCall: async (fn: Function, fallback: any, _context?: any) => {
     try {
       return await fn();
     } catch {
