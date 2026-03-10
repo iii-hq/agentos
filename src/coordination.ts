@@ -64,6 +64,7 @@ registerFunction(
     metadata: { category: "coordination" },
   },
   async (req: any) => {
+    if (req.headers) requireAuth(req);
     const { channelId, agentId, content, metadata: extraMeta } =
       req.body || req;
 
@@ -132,6 +133,7 @@ registerFunction(
     metadata: { category: "coordination" },
   },
   async (req: any) => {
+    if (req.headers) requireAuth(req);
     const { channelId, parentId, agentId, content, metadata: extraMeta } =
       req.body || req;
 

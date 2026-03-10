@@ -164,6 +164,26 @@ describe("coord::post", () => {
       call("coord::post", { channelId }),
     ).rejects.toThrow("channelId, agentId, and content are required");
   });
+
+  it("rejects when channel reaches post limit", async () => {
+    for (let i = 0; i < 1000; i++) {
+      seedKv(`coord_posts:${channelId}`, `post-${i}`, {
+        id: `post-${i}`,
+        channelId,
+        agentId: "agent-1",
+        content: `msg ${i}`,
+        createdAt: i,
+      });
+    }
+
+    await expect(
+      call("coord::post", {
+        channelId,
+        agentId: "agent-1",
+        content: "one too many",
+      }),
+    ).rejects.toThrow("Channel has reached the post limit");
+  });
 });
 
 describe("coord::reply", () => {
@@ -392,5 +412,26 @@ describe("coord::pin", () => {
     await expect(
       call("coord::pin", authReq({ channelId })),
     ).rejects.toThrow("channelId and postId are required");
+  });
+
+  it("rejects pin when max pinned reached", async () => {
+    const pinnedIds = Array.from({ length: 25 }, (_, i) => `pin-${i}`);
+    seedKv("coord_channels", channelId, {
+      id: channelId,
+      name: "pinnable",
+      createdAt: Date.now(),
+      pinned: pinnedIds,
+    });
+    seedKv(`coord_posts:${channelId}`, "new-post", {
+      id: "new-post",
+      channelId,
+      agentId: "agent-1",
+      content: "26th pin attempt",
+      createdAt: 9999,
+    });
+
+    await expect(
+      call("coord::pin", authReq({ channelId, postId: "new-post" })),
+    ).rejects.toThrow("Maximum 25 pinned posts per channel");
   });
 });

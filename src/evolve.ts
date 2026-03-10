@@ -685,6 +685,7 @@ registerFunction(
         statusCode: 400,
       });
     }
+    const safeFunctionId = sanitizeId(functionId);
 
     const lineage: Array<{
       functionId: string;
@@ -695,7 +696,7 @@ registerFunction(
       evalScores: unknown;
     }> = [];
 
-    let currentId: string | undefined = functionId;
+    let currentId: string | undefined = safeFunctionId;
     const visited = new Set<string>();
     const MAX_DEPTH = 100;
 
@@ -718,7 +719,7 @@ registerFunction(
       currentId = fn.parentVersion;
     }
 
-    return { functionId, depth: lineage.length, lineage };
+    return { functionId: safeFunctionId, depth: lineage.length, lineage };
   },
 );
 
