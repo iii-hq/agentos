@@ -45,12 +45,6 @@ modules:
       adapter:
         class: modules::cron::KvCronAdapter
 
-  - class: modules::kv_server::KvServer
-    config:
-      store_method: file_based
-      file_path: ./data/kv
-      save_interval_ms: 5000
-
   - class: modules::observability::OtelModule
     config:
       enabled: true

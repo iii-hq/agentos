@@ -1,7 +1,13 @@
-import { initSDK } from "./shared/config.js";
+import { registerWorker, TriggerAction } from "iii-sdk";
+import { ENGINE_URL, OTEL_CONFIG, registerShutdown } from "./shared/config.js";
 import { requireAuth } from "./shared/utils.js";
 
-const { registerFunction, registerTrigger, trigger, triggerVoid } = initSDK("hand-runner");
+const sdk = registerWorker(ENGINE_URL, {
+  workerName: "hand-runner",
+  otel: OTEL_CONFIG,
+});
+registerShutdown(sdk);
+const { registerFunction, registerTrigger, trigger } = sdk;
 
 interface HandConfig {
   id: string;
@@ -32,9 +38,14 @@ registerFunction(
     const id = config.id || crypto.randomUUID();
     const hand = { ...config, id, registeredAt: Date.now() };
 
-    await trigger("state::set", { scope: "hands", key: id, value: hand });
+    await trigger({
+      function_id: "state::set",
+      payload: { scope: "hands", key: id, value: hand },
+    });
 
-    await trigger("security::set_capabilities", {
+    await trigger({
+      function_id: "security::set_capabilities",
+      payload: {
       agentId: `hand:${id}`,
       capabilities: {
         tools: config.tools,
@@ -42,14 +53,18 @@ registerFunction(
         networkHosts: ["*"],
         maxTokensPerHour: 500_000,
       },
+    },
     });
 
-    await trigger("agent::create", {
+    await trigger({
+      function_id: "agent::create",
+      payload: {
       id: `hand:${id}`,
       name: `hand-${config.name}`,
       model: { model: config.agentConfig.model || "claude-sonnet-4-6" },
       systemPrompt: config.agentConfig.systemPrompt,
       capabilities: { tools: config.tools },
+    },
     });
 
     if (config.enabled && config.schedule) {
@@ -74,8 +89,16 @@ registerFunction(
     if (req.headers) requireAuth(req);
     const { handId } = req.body || req;
     const hands = handId
-      ? [await trigger("state::get", { scope: "hands", key: handId })]
-      : ((await trigger("state::list", { scope: "hands" })) as any[])
+      ? [
+          await trigger({
+            function_id: "state::get",
+            payload: { scope: "hands", key: handId },
+          }),
+        ]
+      : ((await trigger({
+          function_id: "state::list",
+          payload: { scope: "hands" },
+        })) as any[])
           .filter((h: any) => h.value?.enabled)
           .map((h: any) => h.value);
 
@@ -87,37 +110,49 @@ registerFunction(
       const runId = crypto.randomUUID();
       const startMs = Date.now();
 
-      await trigger("state::set", {
-        scope: `hand_runs:${hand.id}`,
-        key: runId,
-        value: {
+      await trigger({
+        function_id: "state::set",
+        payload: {
+          scope: `hand_runs:${hand.id}`,
+          key: runId,
+          value: {
           runId,
           handId: hand.id,
           status: "running",
           startedAt: startMs,
         },
+        },
       });
 
       try {
-        const response: any = await trigger("agent::chat", {
+        const response: any = await trigger({
+          function_id: "agent::chat",
+          payload: {
           agentId: `hand:${hand.id}`,
           message: buildHandPrompt(hand),
           sessionId: `hand:${hand.id}:${new Date().toISOString().slice(0, 10)}`,
           systemPrompt: hand.agentConfig.systemPrompt,
+        },
         });
 
         for (const metric of hand.metrics || []) {
-          triggerVoid("state::update", {
+          trigger({
+            function_id: "state::update",
+            payload: {
             scope: "hand_metrics",
             key: hand.id,
             operations: [
               { type: "increment", path: metric.key, value: 1 },
               { type: "set", path: "lastRunAt", value: Date.now() },
             ],
-          });
+          },
+          action: TriggerAction.Void(),
+        });
         }
 
-        await trigger("state::update", {
+        await trigger({
+          function_id: "state::update",
+          payload: {
           scope: `hand_runs:${hand.id}`,
           key: runId,
           operations: [
@@ -126,11 +161,14 @@ registerFunction(
             { type: "set", path: "durationMs", value: Date.now() - startMs },
             { type: "set", path: "iterations", value: response.iterations },
           ],
+        },
         });
 
         results.push({ handId: hand.id, runId, status: "completed" });
       } catch (err: any) {
-        await trigger("state::update", {
+        await trigger({
+          function_id: "state::update",
+          payload: {
           scope: `hand_runs:${hand.id}`,
           key: runId,
           operations: [
@@ -138,6 +176,7 @@ registerFunction(
             { type: "set", path: "error", value: err.message },
             { type: "set", path: "failedAt", value: Date.now() },
           ],
+        },
         });
 
         results.push({
@@ -161,7 +200,10 @@ registerFunction(
   },
   async (req: any) => {
     if (req.headers) requireAuth(req);
-    return trigger("state::list", { scope: "hands" });
+    return trigger({
+      function_id: "state::list",
+      payload: { scope: "hands" },
+    });
   },
 );
 
@@ -174,13 +216,14 @@ registerFunction(
   async (req: any) => {
     if (req.headers) requireAuth(req);
     const { handId } = req.body || req;
-    const metrics = await trigger("state::get", {
-      scope: "hand_metrics",
-      key: handId,
+    const metrics = await trigger({
+      function_id: "state::get",
+      payload: { scope: "hand_metrics", key: handId },
     }).catch(() => ({}));
 
-    const recentRuns = (await trigger("state::list", {
-      scope: `hand_runs:${handId}`,
+    const recentRuns = (await trigger({
+      function_id: "state::list",
+      payload: { scope: `hand_runs:${handId}` },
     }).catch(() => [])) as any[];
 
     const last10 = recentRuns

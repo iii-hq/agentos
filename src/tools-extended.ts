@@ -1,5 +1,8 @@
+import { registerWorker, TriggerAction } from "iii-sdk";
 import {
-  initSDK,
+  ENGINE_URL,
+  OTEL_CONFIG,
+  registerShutdown,
   WORKSPACE_ROOT,
   assertPathContained,
 } from "./shared/config.js";
@@ -15,7 +18,12 @@ import { safeCall } from "./shared/errors.js";
 
 const execFileAsync = promisify(execFile);
 
-const { registerFunction, registerTrigger, trigger, triggerVoid } = initSDK("tools-extended");
+const sdk = registerWorker(ENGINE_URL, {
+  workerName: "tools-extended",
+  otel: OTEL_CONFIG,
+});
+registerShutdown(sdk);
+const { registerFunction, registerTrigger, trigger } = sdk;
 
 const TAINT_ENV_ALLOWLIST = new Set([
   "PATH",
@@ -55,15 +63,18 @@ registerFunction(
     const parsed = new Date(time);
     if (isNaN(parsed.getTime())) throw new Error("Invalid time format");
 
-    await trigger("state::set", {
-      scope: "reminders",
-      key: id,
-      value: {
-        id,
-        label,
-        time: parsed.toISOString(),
-        agentId: agentId || null,
-        createdAt: Date.now(),
+    await trigger({
+      function_id: "state::set",
+      payload: {
+        scope: "reminders",
+        key: id,
+        value: {
+          id,
+          label,
+          time: parsed.toISOString(),
+          agentId: agentId || null,
+          createdAt: Date.now(),
+        },
       },
     });
     return { id, label, time: parsed.toISOString() };
@@ -97,13 +108,16 @@ registerFunction(
     registerTrigger({
       type: "cron",
       function_id: functionId,
-      config: { cron: schedule, name },
+      config: { expression: schedule },
     });
 
-    await trigger("state::set", {
-      scope: "cron_jobs",
-      key: name,
-      value: { name, schedule, functionId, payload, createdAt: Date.now() },
+    await trigger({
+      function_id: "state::set",
+      payload: {
+        scope: "cron_jobs",
+        key: name,
+        value: { name, schedule, functionId, payload, createdAt: Date.now() },
+      },
     });
     return { created: true, name, schedule };
   },
@@ -117,7 +131,7 @@ registerFunction(
   },
   async () => {
     const jobs: any = await safeCall(
-      () => trigger("state::list", { scope: "cron_jobs" }),
+      () => trigger({ function_id: "state::list", payload: { scope: "cron_jobs" } }),
       [],
       { operation: "list_cron_jobs", functionId: "tool::cron_list" },
     );
@@ -132,7 +146,7 @@ registerFunction(
     metadata: { category: "tools" },
   },
   async ({ name }: { name: string }) => {
-    await trigger("state::delete", { scope: "cron_jobs", key: name });
+    await trigger({ function_id: "state::delete", payload: { scope: "cron_jobs", key: name } });
     return { deleted: true, name };
   },
 );
@@ -165,7 +179,7 @@ registerFunction(
       createdAt: Date.now(),
       updatedAt: Date.now(),
     };
-    await trigger("state::set", { scope: "todos", key: id, value: todo });
+    await trigger({ function_id: "state::set", payload: { scope: "todos", key: id, value: todo } });
     return todo;
   },
 );
@@ -178,7 +192,7 @@ registerFunction(
   },
   async ({ status, assignee }: { status?: string; assignee?: string }) => {
     const items: any = await safeCall(
-      () => trigger("state::list", { scope: "todos" }),
+      () => trigger({ function_id: "state::list", payload: { scope: "todos" } }),
       [],
       { operation: "list_todos", functionId: "tool::todo_list" },
     );
@@ -212,9 +226,9 @@ registerFunction(
     priority?: string;
     assignee?: string;
   }) => {
-    const existing: any = await trigger("state::get", {
-      scope: "todos",
-      key: id,
+    const existing: any = await trigger({
+      function_id: "state::get",
+      payload: { scope: "todos", key: id },
     });
     if (!existing) throw new Error(`Todo not found: ${id}`);
 
@@ -227,7 +241,7 @@ registerFunction(
       ...(assignee !== undefined && { assignee }),
       updatedAt: Date.now(),
     };
-    await trigger("state::set", { scope: "todos", key: id, value: updated });
+    await trigger({ function_id: "state::set", payload: { scope: "todos", key: id, value: updated } });
     return updated;
   },
 );
@@ -239,7 +253,7 @@ registerFunction(
     metadata: { category: "tools" },
   },
   async ({ id }: { id: string }) => {
-    await trigger("state::delete", { scope: "todos", key: id });
+    await trigger({ function_id: "state::delete", payload: { scope: "todos", key: id } });
     return { deleted: true, id };
   },
 );
@@ -255,10 +269,13 @@ registerFunction(
 
     const result: any = await safeCall(
       () =>
-        trigger("agent::chat", {
-          agentId: "default",
-          message: prompt || "Describe this image in detail.",
-          images: [url],
+        trigger({
+          function_id: "agent::chat",
+          payload: {
+            agentId: "default",
+            message: prompt || "Describe this image in detail.",
+            images: [url],
+          },
         }),
       { content: "Vision analysis unavailable" },
       { operation: "image_analyze", functionId: "tool::image_analyze" },
@@ -278,9 +295,12 @@ registerFunction(
     const styleHint = style ? ` in ${style} style` : "";
     const result: any = await safeCall(
       () =>
-        trigger("agent::chat", {
-          agentId: "default",
-          message: `Generate a detailed image generation prompt for: "${description}"${styleHint}. Return only the prompt text.`,
+        trigger({
+          function_id: "agent::chat",
+          payload: {
+            agentId: "default",
+            message: `Generate a detailed image generation prompt for: "${description}"${styleHint}. Return only the prompt text.`,
+          },
         }),
       { content: description },
       {
@@ -410,7 +430,7 @@ registerFunction(
     const entityKey = entity.toLowerCase().replace(/\s+/g, "_");
 
     const existing: any = await safeCall(
-      () => trigger("state::get", { scope: "knowledge_graph", key: entityKey }),
+      () => trigger({ function_id: "state::get", payload: { scope: "knowledge_graph", key: entityKey } }),
       null,
       { operation: "get_kg_entity", functionId: "tool::kg_add" },
     );
@@ -442,10 +462,9 @@ registerFunction(
     }
 
     node.updatedAt = Date.now();
-    await trigger("state::set", {
-      scope: "knowledge_graph",
-      key: entityKey,
-      value: node,
+    await trigger({
+      function_id: "state::set",
+      payload: { scope: "knowledge_graph", key: entityKey, value: node },
     });
 
     return { entity: entityKey, type, relationsCount: node.relations.length };
@@ -478,7 +497,7 @@ registerFunction(
       visited.add(key);
 
       const node: any = await safeCall(
-        () => trigger("state::get", { scope: "knowledge_graph", key }),
+        () => trigger({ function_id: "state::get", payload: { scope: "knowledge_graph", key } }),
         null,
         { operation: "traverse_kg", functionId: "tool::kg_query" },
       );
@@ -517,7 +536,7 @@ registerFunction(
       visited.add(key);
 
       const node: any = await safeCall(
-        () => trigger("state::get", { scope: "knowledge_graph", key }),
+        () => trigger({ function_id: "state::get", payload: { scope: "knowledge_graph", key } }),
         null,
         { operation: "traverse_kg_vis", functionId: "tool::kg_visualize" },
       );
@@ -557,15 +576,18 @@ registerFunction(
     importance?: number;
   }) => {
     const memoryKey = key || randomUUID();
-    await trigger("state::set", {
-      scope: "memories",
-      key: memoryKey,
-      value: {
-        content,
-        tags: tags || [],
-        importance: importance || 5,
-        createdAt: Date.now(),
-        accessCount: 0,
+    await trigger({
+      function_id: "state::set",
+      payload: {
+        scope: "memories",
+        key: memoryKey,
+        value: {
+          content,
+          tags: tags || [],
+          importance: importance || 5,
+          createdAt: Date.now(),
+          accessCount: 0,
+        },
       },
     });
     return { stored: true, key: memoryKey };
@@ -580,7 +602,7 @@ registerFunction(
   },
   async ({ key }: { key: string }) => {
     const memory: any = await safeCall(
-      () => trigger("state::get", { scope: "memories", key }),
+      () => trigger({ function_id: "state::get", payload: { scope: "memories", key } }),
       null,
       { operation: "recall_memory", functionId: "tool::memory_recall" },
     );
@@ -589,7 +611,7 @@ registerFunction(
 
     memory.accessCount = (memory.accessCount || 0) + 1;
     memory.lastAccessed = Date.now();
-    await trigger("state::set", { scope: "memories", key, value: memory });
+    await trigger({ function_id: "state::set", payload: { scope: "memories", key, value: memory } });
 
     return { found: true, ...memory };
   },
@@ -603,7 +625,7 @@ registerFunction(
   },
   async ({ query, limit }: { query: string; limit?: number }) => {
     const all: any = await safeCall(
-      () => trigger("state::list", { scope: "memories" }),
+      () => trigger({ function_id: "state::list", payload: { scope: "memories" } }),
       [],
       { operation: "search_memories", functionId: "tool::memory_search" },
     );
@@ -631,7 +653,7 @@ registerFunction(
   },
   async () => {
     const agents: any = await safeCall(
-      () => trigger("state::list", { scope: "agents" }),
+      () => trigger({ function_id: "state::list", payload: { scope: "agents" } }),
       [],
       { operation: "list_agents", functionId: "tool::agent_list" },
     );
@@ -662,7 +684,7 @@ registerFunction(
     context?: string;
   }) => {
     const message = context ? `${task}\n\nContext: ${context}` : task;
-    const result: any = await trigger("agent::chat", { agentId, message });
+    const result: any = await trigger({ function_id: "agent::chat", payload: { agentId, message } });
     return { agentId, response: result.content };
   },
 );
@@ -682,9 +704,10 @@ registerFunction(
     channelId: string;
     message: string;
   }) => {
-    triggerVoid("enqueue", {
-      topic: `${channel}.outbound`,
-      data: { channelId, message },
+    trigger({
+      function_id: "enqueue",
+      payload: { topic: `${channel}.outbound`, data: { channelId, message } },
+      action: TriggerAction.Void(),
     });
     return { sent: true, channel, channelId };
   },
@@ -713,6 +736,12 @@ registerFunction(
     metadata: { category: "tools" },
   },
   async () => {
+    let uptime = 0;
+    try {
+      uptime = os.uptime();
+    } catch {
+      uptime = 0;
+    }
     return {
       platform: os.platform(),
       arch: os.arch(),
@@ -720,7 +749,7 @@ registerFunction(
       cpus: os.cpus().length,
       totalMemory: os.totalmem(),
       freeMemory: os.freemem(),
-      uptime: os.uptime(),
+      uptime,
       nodeVersion: process.version,
     };
   },
@@ -1054,7 +1083,7 @@ registerFunction(
       : `Explain what this code does:\n\n\`\`\`\n${truncated}\n\`\`\``;
 
     const result: any = await safeCall(
-      () => trigger("agent::chat", { agentId: "default", message: prompt }),
+      () => trigger({ function_id: "agent::chat", payload: { agentId: "default", message: prompt } }),
       { content: "Code explanation unavailable" },
       { operation: "code_explain", functionId: "tool::code_explain" },
     );
@@ -1304,16 +1333,19 @@ registerFunction(
       termFreq[w] = (termFreq[w] || 0) + 1;
     }
 
-    await trigger("state::set", {
-      scope: `vector_store:${ns}`,
-      key: docId,
-      value: {
-        id: docId,
-        text,
-        metadata: metadata || {},
-        terms: Object.fromEntries([...wordSet].map((w) => [w, termFreq[w]])),
-        wordCount: words.length,
-        storedAt: Date.now(),
+    await trigger({
+      function_id: "state::set",
+      payload: {
+        scope: `vector_store:${ns}`,
+        key: docId,
+        value: {
+          id: docId,
+          text,
+          metadata: metadata || {},
+          terms: Object.fromEntries([...wordSet].map((w) => [w, termFreq[w]])),
+          wordCount: words.length,
+          storedAt: Date.now(),
+        },
       },
     });
     return { stored: true, id: docId, namespace: ns };
@@ -1340,8 +1372,9 @@ registerFunction(
     const maxResults = Math.min(limit || 10, 100);
     const queryTerms = query.toLowerCase().split(/\s+/).filter(Boolean);
 
-    const docs = (await trigger("state::list", {
-      scope: `vector_store:${ns}`,
+    const docs = (await trigger({
+      function_id: "state::list",
+      payload: { scope: `vector_store:${ns}` },
     }).catch(() => [])) as any[];
 
     const k1 = 1.5;
@@ -1381,7 +1414,7 @@ registerFunction(
   async ({ id, namespace }: { id: string; namespace?: string }) => {
     if (!id) throw new Error("id is required");
     const ns = namespace || "default";
-    await trigger("state::delete", { scope: `vector_store:${ns}`, key: id });
+    await trigger({ function_id: "state::delete", payload: { scope: `vector_store:${ns}`, key: id } });
     return { deleted: true, id };
   },
 );
@@ -1689,7 +1722,7 @@ registerFunction(
     const snapshot: Record<string, unknown> = {};
 
     for (const scope of targetScopes) {
-      const data = (await trigger("state::list", { scope }).catch(
+      const data = (await trigger({ function_id: "state::list", payload: { scope } }).catch(
         () => [],
       )) as any[];
       const filtered = data.filter(
@@ -1704,17 +1737,20 @@ registerFunction(
       }));
     }
 
-    await trigger("state::set", {
-      scope: "snapshots",
-      key: snapshotId,
-      value: {
-        id: snapshotId,
-        agentId,
-        label: label || `Snapshot ${new Date().toISOString()}`,
-        scopes: targetScopes,
-        data: snapshot,
-        createdAt: Date.now(),
-        sizeEstimate: JSON.stringify(snapshot).length,
+    await trigger({
+      function_id: "state::set",
+      payload: {
+        scope: "snapshots",
+        key: snapshotId,
+        value: {
+          id: snapshotId,
+          agentId,
+          label: label || `Snapshot ${new Date().toISOString()}`,
+          scopes: targetScopes,
+          data: snapshot,
+          createdAt: Date.now(),
+          sizeEstimate: JSON.stringify(snapshot).length,
+        },
       },
     });
 
@@ -1731,9 +1767,9 @@ registerFunction(
   async ({ snapshotId, dryRun }: { snapshotId: string; dryRun?: boolean }) => {
     if (!snapshotId) throw new Error("snapshotId is required");
 
-    const snapshot: any = await trigger("state::get", {
-      scope: "snapshots",
-      key: snapshotId,
+    const snapshot: any = await trigger({
+      function_id: "state::get",
+      payload: { scope: "snapshots", key: snapshotId },
     });
     if (!snapshot) throw new Error(`Snapshot ${snapshotId} not found`);
 
@@ -1742,10 +1778,9 @@ registerFunction(
       for (const entry of entries as any[]) {
         restoredKeys.push(`${scope}:${entry.key}`);
         if (!dryRun) {
-          await trigger("state::set", {
-            scope,
-            key: entry.key,
-            value: entry.value,
+          await trigger({
+            function_id: "state::set",
+            payload: { scope, key: entry.key, value: entry.value },
           });
         }
       }
@@ -1769,7 +1804,7 @@ registerFunction(
     metadata: { category: "tools" },
   },
   async ({ agentId }: { agentId?: string }) => {
-    const all = (await trigger("state::list", { scope: "snapshots" }).catch(
+    const all = (await trigger({ function_id: "state::list", payload: { scope: "snapshots" } }).catch(
       () => [],
     )) as any[];
     let snapshots = all
@@ -1925,7 +1960,7 @@ registerFunction(
       }
 
       const start = Date.now();
-      const output: any = await trigger(step.toolId, resolvedArgs).catch(
+      const output: any = await trigger({ function_id: step.toolId, payload: resolvedArgs }).catch(
         (e: any) => ({ error: e.message }),
       );
       const durationMs = Date.now() - start;

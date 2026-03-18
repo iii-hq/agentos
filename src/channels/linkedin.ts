@@ -1,8 +1,22 @@
-import { initSDK, createSecretGetter } from "../shared/config.js";
+import { registerWorker, TriggerAction } from "iii-sdk";
+import { ENGINE_URL, OTEL_CONFIG, registerShutdown } from "../shared/config.js";
 import { splitMessage, resolveAgent } from "../shared/utils.js";
 
-const { registerFunction, registerTrigger, trigger, triggerVoid } = initSDK("channel-linkedin");
-const getSecret = createSecretGetter(trigger);
+const sdk = registerWorker(ENGINE_URL, {
+  workerName: "channel-linkedin",
+  otel: OTEL_CONFIG,
+});
+registerShutdown(sdk);
+const { registerFunction, registerTrigger, trigger } = sdk;
+
+async function getSecret(key: string): Promise<string> {
+  try {
+    const result = await sdk.trigger({ function_id: "vault::get", payload: { key } });
+    return result?.value || process.env[key] || "";
+  } catch {
+    return process.env[key] || "";
+  }
+}
 const API_URL = "https://api.linkedin.com/v2";
 
 registerFunction(
@@ -28,20 +42,27 @@ registerFunction(
 
     if (!text) return { status_code: 200, body: { ok: true } };
 
-    const agentId = await resolveAgent(trigger, "linkedin", threadId);
+    const agentId = await resolveAgent(sdk, "linkedin", threadId);
 
-    const response: any = await trigger("agent::chat", {
-      agentId,
-      message: text,
-      sessionId: `linkedin:${threadId}`,
+    const response: any = await trigger({
+      function_id: "agent::chat",
+      payload: {
+        agentId,
+        message: text,
+        sessionId: `linkedin:${threadId}`,
+      },
     });
 
     await sendMessage(threadId, response.content);
 
-    triggerVoid("security::audit", {
-      type: "channel_message",
-      agentId,
-      detail: { channel: "linkedin", threadId, senderId },
+    trigger({
+      function_id: "security::audit",
+      payload: {
+        type: "channel_message",
+        agentId,
+        detail: { channel: "linkedin", threadId, senderId },
+      },
+      action: TriggerAction.Void(),
     });
 
     return { status_code: 200, body: { ok: true } };

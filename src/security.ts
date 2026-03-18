@@ -1,8 +1,16 @@
-import { initSDK } from "./shared/config.js";
+import { registerWorker, TriggerAction } from "iii-sdk";
+import { ENGINE_URL, OTEL_CONFIG, registerShutdown } from "./shared/config.js";
 import { createHash } from "crypto";
 import { requireAuth } from "./shared/utils.js";
 
-const { registerFunction, registerTrigger, trigger, triggerVoid } = initSDK("security");
+const sdk = registerWorker(ENGINE_URL, {
+  workerName: "security",
+  otel: OTEL_CONFIG,
+});
+registerShutdown(sdk);
+const { registerFunction, registerTrigger, trigger } = sdk;
+const triggerVoid = (id: string, payload: unknown) =>
+  trigger({ function_id: id, payload, action: TriggerAction.Void() });
 
 interface Capability {
   tools: string[];
@@ -28,9 +36,9 @@ registerFunction(
     metadata: { category: "security" },
   },
   async ({ agentId, capability, resource }) => {
-    const caps = (await trigger("state::get", {
-      scope: "capabilities",
-      key: agentId,
+    const caps = (await trigger({
+      function_id: "state::get",
+      payload: { scope: "capabilities", key: agentId },
     }).catch(() => null)) as Capability | null;
 
     if (!caps) {
@@ -57,9 +65,9 @@ registerFunction(
 
     if (caps.maxTokensPerHour > 0) {
       const hourKey = new Date().toISOString().slice(0, 13);
-      const hourUsage: any = await trigger("state::get", {
-        scope: "metering_hourly",
-        key: `${agentId}:${hourKey}`,
+      const hourUsage: any = await trigger({
+        function_id: "state::get",
+        payload: { scope: "metering_hourly", key: `${agentId}:${hourKey}` },
       }).catch(() => ({ tokens: 0 }));
 
       if ((hourUsage.tokens || 0) > caps.maxTokensPerHour) {
@@ -93,10 +101,9 @@ registerFunction(
     agentId: string;
     capabilities: Capability;
   }) => {
-    await trigger("state::set", {
-      scope: "capabilities",
-      key: agentId,
-      value: capabilities,
+    await trigger({
+      function_id: "state::set",
+      payload: { scope: "capabilities", key: agentId, value: capabilities },
     });
     triggerVoid("security::audit", {
       type: "capabilities_updated",
@@ -114,9 +121,9 @@ registerFunction(
     metadata: { category: "security" },
   },
   async ({ type, agentId, detail }) => {
-    const prev: any = await trigger("state::get", {
-      scope: "audit",
-      key: "__latest",
+    const prev: any = await trigger({
+      function_id: "state::get",
+      payload: { scope: "audit", key: "__latest" },
     }).catch(() => ({ hash: "0".repeat(64) }));
 
     const entry: AuditEntry = {
@@ -133,16 +140,18 @@ registerFunction(
       .update(JSON.stringify({ ...entry, hash: undefined }) + prev.hash)
       .digest("hex");
 
-    await trigger("state::set", {
-      scope: "audit",
-      key: entry.id,
-      value: entry,
+    await trigger({
+      function_id: "state::set",
+      payload: { scope: "audit", key: entry.id, value: entry },
     });
 
-    await trigger("state::set", {
-      scope: "audit",
-      key: "__latest",
-      value: { hash: entry.hash, id: entry.id, timestamp: entry.timestamp },
+    await trigger({
+      function_id: "state::set",
+      payload: {
+        scope: "audit",
+        key: "__latest",
+        value: { hash: entry.hash, id: entry.id, timestamp: entry.timestamp },
+      },
     });
 
     return { id: entry.id, hash: entry.hash };
@@ -157,7 +166,10 @@ registerFunction(
   },
   async (req: any) => {
     if (req.headers) requireAuth(req);
-    const entries: any = await trigger("state::list", { scope: "audit" });
+    const entries: any = await trigger({
+      function_id: "state::list",
+      payload: { scope: "audit" },
+    });
     const chain: AuditEntry[] = (entries || [])
       .filter((e: any) => e.key !== "__latest" && e.value?.hash)
       .map((e: any) => e.value)

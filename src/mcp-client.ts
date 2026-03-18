@@ -1,4 +1,5 @@
-import { initSDK } from "./shared/config.js";
+import { registerWorker, TriggerAction } from "iii-sdk";
+import { ENGINE_URL, OTEL_CONFIG, registerShutdown } from "./shared/config.js";
 import { spawn, type ChildProcess } from "child_process";
 import {
   validateMcpCommand,
@@ -6,7 +7,14 @@ import {
   requireAuth,
 } from "./shared/utils.js";
 
-const { registerFunction, registerTrigger, trigger, triggerVoid } = initSDK("mcp-client");
+const sdk = registerWorker(ENGINE_URL, {
+  workerName: "mcp-client",
+  otel: OTEL_CONFIG,
+});
+registerShutdown(sdk);
+const { registerFunction, registerTrigger, trigger } = sdk;
+const triggerVoid = (id: string, payload: unknown) =>
+  trigger({ function_id: id, payload, action: TriggerAction.Void() });
 
 interface McpConnection {
   id: string;
@@ -177,17 +185,20 @@ registerFunction(
       inputSchema: t.inputSchema || {},
     }));
 
-    await trigger("state::set", {
-      scope: "mcp_connections",
-      key: name,
-      value: {
-        id: conn.id,
-        name,
-        transport,
-        command,
-        url,
-        toolCount: conn.tools.length,
-        connectedAt: conn.connectedAt,
+    await trigger({
+      function_id: "state::set",
+      payload: {
+        scope: "mcp_connections",
+        key: name,
+        value: {
+          id: conn.id,
+          name,
+          transport,
+          command,
+          url,
+          toolCount: conn.tools.length,
+          connectedAt: conn.connectedAt,
+        },
       },
     });
 
@@ -222,9 +233,9 @@ registerFunction(
     }
 
     connections.delete(name);
-    await trigger("state::delete", {
-      scope: "mcp_connections",
-      key: name,
+    await trigger({
+      function_id: "state::delete",
+      payload: { scope: "mcp_connections", key: name },
     }).catch(() => {});
 
     const connPrefix = conn.id + ":";
@@ -385,10 +396,10 @@ registerFunction(
           }
 
           try {
-            const result = await trigger(
-              tool.functionId,
-              params.arguments || {},
-            );
+            const result = await trigger({
+              function_id: tool.functionId,
+              payload: params.arguments || {},
+            });
             return {
               jsonrpc: "2.0",
               id: msg.id,

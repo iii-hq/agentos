@@ -1,8 +1,14 @@
-import { initSDK } from "./shared/config.js";
+import { registerWorker } from "iii-sdk";
+import { ENGINE_URL, OTEL_CONFIG, registerShutdown } from "./shared/config.js";
 import type { Message } from "./shared/tokens.js";
 import { estimateTokens, estimateMessagesTokens } from "./shared/tokens.js";
 
-const { registerFunction, registerTrigger, trigger } = initSDK("context-manager");
+const sdk = registerWorker(ENGINE_URL, {
+  workerName: "context-manager",
+  otel: OTEL_CONFIG,
+});
+registerShutdown(sdk);
+const { registerFunction, registerTrigger, trigger } = sdk;
 
 interface BudgetAllocation {
   systemPrompt: number;
@@ -65,9 +71,9 @@ registerFunction(
     const total = contextWindow || DEFAULT_CONTEXT_WINDOW;
     const alloc = { ...DEFAULT_ALLOCATION };
 
-    const config: any = await trigger("state::get", {
-      scope: "agents",
-      key: agentId,
+    const config: any = await trigger({
+      function_id: "state::get",
+      payload: { scope: "agents", key: agentId },
     }).catch(() => null);
 
     if (config?.resources?.maxTokensPerHour) {
@@ -252,10 +258,9 @@ registerFunction(
       return { messages, stages, tokens: currentTokens };
     }
 
-    const trimResult: any = await trigger("context::trim", {
-      conversation: messages,
-      maxTokens,
-      keepLastN: 5,
+    const trimResult: any = await trigger({
+      function_id: "context::trim",
+      payload: { conversation: messages, maxTokens, keepLastN: 5 },
     });
 
     stages.push("stage4_emergency_truncation");
@@ -298,9 +303,9 @@ registerFunction(
 
     let system = systemPrompt || "";
     if (!system) {
-      const config: any = await trigger("state::get", {
-        scope: "agents",
-        key: agentId,
+      const config: any = await trigger({
+        function_id: "state::get",
+        payload: { scope: "agents", key: agentId },
       }).catch(() => null);
       system = config?.systemPrompt || "You are a helpful AI assistant.";
     }
@@ -314,9 +319,10 @@ registerFunction(
     let skillsTokens = 0;
     if (skillIds?.length) {
       for (const sid of skillIds) {
-        const skill: any = await trigger("skill::get", { id: sid }).catch(
-          () => null,
-        );
+        const skill: any = await trigger({
+          function_id: "skill::get",
+          payload: { id: sid },
+        }).catch(() => null);
         if (!skill?.content) continue;
 
         const additional = estimateTokens(skill.content);
@@ -341,9 +347,9 @@ registerFunction(
 
     let trimmedConversation = conversation || [];
     if (estimateMessagesTokens(trimmedConversation) > conversationBudget) {
-      const result: any = await trigger("context::trim", {
-        conversation: trimmedConversation,
-        maxTokens: conversationBudget,
+      const result: any = await trigger({
+        function_id: "context::trim",
+        payload: { conversation: trimmedConversation, maxTokens: conversationBudget },
       });
       trimmedConversation = result.messages;
     }

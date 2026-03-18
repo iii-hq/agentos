@@ -1,6 +1,12 @@
-import { initSDK } from "./shared/config.js";
+import { registerWorker } from "iii-sdk";
+import { ENGINE_URL, OTEL_CONFIG, registerShutdown } from "./shared/config.js";
 
-const { registerFunction, registerTrigger, trigger } = initSDK("cron");
+const sdk = registerWorker(ENGINE_URL, {
+  workerName: "cron",
+  otel: OTEL_CONFIG,
+});
+registerShutdown(sdk);
+const { registerFunction, registerTrigger, trigger } = sdk;
 
 registerFunction(
   {
@@ -9,7 +15,10 @@ registerFunction(
     metadata: { category: "cron" },
   },
   async () => {
-    const agents: any[] = await trigger("state::list", { scope: "agents" }).catch(() => []);
+    const agents: any[] = await trigger({
+      function_id: "state::list",
+      payload: { scope: "agents" },
+    }).catch(() => []);
     const cutoff = Date.now() - 24 * 60 * 60 * 1000;
     let cleaned = 0;
 
@@ -17,16 +26,17 @@ registerFunction(
       const agentId = agent.key || agent.id;
       if (!agentId) continue;
 
-      const sessions: any[] = await trigger("state::list", {
-        scope: `sessions:${agentId}`,
+      const sessions: any[] = await trigger({
+        function_id: "state::list",
+        payload: { scope: `sessions:${agentId}` },
       }).catch(() => []);
 
       for (const session of sessions) {
         const lastActive = session.value?.lastActiveAt || session.value?.createdAt || 0;
         if (typeof lastActive === "number" && lastActive < cutoff) {
-          await trigger("state::delete", {
-            scope: `sessions:${agentId}`,
-            key: session.key,
+          await trigger({
+            function_id: "state::delete",
+            payload: { scope: `sessions:${agentId}`, key: session.key },
           }).catch(() => {});
           cleaned++;
         }
@@ -45,14 +55,15 @@ registerFunction(
   },
   async () => {
     const today = new Date().toISOString().slice(0, 10);
-    const costs: any = await trigger("state::get", {
-      scope: "costs",
-      key: today,
+    const costs: any = await trigger({
+      function_id: "state::get",
+      payload: { scope: "costs", key: today },
     }).catch(() => null);
 
     if (costs) {
-      const metering: any[] = await trigger("state::list", {
-        scope: "metering",
+      const metering: any[] = await trigger({
+        function_id: "state::list",
+        payload: { scope: "metering" },
       }).catch(() => []);
 
       let totalTokens = 0;
@@ -60,13 +71,16 @@ registerFunction(
         totalTokens += entry.value?.totalTokens || 0;
       }
 
-      await trigger("state::update", {
-        scope: "costs",
-        key: today,
-        operations: [
-          { type: "set", path: "totalTokens", value: totalTokens },
-          { type: "set", path: "aggregatedAt", value: new Date().toISOString() },
-        ],
+      await trigger({
+        function_id: "state::update",
+        payload: {
+          scope: "costs",
+          key: today,
+          ops: [
+            { type: "set", path: "totalTokens", value: totalTokens },
+            { type: "set", path: "aggregatedAt", value: new Date().toISOString() },
+          ],
+        },
       }).catch(() => {});
     }
 
@@ -81,13 +95,19 @@ registerFunction(
     metadata: { category: "cron" },
   },
   async () => {
-    const rates: any[] = await trigger("state::list", { scope: "rates" }).catch(() => []);
+    const rates: any[] = await trigger({
+      function_id: "state::list",
+      payload: { scope: "rates" },
+    }).catch(() => []);
     let reset = 0;
 
     for (const rate of rates) {
       const windowEnd = rate.value?.windowEnd || 0;
       if (typeof windowEnd === "number" && windowEnd < Date.now()) {
-        await trigger("state::delete", { scope: "rates", key: rate.key }).catch(() => {});
+        await trigger({
+          function_id: "state::delete",
+          payload: { scope: "rates", key: rate.key },
+        }).catch(() => {});
         reset++;
       }
     }
@@ -99,17 +119,17 @@ registerFunction(
 registerTrigger({
   type: "cron",
   function_id: "cron::cleanup_stale_sessions",
-  config: { schedule: "0 */6 * * *" },
+  config: { expression: "0 */6 * * *" },
 });
 
 registerTrigger({
   type: "cron",
   function_id: "cron::aggregate_daily_costs",
-  config: { schedule: "0 * * * *" },
+  config: { expression: "0 * * * *" },
 });
 
 registerTrigger({
   type: "cron",
   function_id: "cron::reset_rate_limits",
-  config: { schedule: "*/5 * * * *" },
+  config: { expression: "*/5 * * * *" },
 });

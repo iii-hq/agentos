@@ -1,8 +1,15 @@
-import { initSDK } from "./shared/config.js";
+import { registerWorker, TriggerAction } from "iii-sdk";
+import { ENGINE_URL, OTEL_CONFIG, registerShutdown } from "./shared/config.js";
 import { requireAuth } from "./shared/utils.js";
 import { SECURITY_HEADERS } from "./security-headers.js";
 import { safeCall } from "./shared/errors.js";
-const { registerFunction, registerTrigger, trigger, triggerVoid } = initSDK("dashboard");
+
+const sdk = registerWorker(ENGINE_URL, {
+  workerName: "dashboard",
+  otel: OTEL_CONFIG,
+});
+registerShutdown(sdk);
+const { registerFunction, registerTrigger, trigger } = sdk;
 
 registerFunction(
   {
@@ -38,42 +45,50 @@ registerFunction(
       approvals,
     ] = await Promise.all([
       safeCall(
-        () => trigger("state::get", { scope: "health", key: "status" }),
+        () =>
+          trigger({
+            function_id: "state::get",
+            payload: { scope: "health", key: "status" },
+          }),
         null,
         { ...ctx, operation: "get_health" },
       ),
       safeCall(
-        () => trigger("agent::list", {}),
+        () => trigger({ function_id: "agent::list", payload: {} }),
         { agents: [] },
         { ...ctx, operation: "list_agents" },
       ),
       safeCall(
-        () => trigger("skill::list", {}),
+        () => trigger({ function_id: "skill::list", payload: {} }),
         { skills: [] },
         { ...ctx, operation: "list_skills" },
       ),
       safeCall(
-        () => trigger("llm::usage", {}),
+        () => trigger({ function_id: "llm::usage", payload: {} }),
         { stats: [] },
         { ...ctx, operation: "get_usage" },
       ),
       safeCall(
-        () => trigger("hand::list", {}),
+        () => trigger({ function_id: "hand::list", payload: {} }),
         { hands: [] },
         { ...ctx, operation: "list_hands" },
       ),
       safeCall(
-        () => trigger("workflow::list", {}),
+        () => trigger({ function_id: "workflow::list", payload: {} }),
         { workflows: [] },
         { ...ctx, operation: "list_workflows" },
       ),
       safeCall(
-        () => trigger("state::list", { scope: "sessions" }),
+        () =>
+          trigger({
+            function_id: "state::list",
+            payload: { scope: "sessions" },
+          }),
         { entries: [] },
         { ...ctx, operation: "list_sessions" },
       ),
       safeCall(
-        () => trigger("approval::list", {}),
+        () => trigger({ function_id: "approval::list", payload: {} }),
         { pending: [] },
         { ...ctx, operation: "list_approvals" },
       ),
@@ -132,7 +147,11 @@ registerFunction(
     const input = req.body || req;
     const limit = input.limit ?? 100;
     const logs = await safeCall(
-      () => trigger("state::list", { scope: "audit" }),
+      () =>
+        trigger({
+          function_id: "state::list",
+          payload: { scope: "audit" },
+        }),
       { entries: [] },
       { operation: "list_audit_events", functionId: "dashboard::events" },
     );
@@ -149,7 +168,11 @@ registerFunction(
     const limit = input.limit ?? 200;
     const level = input.level ?? "all";
     const logs = await safeCall(
-      () => trigger("state::list", { scope: "logs" }),
+      () =>
+        trigger({
+          function_id: "state::list",
+          payload: { scope: "logs" },
+        }),
       { entries: [] },
       { operation: "list_logs", functionId: "dashboard::logs" },
     );

@@ -1,8 +1,22 @@
-import { initSDK, createSecretGetter } from "../shared/config.js";
+import { registerWorker, TriggerAction } from "iii-sdk";
+import { ENGINE_URL, OTEL_CONFIG, registerShutdown } from "../shared/config.js";
 import { splitMessage, resolveAgent } from "../shared/utils.js";
 
-const { registerFunction, registerTrigger, trigger, triggerVoid } = initSDK("channel-google-chat");
-const getSecret = createSecretGetter(trigger);
+const sdk = registerWorker(ENGINE_URL, {
+  workerName: "channel-google-chat",
+  otel: OTEL_CONFIG,
+});
+registerShutdown(sdk);
+const { registerFunction, registerTrigger, trigger } = sdk;
+
+async function getSecret(key: string): Promise<string> {
+  try {
+    const result = await sdk.trigger({ function_id: "vault::get", payload: { key } });
+    return result?.value || process.env[key] || "";
+  } catch {
+    return process.env[key] || "";
+  }
+}
 
 registerFunction(
   {
@@ -33,18 +47,25 @@ registerFunction(
     const text = event.message?.text || "";
     const userId = event.user?.name;
 
-    const agentId = await resolveAgent(trigger, "google-chat", spaceId);
+    const agentId = await resolveAgent(sdk, "google-chat", spaceId);
 
-    const response: any = await trigger("agent::chat", {
-      agentId,
-      message: text,
-      sessionId: `google-chat:${spaceId}`,
+    const response: any = await trigger({
+      function_id: "agent::chat",
+      payload: {
+        agentId,
+        message: text,
+        sessionId: `google-chat:${spaceId}`,
+      },
     });
 
-    triggerVoid("security::audit", {
-      type: "channel_message",
-      agentId,
-      detail: { channel: "google-chat", spaceId, userId },
+    trigger({
+      function_id: "security::audit",
+      payload: {
+        type: "channel_message",
+        agentId,
+        detail: { channel: "google-chat", spaceId, userId },
+      },
+      action: TriggerAction.Void(),
     });
 
     return { status_code: 200, body: { text: response.content } };

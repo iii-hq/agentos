@@ -1,4 +1,4 @@
-use iii_sdk::iii::III;
+use iii_sdk::{register_worker, InitOptions, III};
 use iii_sdk::error::IIIError;
 use serde_json::{json, Value};
 use dashmap::DashMap;
@@ -264,7 +264,7 @@ async fn get_run(iii: &III, run_id: &str) -> Result<Value, IIIError> {
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing_subscriber::fmt::init();
 
-    let iii = III::new("ws://localhost:49134");
+    let iii = register_worker("ws://localhost:49134", InitOptions::default())?;
     let active_runs: Arc<DashMap<String, tokio::task::JoinHandle<()>>> = Arc::new(DashMap::new());
 
     let iii_clone = iii.clone();

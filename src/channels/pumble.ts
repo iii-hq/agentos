@@ -1,8 +1,22 @@
-import { initSDK, createSecretGetter } from "../shared/config.js";
+import { registerWorker, TriggerAction } from "iii-sdk";
+import { ENGINE_URL, OTEL_CONFIG, registerShutdown } from "../shared/config.js";
 import { splitMessage, resolveAgent } from "../shared/utils.js";
 
-const { registerFunction, registerTrigger, trigger, triggerVoid } = initSDK("channel-pumble");
-const getSecret = createSecretGetter(trigger);
+const sdk = registerWorker(ENGINE_URL, {
+  workerName: "channel-pumble",
+  otel: OTEL_CONFIG,
+});
+registerShutdown(sdk);
+const { registerFunction, registerTrigger, trigger } = sdk;
+
+async function getSecret(key: string): Promise<string> {
+  try {
+    const result = await sdk.trigger({ function_id: "vault::get", payload: { key } });
+    return result?.value || process.env[key] || "";
+  } catch {
+    return process.env[key] || "";
+  }
+}
 const API_URL = "https://api.pumble.com/v1";
 
 registerFunction(
@@ -22,20 +36,27 @@ registerFunction(
     const text = event.text;
     const userId = event.user;
 
-    const agentId = await resolveAgent(trigger, "pumble", channelId);
+    const agentId = await resolveAgent(sdk, "pumble", channelId);
 
-    const response: any = await trigger("agent::chat", {
-      agentId,
-      message: text,
-      sessionId: `pumble:${channelId}`,
+    const response: any = await trigger({
+      function_id: "agent::chat",
+      payload: {
+        agentId,
+        message: text,
+        sessionId: `pumble:${channelId}`,
+      },
     });
 
     await sendMessage(channelId, response.content);
 
-    triggerVoid("security::audit", {
-      type: "channel_message",
-      agentId,
-      detail: { channel: "pumble", channelId, userId },
+    trigger({
+      function_id: "security::audit",
+      payload: {
+        type: "channel_message",
+        agentId,
+        detail: { channel: "pumble", channelId, userId },
+      },
+      action: TriggerAction.Void(),
     });
 
     return { status_code: 200, body: { ok: true } };

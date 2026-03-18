@@ -1,5 +1,8 @@
+import { registerWorker, TriggerAction } from "iii-sdk";
 import {
-  initSDK,
+  ENGINE_URL,
+  OTEL_CONFIG,
+  registerShutdown,
   WORKSPACE_ROOT,
   assertPathContained,
 } from "./shared/config.js";
@@ -16,7 +19,14 @@ import { recordMetric } from "./shared/metrics.js";
 const log = createLogger("tools");
 const execFileAsync = promisify(execFile);
 
-const { registerFunction, registerTrigger, trigger, triggerVoid } = initSDK("tools");
+const sdk = registerWorker(ENGINE_URL, {
+  workerName: "tools",
+  otel: OTEL_CONFIG,
+});
+registerShutdown(sdk);
+const { registerFunction, registerTrigger, trigger } = sdk;
+const triggerVoid = (id: string, payload: unknown) =>
+  trigger({ function_id: id, payload, action: TriggerAction.Void() });
 
 
 async function withToolMetrics<T>(
@@ -435,14 +445,14 @@ registerFunction(
     let parentQuota = DEFAULT_MAX_SUB_AGENTS;
     if (parentId) {
       const depthEntry = await safeCall(
-        () => trigger("state::get", { scope: "agent_depth", key: parentId }),
+        () => trigger({ function_id: "state::get", payload: { scope: "agent_depth", key: parentId } }),
         null,
         { operation: "get_agent_depth", functionId: "tool::agent_spawn" },
       );
       parentDepth = (depthEntry as any)?.depth || 0;
 
       const quotaEntry: any = await safeCall(
-        () => trigger("state::get", { scope: "agent_quota", key: parentId }),
+        () => trigger({ function_id: "state::get", payload: { scope: "agent_quota", key: parentId } }),
         null,
         { operation: "get_agent_quota", functionId: "tool::agent_spawn" },
       );
@@ -459,14 +469,14 @@ registerFunction(
 
     const agentId = crypto.randomUUID();
 
-    const result = await trigger("agent::create", {
+    const result = await trigger({ function_id: "agent::create", payload: {
       id: agentId,
       name: `sub-${template}-${Date.now()}`,
       parentId,
       tags: ["sub-agent"],
-    });
+    } });
 
-    await trigger("state::set", {
+    await trigger({ function_id: "state::set", payload: {
       scope: "agent_depth",
       key: agentId,
       value: {
@@ -474,24 +484,24 @@ registerFunction(
         parent: parentId || null,
         createdAt: Date.now(),
       },
-    });
+    } });
 
     const childQuota = Math.max(0, parentQuota - 1);
-    await trigger("state::set", {
+    await trigger({ function_id: "state::set", payload: {
       scope: "agent_quota",
       key: agentId,
       value: { remaining: childQuota, max: childQuota, parent: parentId },
-    });
+    } });
 
     if (parentId) {
-      await trigger("state::update", {
+      await trigger({ function_id: "state::update", payload: {
         scope: "agent_quota",
         key: parentId,
         operations: [{ type: "increment", path: "remaining", value: -1 }],
-      });
+      } });
     }
 
-    const response: any = await trigger("agent::chat", { agentId, message });
+    const response: any = await trigger({ function_id: "agent::chat", payload: { agentId, message } });
 
     return { agentId, response: response.content, depth: parentDepth + 1 };
   },
@@ -520,7 +530,7 @@ registerFunction(
   }) => {
     if (agentId) {
       const senderConfig = await safeCall(
-        () => trigger("state::get", { scope: "agents", key: agentId }),
+        () => trigger({ function_id: "state::get", payload: { scope: "agents", key: agentId } }),
         null,
         { operation: "get_sender_config", functionId: "tool::agent_send" },
       );
@@ -539,10 +549,10 @@ registerFunction(
 
     const queueDepth: any = await safeCall(
       () =>
-        trigger("state::get", {
+        trigger({ function_id: "state::get", payload: {
           scope: "agent_queue_depth",
           key: targetAgentId,
-        }),
+        } }),
       null,
       { operation: "get_queue_depth", functionId: "tool::agent_send" },
     );

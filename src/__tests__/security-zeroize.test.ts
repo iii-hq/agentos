@@ -22,11 +22,16 @@ const mockTriggerVoid = vi.fn();
 
 const handlers: Record<string, Function> = {};
 vi.mock("iii-sdk", () => ({
-  init: () => ({
+  registerWorker: () => ({
     registerFunction: (config: any, handler: Function) => { handlers[config.id] = handler; },
-    trigger: mockTrigger,
-    triggerVoid: mockTriggerVoid,
+    registerTrigger: vi.fn(),
+    trigger: (req: any) =>
+      req.action
+        ? mockTriggerVoid(req.function_id, req.payload)
+        : mockTrigger(req.function_id, req.payload),
+    shutdown: vi.fn(),
   }),
+  TriggerAction: { Void: () => ({}) },
 }));
 
 let ZeroizedBuffer: any;

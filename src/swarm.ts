@@ -1,7 +1,15 @@
-import { initSDK } from "./shared/config.js";
+import { registerWorker, TriggerAction } from "iii-sdk";
+import { ENGINE_URL, OTEL_CONFIG, registerShutdown } from "./shared/config.js";
 import { requireAuth, sanitizeId } from "./shared/utils.js";
 
-const { registerFunction, registerTrigger, trigger, triggerVoid } = initSDK("swarm");
+const sdk = registerWorker(ENGINE_URL, {
+  workerName: "swarm",
+  otel: OTEL_CONFIG,
+});
+registerShutdown(sdk);
+const { registerFunction, registerTrigger, trigger } = sdk;
+const triggerVoid = (id: string, payload: unknown) =>
+  trigger({ function_id: id, payload, action: TriggerAction.Void() });
 
 interface SwarmConfig {
   id: string;
@@ -57,11 +65,11 @@ registerFunction(
       status: "active",
     };
 
-    await trigger("state::set", {
+    await trigger({ function_id: "state::set", payload: {
       scope: "swarms",
       key: swarmId,
       value: swarm,
-    });
+    } });
 
     triggerVoid("publish", {
       topic: `swarm:${swarmId}`,
@@ -104,10 +112,10 @@ registerFunction(
     const safeSwarmId = sanitizeId(swarmId);
     const safeAgentId = sanitizeId(agentId);
 
-    const swarm = (await trigger("state::get", {
+    const swarm = (await trigger({ function_id: "state::get", payload: {
       scope: "swarms",
       key: safeSwarmId,
-    }).catch(() => null)) as SwarmConfig | null;
+    } }).catch(() => null)) as SwarmConfig | null;
 
     if (!swarm || swarm.status !== "active") {
       throw new Error(`Swarm ${safeSwarmId} not found or not active`);
@@ -119,9 +127,9 @@ registerFunction(
       );
     }
 
-    const existing = (await trigger("state::list", {
+    const existing = (await trigger({ function_id: "state::list", payload: {
       scope: `swarm_messages:${safeSwarmId}`,
-    }).catch(() => [])) as any[];
+    } }).catch(() => [])) as any[];
     if (existing.length >= MAX_MESSAGES_PER_SWARM) {
       throw new Error(`Swarm ${safeSwarmId} has reached the message limit`);
     }
@@ -137,11 +145,11 @@ registerFunction(
       timestamp: Date.now(),
     };
 
-    await trigger("state::set", {
+    await trigger({ function_id: "state::set", payload: {
       scope: `swarm_messages:${safeSwarmId}`,
       key: msgId,
       value: swarmMessage,
-    });
+    } });
 
     triggerVoid("publish", {
       topic: `swarm:${safeSwarmId}`,
@@ -161,9 +169,9 @@ registerFunction(
   async ({ swarmId }: { swarmId: string }) => {
     const safeSwarmId = sanitizeId(swarmId);
 
-    const messages = (await trigger("state::list", {
+    const messages = (await trigger({ function_id: "state::list", payload: {
       scope: `swarm_messages:${safeSwarmId}`,
-    }).catch(() => [])) as any[];
+    } }).catch(() => [])) as any[];
 
     const items: SwarmMessage[] = messages
       .map((m: any) => m.value)
@@ -196,16 +204,16 @@ registerFunction(
   async ({ swarmId, proposal }: { swarmId: string; proposal: string }) => {
     const safeSwarmId = sanitizeId(swarmId);
 
-    const swarm = (await trigger("state::get", {
+    const swarm = (await trigger({ function_id: "state::get", payload: {
       scope: "swarms",
       key: safeSwarmId,
-    }).catch(() => null)) as SwarmConfig | null;
+    } }).catch(() => null)) as SwarmConfig | null;
 
     if (!swarm) throw new Error(`Swarm ${safeSwarmId} not found`);
 
-    const messages = (await trigger("state::list", {
+    const messages = (await trigger({ function_id: "state::list", payload: {
       scope: `swarm_messages:${safeSwarmId}`,
-    }).catch(() => [])) as any[];
+    } }).catch(() => [])) as any[];
 
     const votes: SwarmMessage[] = messages
       .map((m: any) => m.value)
@@ -255,14 +263,14 @@ registerFunction(
     const { swarmId } = req.body || req;
     const safeSwarmId = sanitizeId(swarmId);
 
-    const swarm = (await trigger("state::get", {
+    const swarm = (await trigger({ function_id: "state::get", payload: {
       scope: "swarms",
       key: safeSwarmId,
-    }).catch(() => null)) as SwarmConfig | null;
+    } }).catch(() => null)) as SwarmConfig | null;
 
     if (!swarm) throw new Error(`Swarm ${safeSwarmId} not found`);
 
-    const findings = await trigger("swarm::collect", { swarmId: safeSwarmId });
+    const findings = await trigger({ function_id: "swarm::collect", payload: { swarmId: safeSwarmId } });
 
     for (const agentId of swarm.agentIds) {
       const agentFindings = (findings as any).agents?.[agentId] || [];
@@ -276,14 +284,14 @@ registerFunction(
       }
     }
 
-    await trigger("state::update", {
+    await trigger({ function_id: "state::update", payload: {
       scope: "swarms",
       key: safeSwarmId,
       operations: [
         { type: "set", path: "status", value: "dissolved" },
         { type: "set", path: "dissolvedAt", value: Date.now() },
       ],
-    });
+    } });
 
     triggerVoid("publish", {
       topic: `swarm:${safeSwarmId}`,

@@ -1,7 +1,15 @@
-import { initSDK } from "./shared/config.js";
+import { registerWorker, TriggerAction } from "iii-sdk";
+import { ENGINE_URL, OTEL_CONFIG, registerShutdown } from "./shared/config.js";
 import { requireAuth, sanitizeId } from "./shared/utils.js";
 
-const { registerFunction, registerTrigger, trigger, triggerVoid } = initSDK("approval");
+const sdk = registerWorker(ENGINE_URL, {
+  workerName: "approval",
+  otel: OTEL_CONFIG,
+});
+registerShutdown(sdk);
+const { registerFunction, registerTrigger, trigger } = sdk;
+const triggerVoid = (id: string, payload: unknown) =>
+  sdk.trigger({ function_id: id, payload, action: TriggerAction.Void() });
 
 interface ApprovalRequest {
   id: string;
@@ -26,9 +34,9 @@ registerFunction(
     metadata: { category: "approval" },
   },
   async ({ agentId, toolName, params }) => {
-    const policy: any = await trigger("state::get", {
-      scope: "approval_policy",
-      key: "default",
+    const policy: any = await trigger({
+      function_id: "state::get",
+      payload: { scope: "approval_policy", key: "default" },
     }).catch(() => null);
 
     if (!policy) return { required: false };
@@ -42,8 +50,9 @@ registerFunction(
 
     if (!requiresApproval) return { required: false };
 
-    const pending = (await trigger("state::list", {
-      scope: `approvals:${agentId}`,
+    const pending = (await trigger({
+      function_id: "state::list",
+      payload: { scope: `approvals:${agentId}` },
     }).catch(() => [])) as any[];
 
     const pendingCount = pending.filter(
@@ -70,10 +79,13 @@ registerFunction(
       status: "pending",
     };
 
-    await trigger("state::set", {
-      scope: `approvals:${agentId}`,
-      key: requestId,
-      value: request,
+    await trigger({
+      function_id: "state::set",
+      payload: {
+        scope: `approvals:${agentId}`,
+        key: requestId,
+        value: request,
+      },
     });
 
     triggerVoid("publish", {
@@ -98,14 +110,17 @@ registerFunction(
     const safeAgentId = sanitizeId(agentId);
     const status = decision === "approve" ? "approved" : "denied";
 
-    await trigger("state::update", {
-      scope: `approvals:${safeAgentId}`,
-      key: safeRequestId,
-      operations: [
-        { type: "set", path: "status", value: status },
-        { type: "set", path: "decidedBy", value: decidedBy || "system" },
-        { type: "set", path: "decidedAt", value: Date.now() },
-      ],
+    await trigger({
+      function_id: "state::update",
+      payload: {
+        scope: `approvals:${safeAgentId}`,
+        key: safeRequestId,
+        operations: [
+          { type: "set", path: "status", value: status },
+          { type: "set", path: "decidedBy", value: decidedBy || "system" },
+          { type: "set", path: "decidedAt", value: Date.now() },
+        ],
+      },
     });
 
     triggerVoid("publish", {
@@ -127,8 +142,9 @@ registerFunction(
     if (req.headers) requireAuth(req);
     const { agentId, status: filterStatus } = req.body || req;
     if (agentId) {
-      const items = (await trigger("state::list", {
-        scope: `approvals:${agentId}`,
+      const items = (await trigger({
+        function_id: "state::list",
+        payload: { scope: `approvals:${agentId}` },
       }).catch(() => [])) as any[];
 
       return items
@@ -136,16 +152,18 @@ registerFunction(
         .filter((v: any) => !filterStatus || v?.status === filterStatus);
     }
 
-    const scopes = (await trigger("state::list_groups", {}).catch(
-      () => [],
-    )) as string[];
+    const scopes = (await trigger({
+      function_id: "state::list_groups",
+      payload: {},
+    }).catch(() => [])) as string[];
     const approvalScopes = scopes.filter((s) => s.startsWith("approvals:"));
 
     const all: ApprovalRequest[] = [];
     for (const scope of approvalScopes) {
-      const items = (await trigger("state::list", { scope }).catch(
-        () => [],
-      )) as any[];
+      const items = (await trigger({
+        function_id: "state::list",
+        payload: { scope },
+      }).catch(() => [])) as any[];
       for (const item of items) {
         if (
           item.value &&
@@ -168,9 +186,9 @@ registerFunction(
   },
   async (req: any) => {
     const { requestId, agentId } = req.body || req;
-    const current = (await trigger("state::get", {
-      scope: `approvals:${agentId}`,
-      key: requestId,
+    const current = (await trigger({
+      function_id: "state::get",
+      payload: { scope: `approvals:${agentId}`, key: requestId },
     }).catch(() => null)) as ApprovalRequest | null;
 
     if (!current) {
@@ -208,10 +226,13 @@ registerFunction(
   async (req: any) => {
     requireAuth(req);
     const { tools, timeoutMs } = req.body || req;
-    await trigger("state::set", {
-      scope: "approval_policy",
-      key: "default",
-      value: { tools, timeoutMs: timeoutMs || DEFAULT_TIMEOUT_MS },
+    await trigger({
+      function_id: "state::set",
+      payload: {
+        scope: "approval_policy",
+        key: "default",
+        value: { tools, timeoutMs: timeoutMs || DEFAULT_TIMEOUT_MS },
+      },
     });
     return { updated: true };
   },

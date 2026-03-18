@@ -1,8 +1,22 @@
-import { initSDK, createSecretGetter } from "../shared/config.js";
+import { registerWorker, TriggerAction } from "iii-sdk";
+import { ENGINE_URL, OTEL_CONFIG, registerShutdown } from "../shared/config.js";
 import { splitMessage, resolveAgent } from "../shared/utils.js";
 
-const { registerFunction, registerTrigger, trigger, triggerVoid } = initSDK("channel-nostr");
-const getSecret = createSecretGetter(trigger);
+const sdk = registerWorker(ENGINE_URL, {
+  workerName: "channel-nostr",
+  otel: OTEL_CONFIG,
+});
+registerShutdown(sdk);
+const { registerFunction, registerTrigger, trigger } = sdk;
+
+async function getSecret(key: string): Promise<string> {
+  try {
+    const result = await sdk.trigger({ function_id: "vault::get", payload: { key } });
+    return result?.value || process.env[key] || "";
+  } catch {
+    return process.env[key] || "";
+  }
+}
 
 registerFunction(
   {
@@ -15,20 +29,27 @@ registerFunction(
 
     if (!content || kind !== 1) return { status_code: 200, body: { ok: true } };
 
-    const agentId = await resolveAgent(trigger, "nostr", pubkey);
+    const agentId = await resolveAgent(sdk, "nostr", pubkey);
 
-    const response: any = await trigger("agent::chat", {
-      agentId,
-      message: content,
-      sessionId: `nostr:${pubkey}`,
+    const response: any = await trigger({
+      function_id: "agent::chat",
+      payload: {
+        agentId,
+        message: content,
+        sessionId: `nostr:${pubkey}`,
+      },
     });
 
     await sendMessage(response.content, id);
 
-    triggerVoid("security::audit", {
-      type: "channel_message",
-      agentId,
-      detail: { channel: "nostr", pubkey },
+    trigger({
+      function_id: "security::audit",
+      payload: {
+        type: "channel_message",
+        agentId,
+        detail: { channel: "nostr", pubkey },
+      },
+      action: TriggerAction.Void(),
     });
 
     return { status_code: 200, body: { ok: true } };

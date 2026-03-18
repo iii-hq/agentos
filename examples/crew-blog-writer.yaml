@@ -1,0 +1,63 @@
+id: crew-blog-writer
+name: Blog Writer Crew
+description: >
+  CrewAI-style sequential crew: researcher finds info,
+  writer drafts article, reviewer edits, writer revises.
+
+agents:
+  - researcher
+  - writer
+  - code-reviewer
+
+steps:
+  - name: Research
+    functionId: "agent::chat"
+    promptTemplate: >
+      Research "{{topic}}" for a blog post targeting {{audience}}.
+      Provide key facts, trends, expert opinions, and article angles.
+      Format as structured research notes with sources.
+    mode: sequential
+    timeoutMs: 120000
+    errorMode: retry
+    maxRetries: 1
+    outputVar: research
+
+  - name: Draft
+    functionId: "agent::chat"
+    promptTemplate: >
+      Write a blog post about "{{topic}}" for {{audience}}.
+      Use this research: {{research}}.
+      800-1200 words, engaging hook, clear headers, actionable takeaways.
+    mode: sequential
+    timeoutMs: 180000
+    errorMode: retry
+    maxRetries: 1
+    outputVar: draft
+
+  - name: Edit
+    functionId: "agent::chat"
+    promptTemplate: >
+      Review this blog post as an editor.
+      Research: {{research}}
+      Draft: {{draft}}
+      Previous feedback: {{edit_result}}
+      Check accuracy, clarity, flow, grammar, SEO.
+      If approved, include "LGTM" in your response.
+    mode: loop
+    timeoutMs: 120000
+    errorMode: retry
+    maxRetries: 1
+    maxIterations: 2
+    until: "LGTM"
+    outputVar: edit_result
+
+  - name: Final Polish
+    functionId: "agent::chat"
+    promptTemplate: >
+      Apply this editor feedback to produce the final blog post:
+      Draft: {{draft}}
+      Feedback: {{edit_result}}
+    mode: sequential
+    timeoutMs: 120000
+    errorMode: fail
+    outputVar: final_article

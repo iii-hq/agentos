@@ -1,9 +1,15 @@
-import { initSDK } from "./shared/config.js";
+import { registerWorker } from "iii-sdk";
+import { ENGINE_URL, OTEL_CONFIG, registerShutdown } from "./shared/config.js";
 import type { ContextHealthScore } from "./types.js";
 import type { Message } from "./shared/tokens.js";
 import { estimateTokens, estimateMessagesTokens } from "./shared/tokens.js";
 
-const { registerFunction, registerTrigger, trigger } = initSDK("context-monitor");
+const sdk = registerWorker(ENGINE_URL, {
+  workerName: "context-monitor",
+  otel: OTEL_CONFIG,
+});
+registerShutdown(sdk);
+const { registerFunction, registerTrigger, trigger } = sdk;
 
 function wordSet(text: string): Set<string> {
   return new Set(text.toLowerCase().split(/\s+/).filter(Boolean));
@@ -177,7 +183,9 @@ registerFunction(
       .join("\n");
 
     try {
-      const llmSummary: any = await trigger("llm::complete", {
+      const llmSummary: any = await trigger({
+        function_id: "llm::complete",
+        payload: {
         model: {
           provider: "anthropic",
           model: "claude-haiku-4-5",
@@ -186,6 +194,7 @@ registerFunction(
         systemPrompt:
           "Summarize this conversation concisely, preserving key facts and decisions.",
         messages: [{ role: "user", content: summaryText.slice(0, 8000) }],
+      },
       });
       const condensed: Message = {
         role: "system",
@@ -246,9 +255,9 @@ registerFunction(
     const oldest = input.messages[0]?.timestamp;
     const oldestAge = oldest ? (now - oldest) / (1000 * 60) : 0;
 
-    const health: any = await trigger("context::health", {
-      messages: input.messages,
-      maxTokens: 200_000,
+    const health: any = await trigger({
+      function_id: "context::health",
+      payload: { messages: input.messages, maxTokens: 200_000 },
     }).catch(() => ({ overall: -1 }));
 
     return {

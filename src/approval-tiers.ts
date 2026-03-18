@@ -1,7 +1,15 @@
-import { initSDK } from "./shared/config.js";
+import { registerWorker, TriggerAction } from "iii-sdk";
+import { ENGINE_URL, OTEL_CONFIG, registerShutdown } from "./shared/config.js";
 import { requireAuth, sanitizeId } from "./shared/utils.js";
 
-const { registerFunction, registerTrigger, trigger, triggerVoid } = initSDK("approval-tiers");
+const sdk = registerWorker(ENGINE_URL, {
+  workerName: "approval-tiers",
+  otel: OTEL_CONFIG,
+});
+registerShutdown(sdk);
+const { registerFunction, registerTrigger, trigger } = sdk;
+const triggerVoid = (id: string, payload: unknown) =>
+  sdk.trigger({ function_id: id, payload, action: TriggerAction.Void() });
 
 type ApprovalTier = "auto" | "async" | "sync";
 
@@ -92,9 +100,9 @@ registerFunction(
     let tier = classifyTool(toolId);
 
     if (agentId) {
-      const config: any = await trigger("state::get", {
-        scope: "agents",
-        key: agentId,
+      const config: any = await trigger({
+        function_id: "state::get",
+        payload: { scope: "agents", key: agentId },
       }).catch(() => null);
 
       const overrides = config?.approvalOverrides as
@@ -148,10 +156,9 @@ registerFunction(
   }) => {
     const safeAgentId = sanitizeId(agentId);
 
-    const classification: any = await trigger("approval::classify", {
-      toolId,
-      args,
-      agentId: safeAgentId,
+    const classification: any = await trigger({
+      function_id: "approval::classify",
+      payload: { toolId, args, agentId: safeAgentId },
     });
     const tier: ApprovalTier = classification.tier;
 
@@ -166,17 +173,20 @@ registerFunction(
     }
 
     const approvalId = crypto.randomUUID();
-    await trigger("state::set", {
-      scope: `tier_approvals:${safeAgentId}`,
-      key: approvalId,
-      value: {
-        id: approvalId,
-        agentId: safeAgentId,
-        toolId,
-        args,
-        tier,
-        status: "pending",
-        createdAt: Date.now(),
+    await trigger({
+      function_id: "state::set",
+      payload: {
+        scope: `tier_approvals:${safeAgentId}`,
+        key: approvalId,
+        value: {
+          id: approvalId,
+          agentId: safeAgentId,
+          toolId,
+          args,
+          tier,
+          status: "pending",
+          createdAt: Date.now(),
+        },
       },
     });
 
@@ -192,9 +202,9 @@ registerFunction(
     const deadline = Date.now() + 60_000;
     let pollInterval = 500;
     while (Date.now() < deadline) {
-      const current: any = await trigger("state::get", {
-        scope: `tier_approvals:${safeAgentId}`,
-        key: approvalId,
+      const current: any = await trigger({
+        function_id: "state::get",
+        payload: { scope: `tier_approvals:${safeAgentId}`, key: approvalId },
       }).catch(() => null);
 
       if (current?.status === "approved") {
@@ -208,10 +218,13 @@ registerFunction(
       pollInterval = Math.min(pollInterval * 1.5, 5000);
     }
 
-    await trigger("state::update", {
-      scope: `tier_approvals:${safeAgentId}`,
-      key: approvalId,
-      operations: [{ type: "set", path: "status", value: "timed_out" }],
+    await trigger({
+      function_id: "state::update",
+      payload: {
+        scope: `tier_approvals:${safeAgentId}`,
+        key: approvalId,
+        operations: [{ type: "set", path: "status", value: "timed_out" }],
+      },
     });
 
     return { approved: false, tier, approvalId, reason: "timeout" };
@@ -229,8 +242,9 @@ registerFunction(
     const { agentId } = req.body || req;
 
     if (agentId) {
-      const items = (await trigger("state::list", {
-        scope: `tier_approvals:${sanitizeId(agentId)}`,
+      const items = (await trigger({
+        function_id: "state::list",
+        payload: { scope: `tier_approvals:${sanitizeId(agentId)}` },
       }).catch(() => [])) as any[];
 
       return items
@@ -239,16 +253,18 @@ registerFunction(
         .sort((a: any, b: any) => b.createdAt - a.createdAt);
     }
 
-    const scopes = (await trigger("state::list_groups", {}).catch(
-      () => [],
-    )) as string[];
+    const scopes = (await trigger({
+      function_id: "state::list_groups",
+      payload: {},
+    }).catch(() => [])) as string[];
     const tierScopes = scopes.filter((s) => s.startsWith("tier_approvals:"));
 
     const all: any[] = [];
     for (const scope of tierScopes) {
-      const items = (await trigger("state::list", { scope }).catch(
-        () => [],
-      )) as any[];
+      const items = (await trigger({
+        function_id: "state::list",
+        payload: { scope },
+      }).catch(() => [])) as any[];
       for (const item of items) {
         if (item.value?.status === "pending") {
           all.push(item.value);
@@ -273,14 +289,17 @@ registerFunction(
     const safeAgentId = sanitizeId(agentId);
     const status = decision === "approve" ? "approved" : "denied";
 
-    await trigger("state::update", {
-      scope: `tier_approvals:${safeAgentId}`,
-      key: safeApprovalId,
-      operations: [
-        { type: "set", path: "status", value: status },
-        { type: "set", path: "decidedBy", value: decidedBy || "system" },
-        { type: "set", path: "decidedAt", value: Date.now() },
-      ],
+    await trigger({
+      function_id: "state::update",
+      payload: {
+        scope: `tier_approvals:${safeAgentId}`,
+        key: safeApprovalId,
+        operations: [
+          { type: "set", path: "status", value: status },
+          { type: "set", path: "decidedBy", value: decidedBy || "system" },
+          { type: "set", path: "decidedAt", value: Date.now() },
+        ],
+      },
     });
 
     triggerVoid("security::audit", {

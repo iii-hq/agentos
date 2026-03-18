@@ -1,12 +1,19 @@
 import { describe, it, expect, vi, beforeEach, beforeAll } from "vitest";
 
 const handlers: Record<string, Function> = {};
+const mockTrigger = vi.fn();
+const mockTriggerVoid = vi.fn();
 vi.mock("iii-sdk", () => ({
-  init: () => ({
+  registerWorker: () => ({
     registerFunction: (config: any, handler: Function) => { handlers[config.id] = handler; },
     registerTrigger: vi.fn(),
-    trigger: vi.fn(),
+    trigger: (req: any) =>
+      req.action
+        ? mockTriggerVoid(req.function_id, req.payload)
+        : mockTrigger(req.function_id, req.payload),
+    shutdown: vi.fn(),
   }),
+  TriggerAction: { Void: () => ({}) },
 }));
 
 beforeEach(() => {});

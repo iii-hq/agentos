@@ -1,6 +1,12 @@
-import { initSDK } from "./shared/config.js";
+import { registerWorker, TriggerAction } from "iii-sdk";
+import { ENGINE_URL, OTEL_CONFIG, registerShutdown } from "./shared/config.js";
 
-const { registerFunction, registerTrigger, trigger, triggerVoid } = initSDK("hooks");
+const sdk = registerWorker(ENGINE_URL, {
+  workerName: "hooks",
+  otel: OTEL_CONFIG,
+});
+registerShutdown(sdk);
+const { registerFunction, registerTrigger, trigger } = sdk;
 
 type HookType =
   | "BeforeToolCall"
@@ -65,14 +71,20 @@ const VALID_HOOK_TYPES: readonly HookType[] = [
 ] as const;
 
 async function loadHooks(): Promise<HookDefinition[]> {
-  const entries: any = await trigger("state::list", { scope: "hooks" }).catch(
+  const entries: any = await trigger({
+    function_id: "state::list",
+    payload: { scope: "hooks" },
+  }).catch(
     () => [],
   );
   return (entries || []).map((e: any) => e.value).filter((h: any) => h && h.id);
 }
 
 async function saveHook(hook: HookDefinition): Promise<void> {
-  await trigger("state::set", { scope: "hooks", key: hook.id, value: hook });
+  await trigger({
+    function_id: "state::set",
+    payload: { scope: "hooks", key: hook.id, value: hook },
+  });
 }
 
 registerFunction(
@@ -120,9 +132,13 @@ registerFunction(
 
     await saveHook(hook);
 
-    triggerVoid("security::audit", {
-      type: "hook_registered",
-      detail: { hookId, name: hook.name, hookType: type, functionId },
+    trigger({
+      function_id: "security::audit",
+      payload: {
+        type: "hook_registered",
+        detail: { hookId, name: hook.name, hookType: type, functionId },
+      },
+      action: TriggerAction.Void(),
     });
 
     return { registered: true, id: hookId, name: hook.name, type };
@@ -136,17 +152,24 @@ registerFunction(
     metadata: { category: "hooks" },
   },
   async ({ hookId }: { hookId: string }) => {
-    const hook: any = await trigger("state::get", {
-      scope: "hooks",
-      key: hookId,
+    const hook: any = await trigger({
+      function_id: "state::get",
+      payload: { scope: "hooks", key: hookId },
     }).catch(() => null);
     if (!hook) throw new Error(`Hook not found: ${hookId}`);
 
-    await trigger("state::delete", { scope: "hooks", key: hookId });
+    await trigger({
+      function_id: "state::delete",
+      payload: { scope: "hooks", key: hookId },
+    });
 
-    triggerVoid("security::audit", {
+    trigger({
+      function_id: "security::audit",
+      payload: {
       type: "hook_unregistered",
       detail: { hookId, name: hook.name },
+    },
+    action: TriggerAction.Void(),
     });
 
     return { unregistered: true, id: hookId };
@@ -208,11 +231,14 @@ registerFunction(
       const start = Date.now();
 
       try {
-        const result: any = await trigger(hook.functionId, {
-          hookType: type,
-          hookId: hook.id,
-          hookName: hook.name,
-          payload: modifiedPayload,
+        const result: any = await trigger({
+          function_id: hook.functionId,
+          payload: {
+            hookType: type,
+            hookId: hook.id,
+            hookName: hook.name,
+            payload: modifiedPayload,
+          },
         });
 
         const durationMs = Date.now() - start;
@@ -311,9 +337,9 @@ registerFunction(
     metadata: { category: "hooks" },
   },
   async ({ hookId, enabled }: { hookId: string; enabled: boolean }) => {
-    const hook = (await trigger("state::get", {
-      scope: "hooks",
-      key: hookId,
+    const hook = (await trigger({
+      function_id: "state::get",
+      payload: { scope: "hooks", key: hookId },
     }).catch(() => null)) as HookDefinition | null;
 
     if (!hook) throw new Error(`Hook not found: ${hookId}`);
@@ -332,9 +358,9 @@ registerFunction(
     metadata: { category: "hooks" },
   },
   async ({ hookId, priority }: { hookId: string; priority: number }) => {
-    const hook = (await trigger("state::get", {
-      scope: "hooks",
-      key: hookId,
+    const hook = (await trigger({
+      function_id: "state::get",
+      payload: { scope: "hooks", key: hookId },
     }).catch(() => null)) as HookDefinition | null;
 
     if (!hook) throw new Error(`Hook not found: ${hookId}`);

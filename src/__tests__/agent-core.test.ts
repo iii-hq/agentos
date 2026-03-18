@@ -74,16 +74,19 @@ const mockListFunctions = vi.fn(async () => [
 
 const handlers: Record<string, Function> = {};
 vi.mock("iii-sdk", () => ({
-  init: () => ({
+  registerWorker: () => ({
     registerFunction: (config: any, handler: Function) => {
       handlers[config.id] = handler;
       return { id: config.id, unregister: vi.fn() };
     },
     registerTrigger: vi.fn(() => ({ unregister: vi.fn() })),
-    trigger: mockTrigger,
-    triggerVoid: mockTriggerVoid,
+    trigger: (req: any) =>
+      req.action
+        ? mockTriggerVoid(req.function_id, req.payload)
+        : mockTrigger(req.function_id, req.payload),
     listFunctions: mockListFunctions,
   }),
+  TriggerAction: { Void: () => ({}) },
   getContext: vi.fn(() => ({
     logger: null,
     meter: {
@@ -102,6 +105,7 @@ vi.mock("../shared/errors.js", () => ({
       return fallback;
     }
   }),
+  TriggerAction: { Void: () => ({}) },
   logError: vi.fn(),
   AppError: class AppError extends Error {
     code: string;
@@ -138,6 +142,7 @@ vi.mock("../tool-profiles.js", () => ({
     if (profile === "full") return tools;
     return tools.filter((t: any) => t.function_id?.startsWith("tool::"));
   }),
+  TriggerAction: { Void: () => ({}) },
 }));
 
 beforeEach(() => {

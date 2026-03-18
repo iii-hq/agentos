@@ -1,8 +1,22 @@
-import { initSDK, createSecretGetter } from "../shared/config.js";
+import { registerWorker, TriggerAction } from "iii-sdk";
+import { ENGINE_URL, OTEL_CONFIG, registerShutdown } from "../shared/config.js";
 import { splitMessage, resolveAgent } from "../shared/utils.js";
 
-const { registerFunction, registerTrigger, trigger, triggerVoid } = initSDK("channel-signal");
-const getSecret = createSecretGetter(trigger);
+const sdk = registerWorker(ENGINE_URL, {
+  workerName: "channel-signal",
+  otel: OTEL_CONFIG,
+});
+registerShutdown(sdk);
+const { registerFunction, registerTrigger, trigger } = sdk;
+
+async function getSecret(key: string): Promise<string> {
+  try {
+    const result = await sdk.trigger({ function_id: "vault::get", payload: { key } });
+    return result?.value || process.env[key] || "";
+  } catch {
+    return process.env[key] || "";
+  }
+}
 
 registerFunction(
   {
@@ -21,12 +35,15 @@ registerFunction(
     const groupId = envelope.dataMessage.groupInfo?.groupId;
 
     const channelKey = groupId || source;
-    const agentId = await resolveAgent(trigger, "signal", channelKey);
+    const agentId = await resolveAgent(sdk, "signal", channelKey);
 
-    const response: any = await trigger("agent::chat", {
-      agentId,
-      message: text,
-      sessionId: `signal:${channelKey}`,
+    const response: any = await trigger({
+      function_id: "agent::chat",
+      payload: {
+        agentId,
+        message: text,
+        sessionId: `signal:${channelKey}`,
+      },
     });
 
     if (!response?.content) {
@@ -36,10 +53,14 @@ registerFunction(
 
     await sendMessage(source, response.content, groupId);
 
-    triggerVoid("security::audit", {
-      type: "channel_message",
-      agentId,
-      detail: { channel: "signal", source, groupId },
+    trigger({
+      function_id: "security::audit",
+      payload: {
+        type: "channel_message",
+        agentId,
+        detail: { channel: "signal", source, groupId },
+      },
+      action: TriggerAction.Void(),
     });
 
     return { status_code: 200, body: { ok: true } };

@@ -1,8 +1,22 @@
-import { initSDK, createSecretGetter } from "../shared/config.js";
+import { registerWorker, TriggerAction } from "iii-sdk";
+import { ENGINE_URL, OTEL_CONFIG, registerShutdown } from "../shared/config.js";
 import { splitMessage, resolveAgent } from "../shared/utils.js";
 
-const { registerFunction, registerTrigger, trigger, triggerVoid } = initSDK("channel-teams");
-const getSecret = createSecretGetter(trigger);
+const sdk = registerWorker(ENGINE_URL, {
+  workerName: "channel-teams",
+  otel: OTEL_CONFIG,
+});
+registerShutdown(sdk);
+const { registerFunction, registerTrigger, trigger } = sdk;
+
+async function getSecret(key: string): Promise<string> {
+  try {
+    const result = await sdk.trigger({ function_id: "vault::get", payload: { key } });
+    return result?.value || process.env[key] || "";
+  } catch {
+    return process.env[key] || "";
+  }
+}
 
 const AUTH_URL =
   "https://login.microsoftonline.com/botframework.com/oauth2/v2.0/token";
@@ -23,12 +37,15 @@ registerFunction(
     const userId = activity.from?.id;
     const serviceUrl = activity.serviceUrl;
 
-    const agentId = await resolveAgent(trigger, "teams", conversationId);
+    const agentId = await resolveAgent(sdk, "teams", conversationId);
 
-    const response: any = await trigger("agent::chat", {
-      agentId,
-      message: text,
-      sessionId: `teams:${conversationId}`,
+    const response: any = await trigger({
+      function_id: "agent::chat",
+      payload: {
+        agentId,
+        message: text,
+        sessionId: `teams:${conversationId}`,
+      },
     });
 
     await sendMessage(
@@ -38,10 +55,14 @@ registerFunction(
       response.content,
     );
 
-    triggerVoid("security::audit", {
-      type: "channel_message",
-      agentId,
-      detail: { channel: "teams", conversationId, userId },
+    trigger({
+      function_id: "security::audit",
+      payload: {
+        type: "channel_message",
+        agentId,
+        detail: { channel: "teams", conversationId, userId },
+      },
+      action: TriggerAction.Void(),
     });
 
     return { status_code: 200, body: { ok: true } };

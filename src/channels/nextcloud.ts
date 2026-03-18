@@ -1,8 +1,22 @@
-import { initSDK, createSecretGetter } from "../shared/config.js";
+import { registerWorker, TriggerAction } from "iii-sdk";
+import { ENGINE_URL, OTEL_CONFIG, registerShutdown } from "../shared/config.js";
 import { splitMessage, resolveAgent } from "../shared/utils.js";
 
-const { registerFunction, registerTrigger, trigger, triggerVoid } = initSDK("channel-nextcloud");
-const getSecret = createSecretGetter(trigger);
+const sdk = registerWorker(ENGINE_URL, {
+  workerName: "channel-nextcloud",
+  otel: OTEL_CONFIG,
+});
+registerShutdown(sdk);
+const { registerFunction, registerTrigger, trigger } = sdk;
+
+async function getSecret(key: string): Promise<string> {
+  try {
+    const result = await sdk.trigger({ function_id: "vault::get", payload: { key } });
+    return result?.value || process.env[key] || "";
+  } catch {
+    return process.env[key] || "";
+  }
+}
 
 registerFunction(
   {
@@ -15,20 +29,27 @@ registerFunction(
 
     if (!message) return { status_code: 200, body: { ok: true } };
 
-    const agentId = await resolveAgent(trigger, "nextcloud", roomToken);
+    const agentId = await resolveAgent(sdk, "nextcloud", roomToken);
 
-    const response: any = await trigger("agent::chat", {
-      agentId,
-      message,
-      sessionId: `nextcloud:${roomToken}`,
+    const response: any = await trigger({
+      function_id: "agent::chat",
+      payload: {
+        agentId,
+        message,
+        sessionId: `nextcloud:${roomToken}`,
+      },
     });
 
     await sendMessage(roomToken, response.content);
 
-    triggerVoid("security::audit", {
-      type: "channel_message",
-      agentId,
-      detail: { channel: "nextcloud", roomToken, actorId },
+    trigger({
+      function_id: "security::audit",
+      payload: {
+        type: "channel_message",
+        agentId,
+        detail: { channel: "nextcloud", roomToken, actorId },
+      },
+      action: TriggerAction.Void(),
     });
 
     return { status_code: 200, body: { ok: true } };

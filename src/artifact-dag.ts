@@ -1,12 +1,19 @@
-import { initSDK } from "./shared/config.js";
+import { registerWorker, TriggerAction } from "iii-sdk";
+import { ENGINE_URL, OTEL_CONFIG, registerShutdown } from "./shared/config.js";
 import { requireAuth, sanitizeId } from "./shared/utils.js";
 import { createLogger } from "./shared/logger.js";
 import { createRecordMetric } from "./shared/metrics.js";
 import { safeCall } from "./shared/errors.js";
 import { createHash, randomUUID } from "node:crypto";
 
-const { registerFunction, registerTrigger, trigger, triggerVoid } =
-  initSDK("artifact-dag");
+const sdk = registerWorker(ENGINE_URL, {
+  workerName: "artifact-dag",
+  otel: OTEL_CONFIG,
+});
+registerShutdown(sdk);
+const { registerFunction, registerTrigger, trigger } = sdk;
+const triggerVoid = (id: string, payload: unknown) =>
+  trigger({ function_id: id, payload, action: TriggerAction.Void() });
 
 const log = createLogger("artifact-dag");
 const recordMetric = createRecordMetric(triggerVoid);
@@ -53,10 +60,10 @@ registerFunction(
 
     const safeParentIds = (parentIds || []).map((id: string) => sanitizeId(id));
     for (const pid of safeParentIds) {
-      const parent = await trigger("state::get", {
+      const parent = await trigger({ function_id: "state::get", payload: {
         scope: "artifacts",
         key: pid,
-      });
+      } });
       if (!parent) {
         throw Object.assign(new Error(`Parent artifact ${pid} not found`), {
           statusCode: 404,
@@ -79,11 +86,11 @@ registerFunction(
       metadata: extraMeta || {},
     };
 
-    await trigger("state::set", {
+    await trigger({ function_id: "state::set", payload: {
       scope: "artifacts",
       key: nodeId,
       value: node,
-    });
+    } });
 
     if (swarmId) {
       triggerVoid("publish", {
@@ -114,10 +121,10 @@ registerFunction(
       });
     }
 
-    const node = await trigger("state::get", {
+    const node = await trigger({ function_id: "state::get", payload: {
       scope: "artifacts",
       key: sanitizeId(nodeId),
-    });
+    } });
     if (!node) {
       throw Object.assign(new Error("Artifact not found"), {
         statusCode: 404,
@@ -145,7 +152,7 @@ registerFunction(
 
     const safeId = sanitizeId(nodeId);
     const all: any[] = await safeCall(
-      () => trigger("state::list", { scope: "artifacts" }),
+      () => trigger({ function_id: "state::list", payload: { scope: "artifacts" } }),
       [],
       { operation: "list_artifacts" },
     );
@@ -169,7 +176,7 @@ registerFunction(
     const { swarmId, agentId } = req.body || req.query || req;
 
     const all: any[] = await safeCall(
-      () => trigger("state::list", { scope: "artifacts" }),
+      () => trigger({ function_id: "state::list", payload: { scope: "artifacts" } }),
       [],
       { operation: "list_artifacts" },
     );
@@ -222,14 +229,14 @@ registerFunction(
     }
 
     const [nodeA, nodeB] = await Promise.all([
-      trigger("state::get", {
+      trigger({ function_id: "state::get", payload: {
         scope: "artifacts",
         key: sanitizeId(nodeIdA),
-      }),
-      trigger("state::get", {
+      } }),
+      trigger({ function_id: "state::get", payload: {
         scope: "artifacts",
         key: sanitizeId(nodeIdB),
-      }),
+      } }),
     ]);
 
     if (!nodeA) {
@@ -276,7 +283,7 @@ registerFunction(
     const { agentId, swarmId, limit } = req.body || req.query || req;
 
     const all: any[] = await safeCall(
-      () => trigger("state::list", { scope: "artifacts" }),
+      () => trigger({ function_id: "state::list", payload: { scope: "artifacts" } }),
       [],
       { operation: "list_artifacts" },
     );

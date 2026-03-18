@@ -39,3 +39,19 @@ export function recordMetric(
     }
   } catch {}
 }
+
+type TriggerVoidFn = (id: string, input: unknown) => void | Promise<void>;
+
+export function createRecordMetric(triggerVoid: TriggerVoidFn) {
+  return function (
+    name: string,
+    value: number,
+    labels: Record<string, string>,
+    type: MetricType = "counter",
+  ): void {
+    recordMetric(name, value, labels, type);
+    try {
+      triggerVoid("telemetry::record", { name, value, labels, type });
+    } catch {}
+  };
+}

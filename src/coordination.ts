@@ -1,11 +1,18 @@
-import { initSDK } from "./shared/config.js";
+import { registerWorker, TriggerAction } from "iii-sdk";
+import { ENGINE_URL, OTEL_CONFIG, registerShutdown } from "./shared/config.js";
 import { requireAuth, sanitizeId } from "./shared/utils.js";
 import { createLogger } from "./shared/logger.js";
 import { createRecordMetric } from "./shared/metrics.js";
 import { safeCall } from "./shared/errors.js";
 
-const { registerFunction, registerTrigger, trigger, triggerVoid } =
-  initSDK("coordination");
+const sdk = registerWorker(ENGINE_URL, {
+  workerName: "coordination",
+  otel: OTEL_CONFIG,
+});
+registerShutdown(sdk);
+const { registerFunction, registerTrigger, trigger } = sdk;
+const triggerVoid = (id: string, payload: unknown) =>
+  trigger({ function_id: id, payload, action: TriggerAction.Void() });
 
 const log = createLogger("coordination");
 const recordMetric = createRecordMetric(triggerVoid);
@@ -39,11 +46,11 @@ registerFunction(
       pinned: [] as string[],
     };
 
-    await trigger("state::set", {
+    await trigger({ function_id: "state::set", payload: {
       scope: "coord_channels",
       key: channelId,
       value: channel,
-    });
+    } });
 
     triggerVoid("publish", {
       topic: `coord:${channelId}`,
@@ -76,10 +83,10 @@ registerFunction(
     }
 
     const safeChannelId = sanitizeId(channelId);
-    const channel = await trigger("state::get", {
+    const channel = await trigger({ function_id: "state::get", payload: {
       scope: "coord_channels",
       key: safeChannelId,
-    });
+    } });
     if (!channel) {
       throw Object.assign(new Error("Channel not found"), {
         statusCode: 404,
@@ -87,7 +94,7 @@ registerFunction(
     }
 
     const existing: any[] = await safeCall(
-      () => trigger("state::list", { scope: `coord_posts:${safeChannelId}` }),
+      () => trigger({ function_id: "state::list", payload: { scope: `coord_posts:${safeChannelId}` } }),
       [],
       { operation: "list_posts" },
     );
@@ -109,11 +116,11 @@ registerFunction(
       metadata: extraMeta || {},
     };
 
-    await trigger("state::set", {
+    await trigger({ function_id: "state::set", payload: {
       scope: `coord_posts:${safeChannelId}`,
       key: postId,
       value: post,
-    });
+    } });
 
     triggerVoid("publish", {
       topic: `coord:${safeChannelId}`,
@@ -147,10 +154,10 @@ registerFunction(
     const safeChannelId = sanitizeId(channelId);
     const safeParentId = sanitizeId(parentId);
 
-    const parent = await trigger("state::get", {
+    const parent = await trigger({ function_id: "state::get", payload: {
       scope: `coord_posts:${safeChannelId}`,
       key: safeParentId,
-    });
+    } });
     if (!parent) {
       throw Object.assign(new Error("Parent post not found"), {
         statusCode: 404,
@@ -168,11 +175,11 @@ registerFunction(
       metadata: extraMeta || {},
     };
 
-    await trigger("state::set", {
+    await trigger({ function_id: "state::set", payload: {
       scope: `coord_posts:${safeChannelId}`,
       key: postId,
       value: reply,
-    });
+    } });
 
     triggerVoid("publish", {
       topic: `coord:${safeChannelId}`,
@@ -198,7 +205,7 @@ registerFunction(
     if (req.headers) requireAuth(req);
 
     const all: any[] = await safeCall(
-      () => trigger("state::list", { scope: "coord_channels" }),
+      () => trigger({ function_id: "state::list", payload: { scope: "coord_channels" } }),
       [],
       { operation: "list_channels" },
     );
@@ -228,7 +235,7 @@ registerFunction(
     const safeChannelId = sanitizeId(channelId);
 
     const all: any[] = await safeCall(
-      () => trigger("state::list", { scope: `coord_posts:${safeChannelId}` }),
+      () => trigger({ function_id: "state::list", payload: { scope: `coord_posts:${safeChannelId}` } }),
       [],
       { operation: "read_posts" },
     );
@@ -269,20 +276,20 @@ registerFunction(
     const safeChannelId = sanitizeId(channelId);
     const safePostId = sanitizeId(postId);
 
-    const channel: any = await trigger("state::get", {
+    const channel: any = await trigger({ function_id: "state::get", payload: {
       scope: "coord_channels",
       key: safeChannelId,
-    });
+    } });
     if (!channel) {
       throw Object.assign(new Error("Channel not found"), {
         statusCode: 404,
       });
     }
 
-    const post = await trigger("state::get", {
+    const post = await trigger({ function_id: "state::get", payload: {
       scope: `coord_posts:${safeChannelId}`,
       key: safePostId,
-    });
+    } });
     if (!post) {
       throw Object.assign(new Error("Post not found"), { statusCode: 404 });
     }
@@ -304,11 +311,11 @@ registerFunction(
       channel.pinned = [...pinned, safePostId];
     }
 
-    await trigger("state::set", {
+    await trigger({ function_id: "state::set", payload: {
       scope: "coord_channels",
       key: safeChannelId,
       value: channel,
-    });
+    } });
 
     return { channelId: safeChannelId, pinned: channel.pinned };
   },

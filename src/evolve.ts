@@ -1,5 +1,5 @@
-import { init } from "iii-sdk";
-import { ENGINE_URL } from "./shared/config.js";
+import { registerWorker, TriggerAction } from "iii-sdk";
+import { ENGINE_URL, OTEL_CONFIG, registerShutdown } from "./shared/config.js";
 import { createLogger } from "./shared/logger.js";
 import { createRecordMetric } from "./shared/metrics.js";
 import { requireAuth, sanitizeId } from "./shared/utils.js";
@@ -7,10 +7,14 @@ import { safeCall } from "./shared/errors.js";
 import type { EvolvedFunction } from "./types.js";
 import * as vm from "node:vm";
 
-const { registerFunction, registerTrigger, trigger, triggerVoid } = init(
-  ENGINE_URL,
-  { workerName: "evolve" },
-);
+const sdk = registerWorker(ENGINE_URL, {
+  workerName: "evolve",
+  otel: OTEL_CONFIG,
+});
+registerShutdown(sdk);
+const { registerFunction, registerTrigger, trigger } = sdk;
+const triggerVoid = (id: string, payload: unknown) =>
+  trigger({ function_id: id, payload, action: TriggerAction.Void() });
 
 const log = createLogger("evolve");
 const recordMetric = createRecordMetric(triggerVoid);
@@ -42,7 +46,7 @@ function createSandboxContext(functionId: string) {
         `Evolved function cannot call ${fnId}: only ${ALLOWED_TRIGGER_PREFIXES.join(", ")} prefixes allowed`,
       );
     }
-    return trigger(fnId, data);
+    return trigger({ function_id: fnId, payload: data });
   };
 
   const ctx = vm.createContext(
@@ -207,7 +211,7 @@ registerFunction(
     const safeName = sanitizeId(name);
     const existing: any[] = await safeCall(
       () =>
-        trigger("state::list", { scope: "evolved_functions" }),
+        trigger({ function_id: "state::list", payload: { scope: "evolved_functions" } }),
       [],
       { operation: "list_evolved" },
     );
@@ -236,12 +240,12 @@ ${spec ? `Spec: ${spec}` : ""}
 
 The function receives a single \`input\` parameter (any type) and must return a result.
 It has access to: JSON, Math, Date, Array, Object, String, Number, Boolean, Map, Set, Promise, parseInt, parseFloat.
-It can call \`await trigger(fnId, data)\` to invoke other functions (only evolved::, tool::, llm:: prefixes).
+It can call \`await trigger({ function_id: fnId, payload: data })\` to invoke other functions (only evolved::, tool::, llm:: prefixes).
 It CANNOT use: fetch, fs, process, require, setTimeout, eval, Function constructor.
 
 Example: async (input) => { return { result: input.value * 2 }; }`;
 
-    const llmResult: any = await trigger("llm::complete", {
+    const llmResult: any = await trigger({ function_id: "llm::complete", payload: {
       model: {
         provider: "anthropic",
         model: "claude-sonnet-4-20250514",
@@ -250,7 +254,7 @@ Example: async (input) => { return { result: input.value * 2 }; }`;
       systemPrompt:
         "You are a code generator. Output only a single JavaScript arrow function expression. No markdown, no explanation.",
       messages: [{ role: "user", content: prompt }],
-    });
+    }});
 
     let code = (llmResult?.content || "").trim();
     code = code.replace(/^```(?:javascript|js|typescript|ts)?\n?/g, "");
@@ -277,11 +281,11 @@ Example: async (input) => { return { result: input.value * 2 }; }`;
       metadata: extraMeta || {},
     };
 
-    await trigger("state::set", {
+    await trigger({ function_id: "state::set", payload: {
       scope: "evolved_functions",
       key: functionId,
       value: record,
-    });
+    } });
 
     log.info("Generated evolved function", { functionId, agentId });
     recordMetric("evolved_function_generated", 1, { agentId }, "counter");
@@ -306,10 +310,10 @@ registerFunction(
       });
     }
 
-    const fn: EvolvedFunction | null = await trigger("state::get", {
+    const fn: EvolvedFunction | null = await trigger({ function_id: "state::get", payload: {
       scope: "evolved_functions",
       key: functionId,
-    });
+    } });
     if (!fn) {
       throw Object.assign(new Error("Function not found"), {
         statusCode: 404,
@@ -321,9 +325,9 @@ registerFunction(
       });
     }
 
-    const pipelineResult: any = await trigger("skill::pipeline", {
+    const pipelineResult: any = await trigger({ function_id: "skill::pipeline", payload: {
       content: fn.code,
-    });
+    } });
 
     const scanSafe = pipelineResult?.approved === true;
     const sandboxPassed = pipelineResult?.report?.sandbox?.passed === true;
@@ -335,11 +339,11 @@ registerFunction(
     if (!scanSafe) {
       fn.status = "killed";
       fn.updatedAt = Date.now();
-      await trigger("state::set", {
+      await trigger({ function_id: "state::set", payload: {
         scope: "evolved_functions",
         key: functionId,
         value: fn,
-      });
+      } });
       triggerVoid("security::audit", {
         type: "evolved_function_rejected",
         detail: { functionId, reason: "security_scan_failed", findingCount },
@@ -357,11 +361,11 @@ registerFunction(
       fn.securityReport.sandboxPassed = false;
       fn.status = "killed";
       fn.updatedAt = Date.now();
-      await trigger("state::set", {
+      await trigger({ function_id: "state::set", payload: {
         scope: "evolved_functions",
         key: functionId,
         value: fn,
-      });
+      } });
       return {
         registered: false,
         reason: `Sandbox validation failed: ${err.message}`,
@@ -372,11 +376,11 @@ registerFunction(
     fn.securityReport.sandboxPassed = true;
     fn.status = "staging";
     fn.updatedAt = Date.now();
-    await trigger("state::set", {
+    await trigger({ function_id: "state::set", payload: {
       scope: "evolved_functions",
       key: functionId,
       value: fn,
-    });
+    } });
 
     registerLiveFunction(fn);
 
@@ -410,10 +414,10 @@ registerFunction(
       });
     }
 
-    const fn: EvolvedFunction | null = await trigger("state::get", {
+    const fn: EvolvedFunction | null = await trigger({ function_id: "state::get", payload: {
       scope: "evolved_functions",
       key: functionId,
-    });
+    } });
     if (!fn) {
       throw Object.assign(new Error("Function not found"), {
         statusCode: 404,
@@ -434,11 +438,11 @@ registerFunction(
 
     fn.status = "killed";
     fn.updatedAt = Date.now();
-    await trigger("state::set", {
+    await trigger({ function_id: "state::set", payload: {
       scope: "evolved_functions",
       key: functionId,
       value: fn,
-    });
+    } });
 
     log.info("Unregistered evolved function", { functionId });
     return { unregistered: true, functionId };
@@ -457,7 +461,7 @@ registerFunction(
       req.query || req.body || req;
 
     const all: any[] = await safeCall(
-      () => trigger("state::list", { scope: "evolved_functions" }),
+      () => trigger({ function_id: "state::list", payload: { scope: "evolved_functions" } }),
       [],
       { operation: "list_evolved" },
     );
@@ -492,10 +496,10 @@ registerFunction(
       });
     }
 
-    const fn: EvolvedFunction | null = await trigger("state::get", {
+    const fn: EvolvedFunction | null = await trigger({ function_id: "state::get", payload: {
       scope: "evolved_functions",
       key: functionId,
-    });
+    } });
     if (!fn) {
       throw Object.assign(new Error("Function not found"), {
         statusCode: 404,
@@ -522,10 +526,10 @@ registerFunction(
       );
     }
 
-    const source: EvolvedFunction | null = await trigger("state::get", {
+    const source: EvolvedFunction | null = await trigger({ function_id: "state::get", payload: {
       scope: "evolved_functions",
       key: sourceId,
-    });
+    } });
     if (!source) {
       throw Object.assign(new Error("Source function not found"), {
         statusCode: 404,
@@ -538,7 +542,7 @@ registerFunction(
     const safeName = sanitizeId(baseName);
 
     const existing: any[] = await safeCall(
-      () => trigger("state::list", { scope: "evolved_functions" }),
+      () => trigger({ function_id: "state::list", payload: { scope: "evolved_functions" } }),
       [],
       { operation: "list_evolved" },
     );
@@ -571,9 +575,9 @@ Improvement goal: ${goal}
 
 The function receives a single \`input\` parameter and must return a result.
 It has access to: JSON, Math, Date, Array, Object, String, Number, Boolean, Map, Set, Promise.
-It can call \`await trigger(fnId, data)\` for evolved::, tool::, llm:: prefixes.`;
+It can call \`await trigger({ function_id: fnId, payload: data })\` for evolved::, tool::, llm:: prefixes.`;
 
-    const llmResult: any = await trigger("llm::complete", {
+    const llmResult: any = await trigger({ function_id: "llm::complete", payload: {
       model: {
         provider: "anthropic",
         model: "claude-sonnet-4-20250514",
@@ -582,7 +586,7 @@ It can call \`await trigger(fnId, data)\` for evolved::, tool::, llm:: prefixes.
       systemPrompt:
         "You are a code generator. Output only a single JavaScript arrow function expression. No markdown, no explanation.",
       messages: [{ role: "user", content: prompt }],
-    });
+    }});
 
     let code = (llmResult?.content || "").trim();
     code = code.replace(/^```(?:javascript|js|typescript|ts)?\n?/g, "");
@@ -604,11 +608,11 @@ It can call \`await trigger(fnId, data)\` for evolved::, tool::, llm:: prefixes.
       metadata: { ...(extraMeta || {}), forkedFrom: sourceId },
     };
 
-    await trigger("state::set", {
+    await trigger({ function_id: "state::set", payload: {
       scope: "evolved_functions",
       key: functionId,
       value: record,
-    });
+    } });
 
     log.info("Forked evolved function", { functionId, sourceId, agentId });
     recordMetric("evolved_function_forked", 1, { agentId }, "counter");
@@ -628,7 +632,7 @@ registerFunction(
     const { name, status } = req.body || req.query || req;
 
     const all: any[] = await safeCall(
-      () => trigger("state::list", { scope: "evolved_functions" }),
+      () => trigger({ function_id: "state::list", payload: { scope: "evolved_functions" } }),
       [],
       { operation: "list_evolved_leaves" },
     );
@@ -702,10 +706,10 @@ registerFunction(
 
     while (currentId && !visited.has(currentId) && lineage.length < MAX_DEPTH) {
       visited.add(currentId);
-      const fn: EvolvedFunction | null = await trigger("state::get", {
+      const fn: EvolvedFunction | null = await trigger({ function_id: "state::get", payload: {
         scope: "evolved_functions",
         key: currentId,
-      });
+      } });
       if (!fn) break;
 
       lineage.push({
@@ -725,7 +729,7 @@ registerFunction(
 
 async function reloadEvolvedFunctions() {
   const all: any[] = await safeCall(
-    () => trigger("state::list", { scope: "evolved_functions" }),
+    () => trigger({ function_id: "state::list", payload: { scope: "evolved_functions" } }),
     [],
     { operation: "reload_evolved" },
   );

@@ -1,8 +1,16 @@
-import { initSDK } from "./shared/config.js";
+import { registerWorker, TriggerAction } from "iii-sdk";
+import { ENGINE_URL, OTEL_CONFIG, registerShutdown } from "./shared/config.js";
 import { PRICING } from "./shared/pricing.js";
 import type { CostRecord, CostSummary, BudgetStatus } from "./types.js";
 
-const { registerFunction, registerTrigger, trigger, triggerVoid } = initSDK("cost-tracker");
+const sdk = registerWorker(ENGINE_URL, {
+  workerName: "cost-tracker",
+  otel: OTEL_CONFIG,
+});
+registerShutdown(sdk);
+const { registerFunction, registerTrigger, trigger } = sdk;
+const triggerVoid = (id: string, payload: unknown) =>
+  trigger({ function_id: id, payload, action: TriggerAction.Void() });
 
 registerFunction(
   {
@@ -52,10 +60,9 @@ registerFunction(
       timestamp: now,
     };
 
-    await trigger("state::set", {
-      scope: "cost_records",
-      key,
-      value: record,
+    await trigger({
+      function_id: "state::set",
+      payload: { scope: "cost_records", key, value: record },
     });
 
     triggerVoid("state::update", {
@@ -110,9 +117,9 @@ registerFunction(
     ) {
       const dateStr = d.toISOString().slice(0, 10);
       const prefix = input.agentId ? `${dateStr}:${input.agentId}` : dateStr;
-      const dayRecords: any = await trigger("state::list", {
-        scope: "cost_records",
-        prefix,
+      const dayRecords: any = await trigger({
+        function_id: "state::list",
+        payload: { scope: "cost_records", prefix },
       }).catch(() => []);
 
       if (Array.isArray(dayRecords)) {
@@ -161,18 +168,18 @@ registerFunction(
     metadata: { category: "cost" },
   },
   async ({ agentId }: { agentId: string }): Promise<BudgetStatus> => {
-    const config: any = await trigger("state::get", {
-      scope: "agents",
-      key: agentId,
+    const config: any = await trigger({
+      function_id: "state::get",
+      payload: { scope: "agents", key: agentId },
     }).catch(() => null);
 
     const dailyBudget = config?.resources?.dailyBudget ?? Infinity;
     const monthlyBudget = config?.resources?.monthlyBudget ?? Infinity;
 
     const today = new Date().toISOString().slice(0, 10);
-    const dailyData: any = await trigger("state::get", {
-      scope: "cost_daily",
-      key: `${today}:${agentId}`,
+    const dailyData: any = await trigger({
+      function_id: "state::get",
+      payload: { scope: "cost_daily", key: `${today}:${agentId}` },
     }).catch(() => null);
 
     const dailySpent = dailyData?.cost ?? 0;
@@ -183,9 +190,9 @@ registerFunction(
 
     for (let d = new Date(monthStart); d <= now; d.setDate(d.getDate() + 1)) {
       const dateStr = d.toISOString().slice(0, 10);
-      const dayData: any = await trigger("state::get", {
-        scope: "cost_daily",
-        key: `${dateStr}:${agentId}`,
+      const dayData: any = await trigger({
+        function_id: "state::get",
+        payload: { scope: "cost_daily", key: `${dateStr}:${agentId}` },
       }).catch(() => null);
       monthlySpent += dayData?.cost ?? 0;
     }

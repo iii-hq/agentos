@@ -1,8 +1,22 @@
-import { initSDK, createSecretGetter } from "../shared/config.js";
+import { registerWorker, TriggerAction } from "iii-sdk";
+import { ENGINE_URL, OTEL_CONFIG, registerShutdown } from "../shared/config.js";
 import { splitMessage, resolveAgent } from "../shared/utils.js";
 
-const { registerFunction, registerTrigger, trigger, triggerVoid } = initSDK("channel-ntfy");
-const getSecret = createSecretGetter(trigger);
+const sdk = registerWorker(ENGINE_URL, {
+  workerName: "channel-ntfy",
+  otel: OTEL_CONFIG,
+});
+registerShutdown(sdk);
+const { registerFunction, registerTrigger, trigger } = sdk;
+
+async function getSecret(key: string): Promise<string> {
+  try {
+    const result = await sdk.trigger({ function_id: "vault::get", payload: { key } });
+    return result?.value || process.env[key] || "";
+  } catch {
+    return process.env[key] || "";
+  }
+}
 
 registerFunction(
   { id: "channel::ntfy::webhook", description: "Handle ntfy.sh push webhook" },
@@ -12,20 +26,27 @@ registerFunction(
 
     if (!message) return { status_code: 200, body: { ok: true } };
 
-    const agentId = await resolveAgent(trigger, "ntfy", topic);
+    const agentId = await resolveAgent(sdk, "ntfy", topic);
 
-    const response: any = await trigger("agent::chat", {
-      agentId,
-      message: title ? `${title}: ${message}` : message,
-      sessionId: `ntfy:${topic}`,
+    const response: any = await trigger({
+      function_id: "agent::chat",
+      payload: {
+        agentId,
+        message: title ? `${title}: ${message}` : message,
+        sessionId: `ntfy:${topic}`,
+      },
     });
 
     await sendMessage(response.content);
 
-    triggerVoid("security::audit", {
-      type: "channel_message",
-      agentId,
-      detail: { channel: "ntfy", topic, msgId },
+    trigger({
+      function_id: "security::audit",
+      payload: {
+        type: "channel_message",
+        agentId,
+        detail: { channel: "ntfy", topic, msgId },
+      },
+      action: TriggerAction.Void(),
     });
 
     return { status_code: 200, body: { ok: true } };

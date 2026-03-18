@@ -1,4 +1,10 @@
-import { initSDK, WORKSPACE_ROOT } from "./shared/config.js";
+import { registerWorker } from "iii-sdk";
+import {
+  ENGINE_URL,
+  OTEL_CONFIG,
+  registerShutdown,
+  WORKSPACE_ROOT,
+} from "./shared/config.js";
 import { execFile } from "child_process";
 import { promisify } from "util";
 import { readFile, readdir } from "fs/promises";
@@ -6,7 +12,12 @@ import { resolve, join } from "path";
 
 const execFileAsync = promisify(execFile);
 
-const { registerFunction, registerTrigger } = initSDK("skillkit-bridge");
+const sdk = registerWorker(ENGINE_URL, {
+  workerName: "skillkit-bridge",
+  otel: OTEL_CONFIG,
+});
+registerShutdown(sdk);
+const { registerFunction, registerTrigger } = sdk;
 
 const SAFE_ENV: Record<string, string> = {};
 for (const key of [

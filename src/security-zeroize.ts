@@ -1,7 +1,15 @@
-import { initSDK } from "./shared/config.js";
+import { registerWorker, TriggerAction } from "iii-sdk";
+import { ENGINE_URL, OTEL_CONFIG, registerShutdown } from "./shared/config.js";
 import { randomFillSync } from "crypto";
 
-const { registerFunction, trigger, triggerVoid } = initSDK("security-zeroize");
+const sdk = registerWorker(ENGINE_URL, {
+  workerName: "security-zeroize",
+  otel: OTEL_CONFIG,
+});
+registerShutdown(sdk);
+const { registerFunction, trigger } = sdk;
+const triggerVoid = (id: string, payload: unknown) =>
+  trigger({ function_id: id, payload, action: TriggerAction.Void() });
 
 const AUTO_DISPOSE_MS = 30_000;
 
@@ -89,7 +97,10 @@ registerFunction(
     const findings: Array<{ scope: string; key: string; patterns: string[] }> = [];
 
     for (const scope of targetScopes) {
-      const entries: any = await trigger("state::list", { scope }).catch(() => []);
+      const entries: any = await trigger({
+        function_id: "state::list",
+        payload: { scope },
+      }).catch(() => []);
       const items = Array.isArray(entries) ? entries : entries?.entries || [];
       for (const entry of items) {
         const str = JSON.stringify(entry.value || "");

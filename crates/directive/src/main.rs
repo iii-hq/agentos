@@ -1,4 +1,4 @@
-use iii_sdk::iii::III;
+use iii_sdk::{register_worker, InitOptions, III};
 use iii_sdk::error::IIIError;
 use serde_json::{json, Value};
 
@@ -186,7 +186,7 @@ async fn get_ancestry(iii: &III, realm_id: &str, id: &str) -> Result<Value, IIIE
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing_subscriber::fmt::init();
 
-    let iii = III::new("ws://localhost:49134");
+    let iii = register_worker("ws://localhost:49134", InitOptions::default())?;
 
     let iii_clone = iii.clone();
     iii.register_function_with_description(

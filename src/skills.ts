@@ -1,7 +1,13 @@
-import { initSDK } from "./shared/config.js";
+import { registerWorker } from "iii-sdk";
+import { ENGINE_URL, OTEL_CONFIG, registerShutdown } from "./shared/config.js";
 import { requireAuth } from "./shared/utils.js";
 
-const { registerFunction, registerTrigger, trigger } = initSDK("skills");
+const sdk = registerWorker(ENGINE_URL, {
+  workerName: "skills",
+  otel: OTEL_CONFIG,
+});
+registerShutdown(sdk);
+const { registerFunction, registerTrigger, trigger } = sdk;
 
 interface Skill {
   id: string;
@@ -417,8 +423,9 @@ registerFunction(
   async (req: any) => {
     if (req.headers) requireAuth(req);
     const { category, tag } = req.body || req;
-    const installed = (await trigger("state::list", {
-      scope: "skills",
+    const installed = (await trigger({
+      function_id: "state::list",
+      payload: { scope: "skills" },
     }).catch(() => [])) as any[];
     const installedSkills: Skill[] = installed
       .map((i: any) => i.value)
@@ -458,10 +465,9 @@ registerFunction(
       id || name?.toLowerCase().replace(/\s+/g, "-") || crypto.randomUUID();
 
     if (content) {
-      const pipeline: any = await trigger("skill::pipeline", {
-        content,
-        signature,
-        publicKey,
+      const pipeline: any = await trigger({
+        function_id: "skill::pipeline",
+        payload: { content, signature, publicKey },
       }).catch(() => null);
 
       if (pipeline && !pipeline.approved) {
@@ -486,10 +492,9 @@ registerFunction(
       installedAt: Date.now(),
     };
 
-    await trigger("state::set", {
-      scope: "skills",
-      key: skillId,
-      value: skill,
+    await trigger({
+      function_id: "state::set",
+      payload: { scope: "skills", key: skillId, value: skill },
     });
     return { installed: true, id: skillId };
   },
@@ -507,7 +512,10 @@ registerFunction(
     const skill = BUNDLED_SKILLS.find((s) => s.id === id);
     if (skill) throw new Error(`Cannot uninstall bundled skill: ${id}`);
 
-    await trigger("state::delete", { scope: "skills", key: id });
+    await trigger({
+      function_id: "state::delete",
+      payload: { scope: "skills", key: id },
+    });
     return { uninstalled: true, id };
   },
 );
@@ -522,7 +530,10 @@ registerFunction(
     const bundled = BUNDLED_SKILLS.find((s) => s.id === id);
     if (bundled) return bundled;
 
-    return trigger("state::get", { scope: "skills", key: id });
+    return trigger({
+      function_id: "state::get",
+      payload: { scope: "skills", key: id },
+    });
   },
 );
 
@@ -538,8 +549,9 @@ registerFunction(
     const q = query.toLowerCase();
     const allSkills = [...BUNDLED_SKILLS];
 
-    const installed = (await trigger("state::list", {
-      scope: "skills",
+    const installed = (await trigger({
+      function_id: "state::list",
+      payload: { scope: "skills" },
     }).catch(() => [])) as any[];
     for (const i of installed) {
       if (i.value) allSkills.push(i.value);
@@ -603,9 +615,9 @@ registerFunction(
     if (!query || query.length < 2) {
       throw new Error("Query must be at least 2 characters");
     }
-    return trigger("skillkit::search", {
-      query,
-      limit: limit || 10,
+    return trigger({
+      function_id: "skillkit::search",
+      payload: { query, limit: limit || 10 },
     }).catch((e: any) => ({
       results: [],
       error: `SkillKit unavailable: ${e.message}`,

@@ -1,4 +1,5 @@
-import { initSDK } from "./shared/config.js";
+import { registerWorker, TriggerAction } from "iii-sdk";
+import { ENGINE_URL, OTEL_CONFIG, registerShutdown } from "./shared/config.js";
 import type {
   AgentConfig,
   ChatRequest,
@@ -14,13 +15,20 @@ import { recordMetric } from "./shared/metrics.js";
 
 const log = createLogger("agent-core");
 
-const {
-  registerFunction,
-  registerTrigger,
-  trigger,
-  triggerVoid,
-  listFunctions,
-} = initSDK("agent-core");
+const sdk = registerWorker(ENGINE_URL, {
+  workerName: "agent-core",
+  otel: OTEL_CONFIG,
+});
+registerShutdown(sdk);
+const { registerFunction, registerTrigger, listFunctions } = sdk;
+const trigger = (id: string, payload: unknown, timeoutMs?: number) =>
+  sdk.trigger(
+    timeoutMs !== undefined
+      ? { function_id: id, payload, timeoutMs }
+      : { function_id: id, payload },
+  );
+const triggerVoid = (id: string, payload: unknown) =>
+  sdk.trigger({ function_id: id, payload, action: TriggerAction.Void() });
 
 const MAX_ITERATIONS = 50;
 const TOOL_TIMEOUT_MS = 120_000;

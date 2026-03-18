@@ -1,8 +1,22 @@
-import { initSDK, createSecretGetter } from "../shared/config.js";
+import { registerWorker } from "iii-sdk";
+import { ENGINE_URL, OTEL_CONFIG, registerShutdown } from "../shared/config.js";
 import { splitMessage, resolveAgent } from "../shared/utils.js";
 
-const { registerFunction, registerTrigger, trigger, triggerVoid } = initSDK("channel-discord");
-const getSecret = createSecretGetter(trigger);
+const sdk = registerWorker(ENGINE_URL, {
+  workerName: "channel-discord",
+  otel: OTEL_CONFIG,
+});
+registerShutdown(sdk);
+const { registerFunction, registerTrigger, trigger } = sdk;
+
+async function getSecret(key: string): Promise<string> {
+  try {
+    const result = await sdk.trigger({ function_id: "vault::get", payload: { key } });
+    return result?.value || process.env[key] || "";
+  } catch {
+    return process.env[key] || "";
+  }
+}
 
 const DISCORD_API = "https://discord.com/api/v10";
 
@@ -18,11 +32,14 @@ registerFunction(
       const msg = event.d;
       if (msg.author?.bot) return { status_code: 200, body: { ok: true } };
 
-      const agentId = await resolveAgent(trigger, "discord", msg.channel_id);
-      const response: any = await trigger("agent::chat", {
-        agentId,
-        message: msg.content,
-        sessionId: `discord:${msg.channel_id}`,
+      const agentId = await resolveAgent(sdk, "discord", msg.channel_id);
+      const response: any = await trigger({
+        function_id: "agent::chat",
+        payload: {
+          agentId,
+          message: msg.content,
+          sessionId: `discord:${msg.channel_id}`,
+        },
       });
 
       await sendMessage(msg.channel_id, response.content);

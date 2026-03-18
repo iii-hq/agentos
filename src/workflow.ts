@@ -1,8 +1,14 @@
-import { initSDK } from "./shared/config.js";
+import { registerWorker } from "iii-sdk";
+import { ENGINE_URL, OTEL_CONFIG, registerShutdown } from "./shared/config.js";
 import { requireAuth } from "./shared/utils.js";
 import { safePagination } from "./shared/validate.js";
 
-const { registerFunction, registerTrigger, trigger, triggerVoid } = initSDK("workflow");
+const sdk = registerWorker(ENGINE_URL, {
+  workerName: "workflow",
+  otel: OTEL_CONFIG,
+});
+registerShutdown(sdk);
+const { registerFunction, registerTrigger, trigger } = sdk;
 
 type StepMode = "sequential" | "fanout" | "collect" | "conditional" | "loop";
 type ErrorMode = "fail" | "skip" | "retry";
@@ -45,11 +51,11 @@ registerFunction(
     requireAuth(req);
     const workflow: Workflow = req.body || req;
     const id = workflow.id || crypto.randomUUID();
-    await trigger("state::set", {
+    await trigger({ function_id: "state::set", payload: {
       scope: "workflows",
       key: id,
       value: { ...workflow, id, createdAt: Date.now() },
-    });
+    } });
     return { id };
   },
 );
@@ -63,21 +69,21 @@ registerFunction(
   async (req: any) => {
     if (req.headers) requireAuth(req);
     const { workflowId, input, agentId } = req.body || req;
-    const workflow: Workflow = await trigger("state::get", {
+    const workflow: Workflow = await trigger({ function_id: "state::get", payload: {
       scope: "workflows",
       key: workflowId,
-    });
+    } });
 
     if (!workflow) throw new Error(`Workflow ${workflowId} not found`);
 
     if (agentId) {
       for (const step of workflow.steps) {
         const cap = step.functionId.split("::")[0];
-        await trigger("security::check_capability", {
+        await trigger({ function_id: "security::check_capability", payload: {
           agentId,
           capability: cap,
           resource: step.functionId,
-        });
+        } });
       }
     }
 
@@ -85,11 +91,11 @@ registerFunction(
     const vars: Record<string, unknown> = { input };
     const results: StepResult[] = [];
 
-    await trigger("state::set", {
+    await trigger({ function_id: "state::set", payload: {
       scope: "workflow_runs",
       key: runId,
       value: { runId, workflowId, status: "running", startedAt: Date.now() },
-    });
+    } });
 
     let i = 0;
     while (i < workflow.steps.length) {
@@ -103,11 +109,11 @@ registerFunction(
               step.promptTemplate || "{{input}}",
               vars,
             );
-            const output = await trigger(step.functionId, {
+            const output = await trigger({ function_id: step.functionId, payload: {
               ...vars,
               input: vars.input,
               prompt,
-            });
+            } });
             if (step.outputVar) vars[step.outputVar] = output;
             vars.input = output;
             results.push({
@@ -135,7 +141,7 @@ registerFunction(
                   fs.promptTemplate || "{{input}}",
                   vars,
                 );
-                return trigger(fs.functionId, { ...vars, prompt });
+                return trigger({ function_id: fs.functionId, payload: { ...vars, prompt } });
               }),
             );
 
@@ -158,11 +164,11 @@ registerFunction(
               step.promptTemplate || "{{__fanout}}",
               vars,
             );
-            const output = await trigger(step.functionId, {
+            const output = await trigger({ function_id: step.functionId, payload: {
               ...vars,
               fanoutResults: vars.__fanout,
               prompt,
-            });
+            } });
             if (step.outputVar) vars[step.outputVar] = output;
             vars.input = output;
             results.push({
@@ -190,7 +196,7 @@ registerFunction(
               step.promptTemplate || "{{input}}",
               vars,
             );
-            const output = await trigger(step.functionId, { ...vars, prompt });
+            const output = await trigger({ function_id: step.functionId, payload: { ...vars, prompt } });
             if (step.outputVar) vars[step.outputVar] = output;
             vars.input = output;
             results.push({
@@ -209,11 +215,11 @@ registerFunction(
                 step.promptTemplate || "{{input}}",
                 vars,
               );
-              loopOutput = await trigger(step.functionId, {
+              loopOutput = await trigger({ function_id: step.functionId, payload: {
                 ...vars,
                 prompt,
                 iteration: iter,
-              });
+              } });
               if (step.outputVar) vars[step.outputVar] = loopOutput;
               vars.input = loopOutput;
 
@@ -251,10 +257,10 @@ registerFunction(
                 step.promptTemplate || "{{input}}",
                 vars,
               );
-              const output = await trigger(step.functionId, {
+              const output = await trigger({ function_id: step.functionId, payload: {
                 ...vars,
                 prompt,
-              });
+              } });
               if (step.outputVar) vars[step.outputVar] = output;
               vars.input = output;
               results.push({
@@ -281,7 +287,7 @@ registerFunction(
       i++;
     }
 
-    await trigger("state::update", {
+    await trigger({ function_id: "state::update", payload: {
       scope: "workflow_runs",
       key: runId,
       operations: [
@@ -289,7 +295,7 @@ registerFunction(
         { type: "set", path: "completedAt", value: Date.now() },
         { type: "set", path: "results", value: results },
       ],
-    });
+    } });
 
     return { runId, results, vars };
   },
@@ -303,7 +309,7 @@ registerFunction(
   },
   async (req: any) => {
     if (req.headers) requireAuth(req);
-    return trigger("state::list", { scope: "workflows" });
+    return trigger({ function_id: "state::list", payload: { scope: "workflows" } });
   },
 );
 
@@ -319,9 +325,9 @@ registerFunction(
     const { workflowId } = input;
     const { limit, offset } = safePagination(input.limit, input.offset);
 
-    const all: any[] = (await trigger("state::list", {
+    const all: any[] = (await trigger({ function_id: "state::list", payload: {
       scope: "workflow_runs",
-    })) as any[];
+    } })) as any[];
     const filtered = all
       .filter((r: any) => r.value?.workflowId === workflowId)
       .slice(offset, offset + limit);
@@ -361,7 +367,7 @@ async function markRunFailed(
   error: string,
   results: StepResult[],
 ) {
-  await trigger("state::update", {
+  await trigger({ function_id: "state::update", payload: {
     scope: "workflow_runs",
     key: runId,
     operations: [
@@ -370,5 +376,5 @@ async function markRunFailed(
       { type: "set", path: "error", value: error },
       { type: "set", path: "results", value: results },
     ],
-  });
+  } });
 }

@@ -1,8 +1,22 @@
-import { initSDK, createSecretGetter } from "../shared/config.js";
+import { registerWorker, TriggerAction } from "iii-sdk";
+import { ENGINE_URL, OTEL_CONFIG, registerShutdown } from "../shared/config.js";
 import { splitMessage, resolveAgent } from "../shared/utils.js";
 
-const { registerFunction, registerTrigger, trigger, triggerVoid } = initSDK("channel-twist");
-const getSecret = createSecretGetter(trigger);
+const sdk = registerWorker(ENGINE_URL, {
+  workerName: "channel-twist",
+  otel: OTEL_CONFIG,
+});
+registerShutdown(sdk);
+const { registerFunction, registerTrigger, trigger } = sdk;
+
+async function getSecret(key: string): Promise<string> {
+  try {
+    const result = await sdk.trigger({ function_id: "vault::get", payload: { key } });
+    return result?.value || process.env[key] || "";
+  } catch {
+    return process.env[key] || "";
+  }
+}
 const API_URL = "https://api.twist.com/api/v3";
 
 registerFunction(
@@ -19,20 +33,27 @@ registerFunction(
     const channelKey = thread_id
       ? `thread:${thread_id}`
       : `channel:${channel_id}`;
-    const agentId = await resolveAgent(trigger, "twist", channelKey);
+    const agentId = await resolveAgent(sdk, "twist", channelKey);
 
-    const response: any = await trigger("agent::chat", {
-      agentId,
-      message: content,
-      sessionId: `twist:${channelKey}`,
+    const response: any = await trigger({
+      function_id: "agent::chat",
+      payload: {
+        agentId,
+        message: content,
+        sessionId: `twist:${channelKey}`,
+      },
     });
 
     await sendMessage(thread_id || channel_id, response.content, !!thread_id);
 
-    triggerVoid("security::audit", {
-      type: "channel_message",
-      agentId,
-      detail: { channel: "twist", channelKey, creator },
+    trigger({
+      function_id: "security::audit",
+      payload: {
+        type: "channel_message",
+        agentId,
+        detail: { channel: "twist", channelKey, creator },
+      },
+      action: TriggerAction.Void(),
     });
 
     return { status_code: 200, body: { ok: true } };

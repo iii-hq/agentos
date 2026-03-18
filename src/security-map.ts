@@ -1,8 +1,16 @@
-import { initSDK } from "./shared/config.js";
+import { registerWorker, TriggerAction } from "iii-sdk";
+import { ENGINE_URL, OTEL_CONFIG, registerShutdown } from "./shared/config.js";
 import { createHmac, randomBytes, timingSafeEqual } from "crypto";
 import { requireAuth } from "./shared/utils.js";
 
-const { registerFunction, registerTrigger, trigger, triggerVoid } = initSDK("security-map");
+const sdk = registerWorker(ENGINE_URL, {
+  workerName: "security-map",
+  otel: OTEL_CONFIG,
+});
+registerShutdown(sdk);
+const { registerFunction, registerTrigger, trigger } = sdk;
+const triggerVoid = (id: string, payload: unknown) =>
+  trigger({ function_id: id, payload, action: TriggerAction.Void() });
 
 const NONCE_TTL_MS = 5 * 60 * 1000;
 const CHALLENGE_WINDOW_MS = 60 * 1000;
@@ -27,10 +35,13 @@ registerFunction(
     const nonce = randomBytes(32).toString("hex");
     const timestamp = Date.now();
 
-    await trigger("state::set", {
-      scope: "map_challenges",
-      key: nonce,
-      value: { nonce, timestamp, sourceAgent, targetAgent },
+    await trigger({
+      function_id: "state::set",
+      payload: {
+        scope: "map_challenges",
+        key: nonce,
+        value: { nonce, timestamp, sourceAgent, targetAgent },
+      },
     });
 
     triggerVoid("security::audit", {
@@ -63,8 +74,9 @@ registerFunction(
       throw new Error("nonce, sourceAgent, and responderAgent are required");
     }
 
-    const secretEntry: any = await trigger("vault::get", {
-      key: `map:${responderAgent}`,
+    const secretEntry: any = await trigger({
+      function_id: "vault::get",
+      payload: { key: `map:${responderAgent}` },
     }).catch(() => null);
 
     if (!secretEntry?.value) {
@@ -94,15 +106,15 @@ registerFunction(
       throw new Error("nonce, signature, and responderAgent are required");
     }
 
-    const challenge: any = await trigger("state::get", {
-      scope: "map_challenges",
-      key: nonce,
+    const challenge: any = await trigger({
+      function_id: "state::get",
+      payload: { scope: "map_challenges", key: nonce },
     }).catch(() => null);
 
     if (!challenge) {
-      await trigger("state::delete", {
-        scope: "map_challenges",
-        key: nonce,
+      await trigger({
+        function_id: "state::delete",
+        payload: { scope: "map_challenges", key: nonce },
       }).catch(() => {});
       triggerVoid("security::audit", {
         type: "map_verify_failed",
@@ -112,7 +124,10 @@ registerFunction(
     }
 
     if (Date.now() - challenge.timestamp > CHALLENGE_WINDOW_MS) {
-      await trigger("state::delete", { scope: "map_challenges", key: nonce });
+      await trigger({
+        function_id: "state::delete",
+        payload: { scope: "map_challenges", key: nonce },
+      });
       triggerVoid("security::audit", {
         type: "map_verify_failed",
         detail: { reason: "expired", responderAgent },
@@ -120,15 +135,15 @@ registerFunction(
       return { verified: false, reason: "challenge_expired" };
     }
 
-    const usedNonce: any = await trigger("state::get", {
-      scope: "map_used_nonces",
-      key: nonce,
+    const usedNonce: any = await trigger({
+      function_id: "state::get",
+      payload: { scope: "map_used_nonces", key: nonce },
     }).catch(() => null);
 
     if (usedNonce) {
-      await trigger("state::delete", {
-        scope: "map_challenges",
-        key: nonce,
+      await trigger({
+        function_id: "state::delete",
+        payload: { scope: "map_challenges", key: nonce },
       }).catch(() => {});
       triggerVoid("security::audit", {
         type: "map_verify_failed",
@@ -137,8 +152,9 @@ registerFunction(
       return { verified: false, reason: "replay_detected" };
     }
 
-    const secretEntry: any = await trigger("vault::get", {
-      key: `map:${responderAgent}`,
+    const secretEntry: any = await trigger({
+      function_id: "vault::get",
+      payload: { key: `map:${responderAgent}` },
     }).catch(() => null);
 
     if (!secretEntry?.value) {
@@ -156,18 +172,24 @@ registerFunction(
       expectedBuf.length === signatureBuf.length &&
       timingSafeEqual(expectedBuf, signatureBuf);
 
-    await trigger("state::set", {
-      scope: "map_used_nonces",
-      key: nonce,
-      value: { usedAt: Date.now(), responderAgent },
-    });
-
-    await trigger("state::delete", { scope: "map_challenges", key: nonce });
-
-    setTimeout(async () => {
-      await trigger("state::delete", {
+    await trigger({
+      function_id: "state::set",
+      payload: {
         scope: "map_used_nonces",
         key: nonce,
+        value: { usedAt: Date.now(), responderAgent },
+      },
+    });
+
+    await trigger({
+      function_id: "state::delete",
+      payload: { scope: "map_challenges", key: nonce },
+    });
+
+    setTimeout(async () => {
+      await trigger({
+        function_id: "state::delete",
+        payload: { scope: "map_used_nonces", key: nonce },
       }).catch(() => {});
     }, NONCE_TTL_MS);
 

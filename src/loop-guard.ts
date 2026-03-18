@@ -1,7 +1,13 @@
-import { initSDK } from "./shared/config.js";
+import { registerWorker, TriggerAction } from "iii-sdk";
+import { ENGINE_URL, OTEL_CONFIG, registerShutdown } from "./shared/config.js";
 import { createHash } from "crypto";
 
-const { registerFunction, trigger, triggerVoid } = initSDK("loop-guard");
+const sdk = registerWorker(ENGINE_URL, {
+  workerName: "loop-guard",
+  otel: OTEL_CONFIG,
+});
+registerShutdown(sdk);
+const { registerFunction, trigger } = sdk;
 
 interface CallRecord {
   hash: string;
@@ -22,26 +28,26 @@ const AGENT_TTL_MS = 3_600_000;
 
 async function getAgentIndex(): Promise<string[]> {
   return (
-    (await trigger("state::get", {
-      scope: "loop_guard_history",
-      key: "_index",
+    (await trigger({
+      function_id: "state::get",
+      payload: { scope: "loop_guard_history", key: "_index" },
     })) || []
   );
 }
 
 async function setAgentIndex(index: string[]): Promise<void> {
-  await triggerVoid("state::set", {
-    scope: "loop_guard_history",
-    key: "_index",
-    value: index,
+  await trigger({
+    function_id: "state::set",
+    payload: { scope: "loop_guard_history", key: "_index", value: index },
+    action: TriggerAction.Void(),
   });
 }
 
 async function getWarningKeysForAgent(agentId: string): Promise<string[]> {
   return (
-    (await trigger("state::get", {
-      scope: "loop_guard_warnings",
-      key: `_keys:${agentId}`,
+    (await trigger({
+      function_id: "state::get",
+      payload: { scope: "loop_guard_warnings", key: `_keys:${agentId}` },
     })) || []
   );
 }
@@ -50,20 +56,20 @@ async function setWarningKeysForAgent(
   agentId: string,
   keys: string[],
 ): Promise<void> {
-  await triggerVoid("state::set", {
-    scope: "loop_guard_warnings",
-    key: `_keys:${agentId}`,
-    value: keys,
+  await trigger({
+    function_id: "state::set",
+    payload: { scope: "loop_guard_warnings", key: `_keys:${agentId}`, value: keys },
+    action: TriggerAction.Void(),
   });
 }
 
 async function clearWarningBuckets(agentId: string): Promise<void> {
   const keys = await getWarningKeysForAgent(agentId);
   for (const key of keys) {
-    await triggerVoid("state::set", {
-      scope: "loop_guard_warnings",
-      key,
-      value: null,
+    await trigger({
+      function_id: "state::set",
+      payload: { scope: "loop_guard_warnings", key, value: null },
+      action: TriggerAction.Void(),
     });
   }
   await setWarningKeysForAgent(agentId, []);
@@ -74,24 +80,24 @@ async function evictStaleAgents() {
   const index = await getAgentIndex();
   const remaining: string[] = [];
   for (const agentId of index) {
-    const history: CallRecord[] | null = await trigger("state::get", {
-      scope: "loop_guard_history",
-      key: agentId,
+    const history: CallRecord[] | null = await trigger({
+      function_id: "state::get",
+      payload: { scope: "loop_guard_history", key: agentId },
     });
     if (!history || history.length === 0) {
       continue;
     }
     const lastEntry = history[history.length - 1];
     if (lastEntry && now - lastEntry.timestamp > AGENT_TTL_MS) {
-      await triggerVoid("state::set", {
-        scope: "loop_guard_history",
-        key: agentId,
-        value: null,
+      await trigger({
+        function_id: "state::set",
+        payload: { scope: "loop_guard_history", key: agentId, value: null },
+        action: TriggerAction.Void(),
       });
-      await triggerVoid("state::set", {
-        scope: "loop_guard_counts",
-        key: agentId,
-        value: null,
+      await trigger({
+        function_id: "state::set",
+        payload: { scope: "loop_guard_counts", key: agentId, value: null },
+        action: TriggerAction.Void(),
       });
       await clearWarningBuckets(agentId);
     } else {
@@ -126,15 +132,15 @@ registerFunction(
     resultHash?: string;
   }) => {
     const prevCalls: number =
-      (await trigger("state::get", {
-        scope: "loop_guard_counts",
-        key: agentId,
+      (await trigger({
+        function_id: "state::get",
+        payload: { scope: "loop_guard_counts", key: agentId },
       })) || 0;
     const agentCalls = prevCalls + 1;
-    await triggerVoid("state::set", {
-      scope: "loop_guard_counts",
-      key: agentId,
-      value: agentCalls,
+    await trigger({
+      function_id: "state::set",
+      payload: { scope: "loop_guard_counts", key: agentId, value: agentCalls },
+      action: TriggerAction.Void(),
     });
 
     if (agentCalls > PER_AGENT_CIRCUIT_BREAKER) {
@@ -146,9 +152,9 @@ registerFunction(
 
     const callHash = hashCall(toolName, params);
     const history: CallRecord[] =
-      (await trigger("state::get", {
-        scope: "loop_guard_history",
-        key: agentId,
+      (await trigger({
+        function_id: "state::get",
+        payload: { scope: "loop_guard_history", key: agentId },
       })) || [];
 
     const record: CallRecord = {
@@ -160,10 +166,10 @@ registerFunction(
 
     history.push(record);
     if (history.length > HISTORY_SIZE) history.shift();
-    await triggerVoid("state::set", {
-      scope: "loop_guard_history",
-      key: agentId,
-      value: history,
+    await trigger({
+      function_id: "state::set",
+      payload: { scope: "loop_guard_history", key: agentId, value: history },
+      action: TriggerAction.Void(),
     });
 
     const index = await getAgentIndex();
@@ -212,15 +218,15 @@ registerFunction(
     if (identicalCount >= warnAt) {
       const bucketKey = `${agentId}:${callHash}`;
       const prevWarnings: number =
-        (await trigger("state::get", {
-          scope: "loop_guard_warnings",
-          key: bucketKey,
+        (await trigger({
+          function_id: "state::get",
+          payload: { scope: "loop_guard_warnings", key: bucketKey },
         })) || 0;
       const warnings = prevWarnings + 1;
-      await triggerVoid("state::set", {
-        scope: "loop_guard_warnings",
-        key: bucketKey,
-        value: warnings,
+      await trigger({
+        function_id: "state::set",
+        payload: { scope: "loop_guard_warnings", key: bucketKey, value: warnings },
+        action: TriggerAction.Void(),
       });
 
       const warnKeys = await getWarningKeysForAgent(agentId);
@@ -251,16 +257,16 @@ registerFunction(
 registerFunction(
   { id: "guard::reset", description: "Reset loop guard state for an agent" },
   async ({ agentId }: { agentId: string }) => {
-    await triggerVoid("state::set", {
-      scope: "loop_guard_history",
-      key: agentId,
-      value: null,
+    await trigger({
+      function_id: "state::set",
+      payload: { scope: "loop_guard_history", key: agentId, value: null },
+      action: TriggerAction.Void(),
     });
     await clearWarningBuckets(agentId);
-    await triggerVoid("state::set", {
-      scope: "loop_guard_counts",
-      key: agentId,
-      value: null,
+    await trigger({
+      function_id: "state::set",
+      payload: { scope: "loop_guard_counts", key: agentId, value: null },
+      action: TriggerAction.Void(),
     });
     const index = await getAgentIndex();
     await setAgentIndex(index.filter((id) => id !== agentId));
@@ -272,9 +278,9 @@ registerFunction(
   { id: "guard::stats", description: "Get loop guard statistics" },
   async ({ agentId }: { agentId: string }) => {
     const history: CallRecord[] =
-      (await trigger("state::get", {
-        scope: "loop_guard_history",
-        key: agentId,
+      (await trigger({
+        function_id: "state::get",
+        payload: { scope: "loop_guard_history", key: agentId },
       })) || [];
     const callCounts = new Map<string, number>();
 
@@ -286,15 +292,17 @@ registerFunction(
     const warnEntries: [string, number][] = [];
     for (const key of warnKeys) {
       const val: number =
-        (await trigger("state::get", { scope: "loop_guard_warnings", key })) ||
-        0;
+        (await trigger({
+          function_id: "state::get",
+          payload: { scope: "loop_guard_warnings", key },
+        })) || 0;
       if (val > 0) warnEntries.push([key, val]);
     }
 
     const agentCalls: number =
-      (await trigger("state::get", {
-        scope: "loop_guard_counts",
-        key: agentId,
+      (await trigger({
+        function_id: "state::get",
+        payload: { scope: "loop_guard_counts", key: agentId },
       })) || 0;
 
     return {

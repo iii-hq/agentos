@@ -1,9 +1,17 @@
-import { initSDK } from "./shared/config.js";
+import { registerWorker, TriggerAction } from "iii-sdk";
+import { ENGINE_URL, OTEL_CONFIG, registerShutdown } from "./shared/config.js";
 import { requireAuth } from "./shared/utils.js";
 import { wrapZeroized, autoDispose } from "./security-zeroize.js";
 import { safeCall } from "./shared/errors.js";
 
-const { registerFunction, registerTrigger, trigger, triggerVoid } = initSDK("vault");
+const sdk = registerWorker(ENGINE_URL, {
+  workerName: "vault",
+  otel: OTEL_CONFIG,
+});
+registerShutdown(sdk);
+const { registerFunction, registerTrigger, trigger } = sdk;
+const triggerVoid = (id: string, payload: unknown) =>
+  trigger({ function_id: id, payload, action: TriggerAction.Void() });
 
 interface VaultEntry {
   key: string;
@@ -138,7 +146,7 @@ registerFunction(
     }
 
     const existing: any = await safeCall(
-      () => trigger("state::get", { scope: "vault", key: "__meta" }),
+      () => trigger({ function_id: "state::get", payload: { scope: "vault", key: "__meta" } }),
       null,
       { operation: "vault_init_meta", functionId: "vault::init" },
     );
@@ -149,14 +157,14 @@ registerFunction(
       salt = Buffer.from(existing.salt, "base64");
     } else {
       salt = crypto.getRandomValues(new Uint8Array(32));
-      await trigger("state::set", {
+      await trigger({ function_id: "state::set", payload: {
         scope: "vault",
         key: "__meta",
         value: {
           salt: Buffer.from(salt).toString("base64"),
           createdAt: Date.now(),
         },
-      });
+      } });
     }
 
     vault.cryptoKey = await deriveKey(password, salt);
@@ -200,7 +208,7 @@ registerFunction(
     };
 
     const existing: any = await safeCall(
-      () => trigger("state::get", { scope: "vault", key }),
+      () => trigger({ function_id: "state::get", payload: { scope: "vault", key } }),
       null,
       { operation: "vault_set_lookup", functionId: "vault::set" },
     );
@@ -209,7 +217,7 @@ registerFunction(
       entry.createdAt = existing.createdAt;
     }
 
-    await trigger("state::set", { scope: "vault", key, value: entry });
+    await trigger({ function_id: "state::set", payload: { scope: "vault", key, value: entry } });
 
     triggerVoid("security::audit", {
       type: "vault_set",
@@ -234,10 +242,10 @@ registerFunction(
 
     const entry = await safeCall(
       () =>
-        trigger("state::get", {
+        trigger({ function_id: "state::get", payload: {
           scope: "vault",
           key,
-        }) as Promise<VaultEntry | null>,
+        } }) as Promise<VaultEntry | null>,
       null,
       { operation: "vault_get_lookup", functionId: "vault::get" },
     );
@@ -279,7 +287,7 @@ registerFunction(
     assertUnlocked();
     resetAutoLock();
 
-    const entries: any = await trigger("state::list", { scope: "vault" }).catch(
+    const entries: any = await trigger({ function_id: "state::list", payload: { scope: "vault" } }).catch(
       () => [],
     );
 
@@ -309,7 +317,7 @@ registerFunction(
 
     if (key === "__meta") throw new Error("Cannot delete vault metadata");
 
-    await trigger("state::delete", { scope: "vault", key });
+    await trigger({ function_id: "state::delete", payload: { scope: "vault", key } });
 
     triggerVoid("security::audit", {
       type: "vault_delete",
@@ -335,31 +343,31 @@ registerFunction(
       throw new Error("New password must be at least 8 characters");
     }
 
-    const meta: any = await trigger("state::get", {
+    const meta: any = await trigger({ function_id: "state::get", payload: {
       scope: "vault",
       key: "__meta",
-    });
+    } });
     const oldSalt = Buffer.from(meta.salt, "base64");
     const oldKey = await deriveKey(currentPassword, oldSalt);
 
-    const entries: any = await trigger("state::list", { scope: "vault" }).catch(
+    const entries: any = await trigger({ function_id: "state::list", payload: { scope: "vault" } }).catch(
       () => [],
     );
     const credentials = entries.filter(
       (e: any) => e.key !== "__meta" && e.value?.ciphertext,
     );
 
-    await trigger("state::set", {
+    await trigger({ function_id: "state::set", payload: {
       scope: "vault_backup",
       key: "__meta",
       value: meta,
-    });
+    } });
     for (const entry of credentials) {
-      await trigger("state::set", {
+      await trigger({ function_id: "state::set", payload: {
         scope: "vault_backup",
         key: entry.key,
         value: entry.value,
-      });
+      } });
     }
 
     const newSalt = crypto.getRandomValues(new Uint8Array(32));
@@ -387,10 +395,10 @@ registerFunction(
 
     try {
       for (const { key, value } of updates) {
-        await trigger("state::set", { scope: "vault", key, value });
+        await trigger({ function_id: "state::set", payload: { scope: "vault", key, value } });
       }
 
-      await trigger("state::set", {
+      await trigger({ function_id: "state::set", payload: {
         scope: "vault",
         key: "__meta",
         value: {
@@ -398,25 +406,25 @@ registerFunction(
           createdAt: meta.createdAt,
           rotatedAt: Date.now(),
         },
-      });
+      } });
     } catch (err) {
       for (const entry of credentials) {
         const backup: any = await safeCall(
           () =>
-            trigger("state::get", { scope: "vault_backup", key: entry.key }),
+            trigger({ function_id: "state::get", payload: { scope: "vault_backup", key: entry.key } }),
           null,
           { operation: "vault_rotate_rollback", functionId: "vault::rotate" },
         );
         if (backup) {
-          await trigger("state::set", {
+          await trigger({ function_id: "state::set", payload: {
             scope: "vault",
             key: entry.key,
             value: backup,
-          });
+          } });
         }
       }
       const backupMeta: any = await safeCall(
-        () => trigger("state::get", { scope: "vault_backup", key: "__meta" }),
+        () => trigger({ function_id: "state::get", payload: { scope: "vault_backup", key: "__meta" } }),
         null,
         {
           operation: "vault_rotate_rollback_meta",
@@ -424,11 +432,11 @@ registerFunction(
         },
       );
       if (backupMeta) {
-        await trigger("state::set", {
+        await trigger({ function_id: "state::set", payload: {
           scope: "vault",
           key: "__meta",
           value: backupMeta,
-        });
+        } });
       }
 
       triggerVoid("security::audit", {
@@ -464,28 +472,28 @@ registerFunction(
     assertUnlocked();
     resetAutoLock();
 
-    const meta: any = await trigger("state::get", {
+    const meta: any = await trigger({ function_id: "state::get", payload: {
       scope: "vault",
       key: "__meta",
-    });
-    const entries: any = await trigger("state::list", { scope: "vault" }).catch(
+    } });
+    const entries: any = await trigger({ function_id: "state::list", payload: { scope: "vault" } }).catch(
       () => [],
     );
     const credentials = entries.filter(
       (e: any) => e.key !== "__meta" && e.value?.ciphertext,
     );
 
-    await trigger("state::set", {
+    await trigger({ function_id: "state::set", payload: {
       scope: "vault_backup",
       key: "__meta",
       value: meta,
-    });
+    } });
     for (const entry of credentials) {
-      await trigger("state::set", {
+      await trigger({ function_id: "state::set", payload: {
         scope: "vault_backup",
         key: entry.key,
         value: entry.value,
-      });
+      } });
     }
 
     triggerVoid("security::audit", {
@@ -508,14 +516,14 @@ registerFunction(
     const { password } = req.body || req;
 
     const backupMeta: any = await safeCall(
-      () => trigger("state::get", { scope: "vault_backup", key: "__meta" }),
+      () => trigger({ function_id: "state::get", payload: { scope: "vault_backup", key: "__meta" } }),
       null,
       { operation: "vault_restore_meta", functionId: "vault::restore" },
     );
     if (!backupMeta) throw new Error("No vault backup found");
 
     const backupEntries: any = await safeCall(
-      () => trigger("state::list", { scope: "vault_backup" }),
+      () => trigger({ function_id: "state::list", payload: { scope: "vault_backup" } }),
       [],
       { operation: "vault_restore_list", functionId: "vault::restore" },
     );
@@ -523,17 +531,17 @@ registerFunction(
       (e: any) => e.key !== "__meta" && e.value?.ciphertext,
     );
 
-    await trigger("state::set", {
+    await trigger({ function_id: "state::set", payload: {
       scope: "vault",
       key: "__meta",
       value: backupMeta,
-    });
+    } });
     for (const entry of credentials) {
-      await trigger("state::set", {
+      await trigger({ function_id: "state::set", payload: {
         scope: "vault",
         key: entry.key,
         value: entry.value,
-      });
+      } });
     }
 
     if (password) {

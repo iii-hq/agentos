@@ -628,7 +628,6 @@ Built-in bridge to [agenstskills.com](https://agenstskills.com) for skill discov
 | Queue | — | Built-in job queue |
 | PubSub | — | Event pub/sub |
 | Cron | — | Scheduled jobs |
-| KV Server | — | Key-value store |
 | Observability | — | OpenTelemetry metrics |
 
 ## Project Structure
@@ -638,7 +637,8 @@ agentos/
 ├── Cargo.toml              Rust workspace
 ├── package.json            Node.js package
 ├── config.yaml             iii-engine configuration
-├── vitest.config.ts        Test configuration
+├── vitest.config.ts        Unit/integration test configuration
+├── vitest.e2e.config.ts    E2E test configuration
 │
 ├── crates/                 Rust crates (18 — hot path + control plane)
 │   ├── agent-core/         ReAct agent loop
@@ -692,12 +692,13 @@ agentos/
 
 ## Testing
 
-2,727 tests across three languages:
+Test suites:
 
 ```bash
-npx vitest --run          # 1,660 TypeScript tests (65 files)
-cargo test --workspace    # 906 Rust tests (10 crates)
-python3 -m pytest         # 161 Python tests
+npx vitest --run                              # TypeScript unit/integration
+npm run test:e2e                              # Black-box API e2e (requires AGENTOS_API_KEY)
+cargo test --workspace                        # Rust crates
+python3 -m pytest                             # Python worker tests
 ```
 
 ## How It Works
@@ -706,7 +707,7 @@ Every component is a **Worker** that registers **Functions** and binds them to *
 
 ```rust
 // Rust worker
-let iii = III::new("ws://localhost:49134");
+let iii = register_worker("ws://localhost:49134", InitOptions::default());
 
 iii.register_function_with_description(
     "agent::chat",
@@ -718,10 +719,13 @@ iii.register_trigger("queue", "agent::chat", json!({ "topic": "agent.inbox" }))?
 ```
 
 ```typescript
-// TypeScript worker (iii-sdk v0.8.0)
-import { initSDK } from "./shared/config.js";
+// TypeScript worker (direct iii-sdk registerWorker API)
+import { registerWorker } from "iii-sdk";
+import { ENGINE_URL, OTEL_CONFIG, registerShutdown } from "./shared/config.js";
 
-const { registerFunction, registerTrigger, trigger } = initSDK("api");
+const sdk = registerWorker(ENGINE_URL, { workerName: "api", otel: OTEL_CONFIG });
+registerShutdown(sdk);
+const { registerFunction, registerTrigger, trigger } = sdk;
 
 registerFunction(
   {
@@ -771,7 +775,7 @@ HTTP POST /v1/chat/completions
 
 ## Requirements
 
-- [iii-engine](https://iii.dev) v0.8+ (iii-sdk v0.8.0 with built-in OTel, cron triggers, metadata schemas)
+- [iii-engine](https://iii.dev) current stable (iii-sdk registerWorker API with built-in OTel, cron triggers, metadata schemas)
 - Rust 1.75+
 - Node.js 20+
 - Python 3.11+ (optional, for embeddings)

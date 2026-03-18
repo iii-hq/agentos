@@ -1,7 +1,13 @@
-import { initSDK } from "../shared/config.js";
+import { registerWorker } from "iii-sdk";
+import { ENGINE_URL, OTEL_CONFIG, registerShutdown } from "../shared/config.js";
 import { splitMessage, resolveAgent, assertNoSsrf } from "../shared/utils.js";
 
-const { registerFunction, registerTrigger, trigger, triggerVoid } = initSDK("channel-webhook");
+const sdk = registerWorker(ENGINE_URL, {
+  workerName: "channel-webhook",
+  otel: OTEL_CONFIG,
+});
+registerShutdown(sdk);
+const { registerFunction, registerTrigger, trigger } = sdk;
 
 registerFunction(
   {
@@ -13,7 +19,7 @@ registerFunction(
     const channelId =
       path_params?.channelId || query_params?.channel || "default";
 
-    const agentId = await resolveAgent(trigger, "webhook", channelId);
+    const agentId = await resolveAgent(sdk, "webhook", channelId);
 
     const message =
       body?.message ||
@@ -21,10 +27,13 @@ registerFunction(
       body?.content ||
       "[Unrecognized webhook payload]";
 
-    const response: any = await trigger("agent::chat", {
-      agentId,
-      message,
-      sessionId: `webhook:${channelId}`,
+    const response: any = await trigger({
+      function_id: "agent::chat",
+      payload: {
+        agentId,
+        message,
+        sessionId: `webhook:${channelId}`,
+      },
     });
 
     const callbackUrl = body?.callback_url || body?.response_url;
@@ -63,10 +72,13 @@ registerFunction(
     agentId: string;
     callbackUrl?: string;
   }) => {
-    await trigger("state::set", {
-      scope: "channel_agents",
-      key: `webhook:${channelId}`,
-      value: { agentId, callbackUrl, configuredAt: Date.now() },
+    await trigger({
+      function_id: "state::set",
+      payload: {
+        scope: "channel_agents",
+        key: `webhook:${channelId}`,
+        value: { agentId, callbackUrl, configuredAt: Date.now() },
+      },
     });
     return { configured: true, channelId };
   },

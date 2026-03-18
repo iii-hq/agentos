@@ -1,6 +1,12 @@
-import { initSDK } from "./shared/config.js";
+import { registerWorker } from "iii-sdk";
+import { ENGINE_URL, OTEL_CONFIG, registerShutdown } from "./shared/config.js";
 
-const { registerFunction, registerTrigger, trigger } = initSDK("knowledge-graph");
+const sdk = registerWorker(ENGINE_URL, {
+  workerName: "knowledge-graph",
+  otel: OTEL_CONFIG,
+});
+registerShutdown(sdk);
+const { registerFunction, registerTrigger, trigger } = sdk;
 
 interface TemporalKGEntity {
   entity: string;
@@ -78,28 +84,30 @@ registerFunction(
       agentId,
     };
 
-    await trigger("state::set", {
-      scope,
-      key: `${entity}:${version}`,
-      value: entry,
+    await trigger({
+      function_id: "state::set",
+      payload: { scope, key: `${entity}:${version}`, value: entry },
     });
 
-    await trigger("state::set", {
-      scope,
-      key: `${entity}:latest`,
-      value: { version, key: `${entity}:${version}` },
+    await trigger({
+      function_id: "state::set",
+      payload: {
+        scope,
+        key: `${entity}:latest`,
+        value: { version, key: `${entity}:${version}` },
+      },
     });
 
     for (const rel of entry.relations) {
-      const targetLatest: any = await trigger("state::get", {
-        scope,
-        key: `${rel.target}:latest`,
+      const targetLatest: any = await trigger({
+        function_id: "state::get",
+        payload: { scope, key: `${rel.target}:latest` },
       }).catch(() => null);
 
       if (targetLatest) {
-        const targetEntry: any = await trigger("state::get", {
-          scope,
-          key: targetLatest.key,
+        const targetEntry: any = await trigger({
+          function_id: "state::get",
+          payload: { scope, key: targetLatest.key },
         }).catch(() => null);
 
         if (
@@ -112,12 +120,15 @@ registerFunction(
             ...(targetEntry.relations || []),
             { target: entity, type: `inverse:${rel.type}` },
           ];
-          await trigger("state::update", {
-            scope,
-            key: targetLatest.key,
-            operations: [
-              { type: "set", path: "relations", value: updatedRelations },
-            ],
+          await trigger({
+            function_id: "state::update",
+            payload: {
+              scope,
+              key: targetLatest.key,
+              operations: [
+                { type: "set", path: "relations", value: updatedRelations },
+              ],
+            },
           });
         }
       }
@@ -364,7 +375,10 @@ registerFunction(
 );
 
 async function listAllEntries(scope: string): Promise<TemporalKGEntity[]> {
-  const raw = (await trigger("state::list", { scope }).catch(
+  const raw = (await trigger({
+    function_id: "state::list",
+    payload: { scope },
+  }).catch(
     () => [],
   )) as any[];
   return (raw || [])

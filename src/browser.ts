@@ -1,4 +1,5 @@
-import { initSDK } from "./shared/config.js";
+import { registerWorker, TriggerAction } from "iii-sdk";
+import { ENGINE_URL, OTEL_CONFIG, registerShutdown } from "./shared/config.js";
 import { execFile } from "child_process";
 import { promisify } from "util";
 import { writeFile, unlink } from "fs/promises";
@@ -8,7 +9,14 @@ import { assertNoSsrf, requireAuth } from "./shared/utils.js";
 
 const execFileAsync = promisify(execFile);
 
-const { registerFunction, registerTrigger, trigger, triggerVoid } = initSDK("browser");
+const sdk = registerWorker(ENGINE_URL, {
+  workerName: "browser",
+  otel: OTEL_CONFIG,
+});
+registerShutdown(sdk);
+const { registerFunction, registerTrigger, trigger } = sdk;
+const triggerVoid = (id: string, payload: unknown) =>
+  sdk.trigger({ function_id: id, payload, action: TriggerAction.Void() });
 
 interface BrowserSession {
   id: string;
@@ -27,9 +35,9 @@ const DEFAULT_TIMEOUT_MS = 30_000;
 
 async function getSessionIndex(): Promise<string[]> {
   return (
-    (await trigger("state::get", {
-      scope: "browser_sessions",
-      key: "_index",
+    (await trigger({
+      function_id: "state::get",
+      payload: { scope: "browser_sessions", key: "_index" },
     })) || []
   );
 }
@@ -43,9 +51,9 @@ async function setSessionIndex(index: string[]): Promise<void> {
 }
 
 async function getSession(agentId: string): Promise<BrowserSession> {
-  const session: BrowserSession | null = await trigger("state::get", {
-    scope: "browser_sessions",
-    key: agentId,
+  const session: BrowserSession | null = await trigger({
+    function_id: "state::get",
+    payload: { scope: "browser_sessions", key: agentId },
   });
   if (!session) throw new Error(`No browser session for agent: ${agentId}`);
   return session;
@@ -95,9 +103,9 @@ async function cleanupIdleSessions() {
   const index = await getSessionIndex();
   const remaining: string[] = [];
   for (const agentId of index) {
-    const session: BrowserSession | null = await trigger("state::get", {
-      scope: "browser_sessions",
-      key: agentId,
+    const session: BrowserSession | null = await trigger({
+      function_id: "state::get",
+      payload: { scope: "browser_sessions", key: agentId },
     });
     if (!session || now - session.lastActivity > IDLE_TIMEOUT_MS) {
       if (session) {
@@ -185,9 +193,9 @@ registerFunction(
   async (req: any) => {
     if (req.headers) requireAuth(req);
     const { agentId, headless, viewport } = req.body || req;
-    const existing: BrowserSession | null = await trigger("state::get", {
-      scope: "browser_sessions",
-      key: agentId,
+    const existing: BrowserSession | null = await trigger({
+      function_id: "state::get",
+      payload: { scope: "browser_sessions", key: agentId },
     });
     if (existing)
       throw new Error(`Session already exists for agent: ${agentId}`);
@@ -239,9 +247,9 @@ registerFunction(
     const index = await getSessionIndex();
     const list = [];
     for (const agentId of index) {
-      const s: BrowserSession | null = await trigger("state::get", {
-        scope: "browser_sessions",
-        key: agentId,
+      const s: BrowserSession | null = await trigger({
+        function_id: "state::get",
+        payload: { scope: "browser_sessions", key: agentId },
       });
       if (s) {
         list.push({
@@ -380,9 +388,9 @@ registerFunction(
   async (req: any) => {
     if (req.headers) requireAuth(req);
     const { agentId } = req.body || req;
-    const session: BrowserSession | null = await trigger("state::get", {
-      scope: "browser_sessions",
-      key: agentId,
+    const session: BrowserSession | null = await trigger({
+      function_id: "state::get",
+      payload: { scope: "browser_sessions", key: agentId },
     });
     if (!session) throw new Error(`No browser session for agent: ${agentId}`);
 

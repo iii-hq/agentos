@@ -1,7 +1,13 @@
-import { initSDK } from "./shared/config.js";
+import { registerWorker } from "iii-sdk";
+import { ENGINE_URL, OTEL_CONFIG, registerShutdown } from "./shared/config.js";
 import * as vm from "node:vm";
 
-const { registerFunction } = initSDK("code-agent");
+const sdk = registerWorker(ENGINE_URL, {
+  workerName: "code-agent",
+  otel: OTEL_CONFIG,
+});
+registerShutdown(sdk);
+const { registerFunction } = sdk;
 
 const DEFAULT_TIMEOUT_MS = 5_000;
 const MAX_TIMEOUT_MS = 30_000;

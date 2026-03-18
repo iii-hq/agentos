@@ -1,6 +1,12 @@
-import { initSDK } from "./shared/config.js";
+import { registerWorker } from "iii-sdk";
+import { ENGINE_URL, OTEL_CONFIG, registerShutdown } from "./shared/config.js";
 
-const { registerFunction, registerTrigger } = initSDK("model-catalog");
+const sdk = registerWorker(ENGINE_URL, {
+  workerName: "model-catalog",
+  otel: OTEL_CONFIG,
+});
+registerShutdown(sdk);
+const { registerFunction, registerTrigger } = sdk;
 
 type Tier = "frontier" | "smart" | "balanced" | "fast" | "local";
 

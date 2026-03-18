@@ -1,6 +1,12 @@
-import { initSDK } from "./shared/config.js";
+import { registerWorker } from "iii-sdk";
+import { ENGINE_URL, OTEL_CONFIG, registerShutdown } from "./shared/config.js";
 
-const { registerFunction, registerTrigger } = initSDK("security-headers");
+const sdk = registerWorker(ENGINE_URL, {
+  workerName: "security-headers",
+  otel: OTEL_CONFIG,
+});
+registerShutdown(sdk);
+const { registerFunction, registerTrigger } = sdk;
 
 export const SECURITY_HEADERS: Record<string, string> = {
   "Content-Security-Policy":

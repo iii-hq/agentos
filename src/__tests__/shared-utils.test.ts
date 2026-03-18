@@ -146,23 +146,26 @@ describe("assertNoSsrf", () => {
 describe("resolveAgent", () => {
   it("returns agentId from mapping", async () => {
     const trigger = vi.fn().mockResolvedValue({ agentId: "agent-42" });
-    const result = await resolveAgent(trigger, "slack", "C123");
+    const sdk = { trigger };
+    const result = await resolveAgent(sdk, "slack", "C123");
     expect(result).toBe("agent-42");
-    expect(trigger).toHaveBeenCalledWith("state::get", {
-      scope: "channel_agents",
-      key: "slack:C123",
+    expect(trigger).toHaveBeenCalledWith({
+      function_id: "state::get",
+      payload: { scope: "channel_agents", key: "slack:C123" },
     });
   });
 
   it("returns 'default' when no mapping exists", async () => {
     const trigger = vi.fn().mockResolvedValue(null);
-    const result = await resolveAgent(trigger, "slack", "C999");
+    const sdk = { trigger };
+    const result = await resolveAgent(sdk, "slack", "C999");
     expect(result).toBe("default");
   });
 
   it("returns 'default' when trigger fails", async () => {
     const trigger = vi.fn().mockRejectedValue(new Error("network"));
-    const result = await resolveAgent(trigger, "discord", "guild-1");
+    const sdk = { trigger };
+    const result = await resolveAgent(sdk, "discord", "guild-1");
     expect(result).toBe("default");
   });
 });

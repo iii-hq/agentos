@@ -68,14 +68,16 @@ export async function assertNoSsrf(urlStr: string): Promise<void> {
 }
 
 export async function resolveAgent(
-  trigger: (fn: string, data: any) => Promise<any>,
+  sdk: { trigger: (req: { function_id: string; payload: unknown }) => Promise<any> },
   channel: string,
   channelId: string,
 ): Promise<string> {
-  const mapping = await trigger("state::get", {
-    scope: "channel_agents",
-    key: `${channel}:${channelId}`,
-  }).catch(() => null);
+  const mapping = await sdk
+    .trigger({
+      function_id: "state::get",
+      payload: { scope: "channel_agents", key: `${channel}:${channelId}` },
+    })
+    .catch(() => null);
   return mapping?.agentId || "default";
 }
 

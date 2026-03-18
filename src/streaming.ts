@@ -1,7 +1,13 @@
-import { initSDK } from "./shared/config.js";
+import { registerWorker } from "iii-sdk";
+import { ENGINE_URL, OTEL_CONFIG, registerShutdown } from "./shared/config.js";
 import { requireAuth } from "./shared/utils.js";
 
-const { registerFunction, registerTrigger, trigger } = initSDK("streaming");
+const sdk = registerWorker(ENGINE_URL, {
+  workerName: "streaming",
+  otel: OTEL_CONFIG,
+});
+registerShutdown(sdk);
+const { registerFunction, registerTrigger, trigger } = sdk;
 
 registerFunction(
   {
@@ -13,27 +19,28 @@ registerFunction(
     if (req.headers) requireAuth(req);
     const { agentId, message, sessionId } = req.body || req;
 
-    const config: any = await trigger("state::get", {
-      scope: "agents",
-      key: agentId || "default",
+    const config: any = await trigger({
+      function_id: "state::get",
+      payload: { scope: "agents", key: agentId || "default" },
     }).catch(() => null);
 
-    const memories: any = await trigger("memory::recall", {
-      agentId: agentId || "default",
-      query: message,
-      limit: 10,
+    const memories: any = await trigger({
+      function_id: "memory::recall",
+      payload: { agentId: agentId || "default", query: message, limit: 10 },
     }).catch(() => []);
 
-    const model = await trigger("llm::route", {
-      message,
-      toolCount: 0,
-      config: config?.model,
+    const model = await trigger({
+      function_id: "llm::route",
+      payload: { message, toolCount: 0, config: config?.model },
     });
 
-    const response: any = await trigger("llm::complete", {
-      model,
-      systemPrompt: config?.systemPrompt || "",
-      messages: [...memories, { role: "user", content: message }],
+    const response: any = await trigger({
+      function_id: "llm::complete",
+      payload: {
+        model,
+        systemPrompt: config?.systemPrompt || "",
+        messages: [...memories, { role: "user", content: message }],
+      },
     });
 
     return {
@@ -57,10 +64,9 @@ registerFunction(
     if (req.headers) requireAuth(req);
     const { agentId, message, sessionId } = req.body || req;
 
-    const response: any = await trigger("agent::chat", {
-      agentId: agentId || "default",
-      message,
-      sessionId,
+    const response: any = await trigger({
+      function_id: "agent::chat",
+      payload: { agentId: agentId || "default", message, sessionId },
     });
 
     const chunks = chunkMarkdownAware(response.content || "", 20, 100);

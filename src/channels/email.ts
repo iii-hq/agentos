@@ -1,8 +1,14 @@
-import { initSDK } from "../shared/config.js";
+import { registerWorker, TriggerAction } from "iii-sdk";
+import { ENGINE_URL, OTEL_CONFIG, registerShutdown } from "../shared/config.js";
 import { createTransport } from "nodemailer";
 import { splitMessage, resolveAgent } from "../shared/utils.js";
 
-const { registerFunction, registerTrigger, trigger, triggerVoid } = initSDK("channel-email");
+const sdk = registerWorker(ENGINE_URL, {
+  workerName: "channel-email",
+  otel: OTEL_CONFIG,
+});
+registerShutdown(sdk);
+const { registerFunction, registerTrigger, trigger } = sdk;
 
 const transporter = createTransport({
   host: process.env.SMTP_HOST || "localhost",
@@ -25,20 +31,27 @@ registerFunction(
 
     if (!from || !text) return { status_code: 200, body: { ok: true } };
 
-    const agentId = await resolveAgent(trigger, "email", to);
+    const agentId = await resolveAgent(sdk, "email", to);
 
-    const response: any = await trigger("agent::chat", {
-      agentId,
-      message: `Subject: ${subject || "(none)"}\n\n${text}`,
-      sessionId: `email:${from}`,
+    const response: any = await trigger({
+      function_id: "agent::chat",
+      payload: {
+        agentId,
+        message: `Subject: ${subject || "(none)"}\n\n${text}`,
+        sessionId: `email:${from}`,
+      },
     });
 
     await sendMessage(from, `Re: ${subject || ""}`, response.content);
 
-    triggerVoid("security::audit", {
-      type: "channel_message",
-      agentId,
-      detail: { channel: "email", from, to },
+    trigger({
+      function_id: "security::audit",
+      payload: {
+        type: "channel_message",
+        agentId,
+        detail: { channel: "email", from, to },
+      },
+      action: TriggerAction.Void(),
     });
 
     return { status_code: 200, body: { ok: true } };

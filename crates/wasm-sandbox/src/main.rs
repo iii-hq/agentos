@@ -1,6 +1,6 @@
 use dashmap::DashMap;
+use iii_sdk::{register_worker, InitOptions, III};
 use iii_sdk::error::IIIError;
-use iii_sdk::iii::III;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::sync::Arc;
@@ -114,7 +114,7 @@ fn unpack_ptr_len(packed: i64) -> (u32, u32) {
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing_subscriber::fmt::init();
 
-    let iii = III::new("ws://localhost:49134");
+    let iii = register_worker("ws://localhost:49134", InitOptions::default())?;
 
     let mut config = Config::new();
     config.consume_fuel(true);

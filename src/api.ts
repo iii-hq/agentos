@@ -1,4 +1,5 @@
-import { initSDK } from "./shared/config.js";
+import { registerWorker } from "iii-sdk";
+import { ENGINE_URL, OTEL_CONFIG, registerShutdown } from "./shared/config.js";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { requireAuth, sanitizeId } from "./shared/utils.js";
@@ -15,7 +16,9 @@ function withSecHeaders(response: { status_code: number; body: any }): {
   return { ...response, headers: { ...SECURITY_HEADERS } };
 }
 
-const { registerFunction, registerTrigger, trigger } = initSDK("api");
+const sdk = registerWorker(ENGINE_URL, { workerName: "api", otel: OTEL_CONFIG });
+registerShutdown(sdk);
+const { registerFunction, registerTrigger, trigger } = sdk;
 
 const PKG_VERSION = (() => {
   try {
@@ -46,9 +49,12 @@ async function rateGuard(
 ): Promise<{ status_code: number; body: any } | null> {
   const rateResult: any = await safeCall(
     () =>
-      trigger("rate::check", {
-        ip: req.headers?.["x-forwarded-for"] || req.remote_addr || "unknown",
-        operation,
+      trigger({
+        function_id: "rate::check",
+        payload: {
+          ip: req.headers?.["x-forwarded-for"] || req.remote_addr || "unknown",
+          operation,
+        },
       }),
     { allowed: true },
     { operation: "rate_check", functionId: "api::rateGuard" },
@@ -131,10 +137,13 @@ registerFunction(
     const { model, messages } = req.body || req;
     const lastMessage = messages?.[messages.length - 1]?.content || "";
 
-    const response: any = await trigger("agent::chat", {
-      agentId: "default",
-      message: lastMessage,
-      sessionId: `api:${Date.now()}`,
+    const response: any = await trigger({
+      function_id: "agent::chat",
+      payload: {
+        agentId: "default",
+        message: lastMessage,
+        sessionId: `api:${Date.now()}`,
+      },
     });
 
     return withSecHeaders({
@@ -194,10 +203,9 @@ registerFunction(
     const agentId = sanitizeId(req.path_params?.id);
     const { message, sessionId } = req.body || req;
 
-    const response = await trigger("agent::chat", {
-      agentId,
-      message,
-      sessionId,
+    const response = await trigger({
+      function_id: "agent::chat",
+      payload: { agentId, message, sessionId },
     });
 
     return withSecHeaders({ status_code: 200, body: response });
@@ -216,7 +224,7 @@ registerFunction(
     const rateErr = await rateGuard(req, "read");
     if (rateErr) return rateErr;
 
-    const agents = await trigger("agent::list", {});
+    const agents = await trigger({ function_id: "agent::list", payload: {} });
     return withSecHeaders({ status_code: 200, body: agents });
   },
 );
@@ -243,7 +251,10 @@ registerFunction(
     const rateErr = await rateGuard(req, "write");
     if (rateErr) return rateErr;
 
-    const result = await trigger("agent::create", req.body || req);
+    const result = await trigger({
+      function_id: "agent::create",
+      payload: req.body || req,
+    });
     return withSecHeaders({ status_code: 201, body: result });
   },
 );
@@ -260,9 +271,12 @@ registerFunction(
     const rateErr = await rateGuard(req, "read");
     if (rateErr) return rateErr;
 
-    const agent = await trigger("state::get", {
-      scope: "agents",
-      key: sanitizeId(req.path_params?.id),
+    const agent = await trigger({
+      function_id: "state::get",
+      payload: {
+        scope: "agents",
+        key: sanitizeId(req.path_params?.id),
+      },
     });
     if (!agent)
       return withSecHeaders({
@@ -285,8 +299,9 @@ registerFunction(
     const rateErr = await rateGuard(req, "write");
     if (rateErr) return rateErr;
 
-    await trigger("agent::delete", {
-      agentId: sanitizeId(req.path_params?.id),
+    await trigger({
+      function_id: "agent::delete",
+      payload: { agentId: sanitizeId(req.path_params?.id) },
     });
     return withSecHeaders({ status_code: 204, body: null });
   },
@@ -304,8 +319,9 @@ registerFunction(
     const rateErr = await rateGuard(req, "read");
     if (rateErr) return rateErr;
 
-    const sessions = await trigger("state::list", {
-      scope: `sessions:${sanitizeId(req.path_params?.id)}`,
+    const sessions = await trigger({
+      function_id: "state::list",
+      payload: { scope: `sessions:${sanitizeId(req.path_params?.id)}` },
     });
     return withSecHeaders({ status_code: 200, body: sessions });
   },
@@ -341,7 +357,7 @@ registerFunction(
     if (rateErr) return rateErr;
 
     const workers: any = await safeCall(
-      () => trigger("engine::workers::list", {}),
+      () => trigger({ function_id: "engine::workers::list", payload: {} }),
       [],
       { operation: "list_workers", functionId: "api::health" },
     );
@@ -371,7 +387,10 @@ registerFunction(
 
     const today = new Date().toISOString().slice(0, 10);
     const costs = await safeCall(
-      () => trigger("state::get", { scope: "costs", key: today }),
+      () => trigger({
+        function_id: "state::get",
+        payload: { scope: "costs", key: today },
+      }),
       null,
       { operation: "get_costs", functionId: "api::costs" },
     );
@@ -397,10 +416,9 @@ registerFunction(
     const agentId = sanitizeId(req.path_params?.id);
     const { query, limit: rawLimit } = req.query_params || req.body || {};
     const limit = safeInt(rawLimit, 1, 200, 10);
-    const results = await trigger("memory::recall", {
-      agentId,
-      query,
-      limit,
+    const results = await trigger({
+      function_id: "memory::recall",
+      payload: { agentId, query, limit },
     });
     return withSecHeaders({ status_code: 200, body: results });
   },

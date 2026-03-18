@@ -1,7 +1,15 @@
-import { initSDK } from "./shared/config.js";
+import { registerWorker, TriggerAction } from "iii-sdk";
+import { ENGINE_URL, OTEL_CONFIG, registerShutdown } from "./shared/config.js";
 import { requireAuth } from "./shared/utils.js";
 
-const { registerFunction, registerTrigger, trigger, triggerVoid } = initSDK("rate-limiter");
+const sdk = registerWorker(ENGINE_URL, {
+  workerName: "rate-limiter",
+  otel: OTEL_CONFIG,
+});
+registerShutdown(sdk);
+const { registerFunction, registerTrigger, trigger } = sdk;
+const triggerVoid = (id: string, payload: unknown) =>
+  trigger({ function_id: id, payload, action: TriggerAction.Void() });
 
 interface GcraState {
   tat: number;
@@ -44,9 +52,9 @@ async function gcraCheck(
   cost: number,
   now: number,
 ): Promise<RateCheckResult> {
-  const state: GcraState | null = await trigger("state::get", {
-    scope: "rate_limiter",
-    key,
+  const state: GcraState | null = await trigger({
+    function_id: "state::get",
+    payload: { scope: "rate_limiter", key },
   });
 
   const increment = cost * EMISSION_INTERVAL_MS;
@@ -114,9 +122,9 @@ registerFunction(
 
     const result = await gcraCheck(key, cost, now);
 
-    const currentState: GcraState | null = await trigger("state::get", {
-      scope: "rate_limiter",
-      key,
+    const currentState: GcraState | null = await trigger({
+      function_id: "state::get",
+      payload: { scope: "rate_limiter", key },
     });
     triggerVoid("state::set", {
       scope: "rate_limits",
@@ -147,9 +155,9 @@ registerFunction(
   { id: "rate::get_status", description: "Get rate limit status for an IP" },
   async ({ ip }: { ip: string }) => {
     const key = `ip:${ip}`;
-    const state: GcraState | null = await trigger("state::get", {
-      scope: "rate_limiter",
-      key,
+    const state: GcraState | null = await trigger({
+      function_id: "state::get",
+      payload: { scope: "rate_limiter", key },
     });
 
     if (!state) {
@@ -192,9 +200,9 @@ registerFunction(
       value: null,
     });
 
-    await trigger("state::delete", {
-      scope: "rate_limits",
-      key,
+    await trigger({
+      function_id: "state::delete",
+      payload: { scope: "rate_limits", key },
     }).catch(() => null);
 
     return { reset: true, ip };
@@ -236,9 +244,9 @@ registerFunction(
     const emissionMs = (60 * 1000) / limit;
     const increment = cost * emissionMs;
 
-    const state: GcraState | null = await trigger("state::get", {
-      scope: "rate_limiter",
-      key,
+    const state: GcraState | null = await trigger({
+      function_id: "state::get",
+      payload: { scope: "rate_limiter", key },
     });
     if (!state) {
       const newTat = now + increment;
@@ -312,9 +320,9 @@ registerFunction(
   }) => {
     const limit = maxConcurrent || DEFAULT_AGENT_MAX_CONCURRENT;
     const current: number =
-      (await trigger("state::get", {
-        scope: "rate_concurrent",
-        key: agentId,
+      (await trigger({
+        function_id: "state::get",
+        payload: { scope: "rate_concurrent", key: agentId },
       })) || 0;
     if (current >= limit) {
       return { acquired: false, current, limit };
@@ -335,9 +343,9 @@ registerFunction(
   },
   async ({ agentId }: { agentId: string }) => {
     const current: number =
-      (await trigger("state::get", {
-        scope: "rate_concurrent",
-        key: agentId,
+      (await trigger({
+        function_id: "state::get",
+        payload: { scope: "rate_concurrent", key: agentId },
       })) || 0;
     const next = Math.max(0, current - 1);
     await triggerVoid("state::set", {

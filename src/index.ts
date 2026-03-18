@@ -1,7 +1,7 @@
 import { shutdownManager } from "./shared/shutdown.js";
 
 shutdownManager.initShutdown();
-console.log("AgentOS booting (iii-sdk v0.8.0, OTel enabled)");
+console.log("AgentOS booting (iii-sdk registerWorker API, OTel enabled)");
 
 import "./agent-core.js";
 import "./api.js";

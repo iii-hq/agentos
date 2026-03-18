@@ -1,7 +1,13 @@
-import { initSDK } from "./shared/config.js";
+import { registerWorker } from "iii-sdk";
+import { ENGINE_URL, OTEL_CONFIG, registerShutdown } from "./shared/config.js";
 import { requireAuth } from "./shared/utils.js";
 
-const { registerFunction, registerTrigger, trigger } = initSDK("a2a-cards");
+const sdk = registerWorker(ENGINE_URL, {
+  workerName: "a2a-cards",
+  otel: OTEL_CONFIG,
+});
+registerShutdown(sdk);
+const { registerFunction, registerTrigger, trigger } = sdk;
 
 interface A2aAgentCard {
   name: string;
@@ -27,20 +33,22 @@ registerFunction(
     metadata: { category: "a2a" },
   },
   async ({ agentId }: { agentId: string }): Promise<A2aAgentCard> => {
-    const config: any = await trigger("state::get", {
-      scope: "agents",
-      key: agentId,
+    const config: any = await trigger({
+      function_id: "state::get",
+      payload: { scope: "agents", key: agentId },
     });
 
     if (!config) throw new Error(`Agent not found: ${agentId}`);
 
-    const toolList = (await trigger("agent::list_tools", {
-      agentId,
+    const toolList = (await trigger({
+      function_id: "agent::list_tools",
+      payload: { agentId },
     }).catch(() => [])) as any[];
     const toolIds = toolList.map((t: any) => t.function_id || t.id);
 
-    const skills = (await trigger("state::list", {
-      scope: "skills",
+    const skills = (await trigger({
+      function_id: "state::list",
+      payload: { scope: "skills" },
     }).catch(() => [])) as any[];
     const skillEntries = skills
       .map((s: any) => s.value)
@@ -67,10 +75,9 @@ registerFunction(
       defaultOutputModes: ["text"],
     };
 
-    await trigger("state::set", {
-      scope: "a2a_cards",
-      key: agentId,
-      value: card,
+    await trigger({
+      function_id: "state::set",
+      payload: { scope: "a2a_cards", key: agentId, value: card },
     });
 
     return card;
@@ -85,16 +92,18 @@ registerFunction(
   },
   async (req: any) => {
     if (req.headers) requireAuth(req);
-    const agents = (await trigger("state::list", {
-      scope: "agents",
+    const agents = (await trigger({
+      function_id: "state::list",
+      payload: { scope: "agents" },
     }).catch(() => [])) as any[];
 
     const cards: A2aAgentCard[] = [];
     for (const agent of agents) {
       if (!agent.value?.id) continue;
       try {
-        const card = (await trigger("a2a::generate_card", {
-          agentId: agent.value.id,
+        const card = (await trigger({
+          function_id: "a2a::generate_card",
+          payload: { agentId: agent.value.id },
         })) as A2aAgentCard;
         cards.push(card);
       } catch {}
@@ -111,9 +120,9 @@ registerFunction(
     metadata: { category: "a2a" },
   },
   async () => {
-    const cached: any = await trigger("state::get", {
-      scope: "a2a_cards",
-      key: "orchestrator",
+    const cached: any = await trigger({
+      function_id: "state::get",
+      payload: { scope: "a2a_cards", key: "orchestrator" },
     }).catch(() => null);
 
     if (cached) return cached;

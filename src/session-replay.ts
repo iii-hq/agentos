@@ -1,6 +1,12 @@
-import { initSDK } from "./shared/config.js";
+import { registerWorker } from "iii-sdk";
+import { ENGINE_URL, OTEL_CONFIG, registerShutdown } from "./shared/config.js";
 
-const { registerFunction, registerTrigger, trigger } = initSDK("session-replay");
+const sdk = registerWorker(ENGINE_URL, {
+  workerName: "session-replay",
+  otel: OTEL_CONFIG,
+});
+registerShutdown(sdk);
+const { registerFunction, registerTrigger, trigger } = sdk;
 
 type ReplayAction = "llm_call" | "tool_call" | "tool_result" | "memory_op";
 
@@ -36,11 +42,14 @@ registerFunction(
       return { error: "sessionId, agentId, and action required" };
 
     const counterKey = `${sessionId}:counter`;
-    const updated: any = await trigger("state::update", {
-      scope: "replay",
-      key: counterKey,
-      operations: [{ type: "increment", path: "value", value: 1 }],
-      upsert: { value: 1 },
+    const updated: any = await trigger({
+      function_id: "state::update",
+      payload: {
+        scope: "replay",
+        key: counterKey,
+        operations: [{ type: "increment", path: "value", value: 1 }],
+        upsert: { value: 1 },
+      },
     }).catch(() => null);
 
     const sequence = updated?.value || Date.now();
@@ -56,10 +65,13 @@ registerFunction(
       sequence,
     };
 
-    await trigger("state::set", {
-      scope: "replay",
-      key: `${sessionId}:${String(sequence).padStart(8, "0")}`,
-      value: entry,
+    await trigger({
+      function_id: "state::set",
+      payload: {
+        scope: "replay",
+        key: `${sessionId}:${String(sequence).padStart(8, "0")}`,
+        value: entry,
+      },
     });
 
     return { recorded: true, sequence };
@@ -75,9 +87,10 @@ registerFunction(
   async ({ sessionId }: { sessionId: string }) => {
     if (!sessionId) return { error: "sessionId required" };
 
-    const raw = (await trigger("state::list", { scope: "replay" }).catch(
-      () => [],
-    )) as any[];
+    const raw = (await trigger({
+      function_id: "state::list",
+      payload: { scope: "replay" },
+    }).catch(() => [])) as any[];
     return raw
       .filter((e: any) => {
         if (!e.value?.sessionId || !e.value?.action) return false;
@@ -107,9 +120,10 @@ registerFunction(
     limit?: number;
   }) => {
     const limit = Math.max(1, Math.min(Number(rawLimit) || 50, 200));
-    const raw = (await trigger("state::list", { scope: "replay" }).catch(
-      () => [],
-    )) as any[];
+    const raw = (await trigger({
+      function_id: "state::list",
+      payload: { scope: "replay" },
+    }).catch(() => [])) as any[];
     const entries: ReplayEntry[] = raw
       .filter(
         (e: any) =>
@@ -162,7 +176,10 @@ registerFunction(
   async ({ sessionId }: { sessionId: string }) => {
     if (!sessionId) return { error: "sessionId required" };
 
-    const entries: ReplayEntry[] = await trigger("replay::get", { sessionId });
+    const entries: ReplayEntry[] = await trigger({
+      function_id: "replay::get",
+      payload: { sessionId },
+    });
     if (!entries?.length) return { error: "Session not found" };
 
     let totalDuration = 0;

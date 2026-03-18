@@ -1,12 +1,19 @@
 import { describe, it, expect, vi, beforeAll } from "vitest";
 
 const handlers: Record<string, Function> = {};
+const mockTrigger = vi.fn(async () => null);
+const mockTriggerVoid = vi.fn();
 vi.mock("iii-sdk", () => ({
-  init: () => ({
+  registerWorker: () => ({
     registerFunction: (config: any, handler: Function) => { handlers[config.id] = handler; },
     registerTrigger: vi.fn(),
-    trigger: vi.fn(async () => null),
+    trigger: (req: any) =>
+      req.action
+        ? mockTriggerVoid(req.function_id, req.payload)
+        : mockTrigger(req.function_id, req.payload),
+    shutdown: vi.fn(),
   }),
+  TriggerAction: { Void: () => ({}) },
 }));
 
 let SECURITY_HEADERS: Record<string, string>;

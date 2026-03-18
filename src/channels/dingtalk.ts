@@ -1,9 +1,23 @@
-import { initSDK, createSecretGetter } from "../shared/config.js";
+import { registerWorker, TriggerAction } from "iii-sdk";
+import { ENGINE_URL, OTEL_CONFIG, registerShutdown } from "../shared/config.js";
 import { createHmac } from "crypto";
 import { splitMessage, resolveAgent } from "../shared/utils.js";
 
-const { registerFunction, registerTrigger, trigger, triggerVoid } = initSDK("channel-dingtalk");
-const getSecret = createSecretGetter(trigger);
+const sdk = registerWorker(ENGINE_URL, {
+  workerName: "channel-dingtalk",
+  otel: OTEL_CONFIG,
+});
+registerShutdown(sdk);
+const { registerFunction, registerTrigger, trigger } = sdk;
+
+async function getSecret(key: string): Promise<string> {
+  try {
+    const result = await sdk.trigger({ function_id: "vault::get", payload: { key } });
+    return result?.value || process.env[key] || "";
+  } catch {
+    return process.env[key] || "";
+  }
+}
 
 const API_URL = "https://oapi.dingtalk.com/robot/send";
 
@@ -19,12 +33,15 @@ registerFunction(
     const content = text?.content?.trim();
     if (!content) return { status_code: 200, body: { ok: true } };
 
-    const agentId = await resolveAgent(trigger, "dingtalk", conversationId);
+    const agentId = await resolveAgent(sdk, "dingtalk", conversationId);
 
-    const response: any = await trigger("agent::chat", {
-      agentId,
-      message: content,
-      sessionId: `dingtalk:${conversationId}`,
+    const response: any = await trigger({
+      function_id: "agent::chat",
+      payload: {
+        agentId,
+        message: content,
+        sessionId: `dingtalk:${conversationId}`,
+      },
     });
 
     if (!response?.content) {
@@ -32,10 +49,14 @@ registerFunction(
     }
     await sendMessage(response.content);
 
-    triggerVoid("security::audit", {
-      type: "channel_message",
-      agentId,
-      detail: { channel: "dingtalk", conversationId, senderId },
+    trigger({
+      function_id: "security::audit",
+      payload: {
+        type: "channel_message",
+        agentId,
+        detail: { channel: "dingtalk", conversationId, senderId },
+      },
+      action: TriggerAction.Void(),
     });
 
     return { status_code: 200, body: { ok: true } };

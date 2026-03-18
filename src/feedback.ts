@@ -1,15 +1,19 @@
-import { init } from "iii-sdk";
-import { ENGINE_URL } from "./shared/config.js";
+import { registerWorker, TriggerAction } from "iii-sdk";
+import { ENGINE_URL, OTEL_CONFIG, registerShutdown } from "./shared/config.js";
 import { createLogger } from "./shared/logger.js";
 import { createRecordMetric } from "./shared/metrics.js";
 import { requireAuth } from "./shared/utils.js";
 import { safeCall } from "./shared/errors.js";
 import type { FeedbackPolicy, ReviewResult } from "./types.js";
 
-const { registerFunction, registerTrigger, trigger, triggerVoid } = init(
-  ENGINE_URL,
-  { workerName: "feedback" },
-);
+const sdk = registerWorker(ENGINE_URL, {
+  workerName: "feedback",
+  otel: OTEL_CONFIG,
+});
+registerShutdown(sdk);
+const { registerFunction, registerTrigger, trigger } = sdk;
+const triggerVoid = (id: string, payload: unknown) =>
+  trigger({ function_id: id, payload, action: TriggerAction.Void() });
 
 const log = createLogger("feedback");
 const recordMetric = createRecordMetric(triggerVoid);
@@ -39,7 +43,7 @@ function numOrDefault<K extends keyof FeedbackPolicy>(
 async function getPolicy(): Promise<FeedbackPolicy> {
   const stored: any = await safeCall(
     () =>
-      trigger("state::get", { scope: "feedback_policy", key: "default" }),
+      trigger({ function_id: "state::get", payload: { scope: "feedback_policy", key: "default" } }),
     null,
     { operation: "get_policy" },
   );
@@ -57,7 +61,7 @@ async function getRecentEvals(
   limit: number,
 ): Promise<any[]> {
   const all: any[] = await safeCall(
-    () => trigger("state::list", { scope: "eval_results" }),
+    () => trigger({ function_id: "state::list", payload: { scope: "eval_results" } }),
     [],
     { operation: "recent_evals" },
   );
@@ -98,11 +102,11 @@ registerFunction(
         evalCount: 0,
         timestamp: Date.now(),
       };
-      await trigger("state::set", {
+      await trigger({ function_id: "state::set", payload: {
         scope: "feedback_decisions",
         key: `${functionId}:${result.decisionId}`,
         value: result,
-      });
+      } });
       return result;
     }
 
@@ -140,30 +144,30 @@ registerFunction(
       timestamp: Date.now(),
     };
 
-    await trigger("state::set", {
+    await trigger({ function_id: "state::set", payload: {
       scope: "feedback_decisions",
       key: `${functionId}:${result.decisionId}`,
       value: result,
-    });
+    } });
 
     if (decision === "kill") {
       const fn: any = await safeCall(
         () =>
-          trigger("state::get", {
+          trigger({ function_id: "state::get", payload: {
             scope: "evolved_functions",
             key: functionId,
-          }),
+          } }),
         null,
         { operation: "auto_kill_get" },
       );
       if (fn) {
         fn.status = "killed";
         fn.updatedAt = Date.now();
-        await trigger("state::set", {
+        await trigger({ function_id: "state::set", payload: {
           scope: "evolved_functions",
           key: functionId,
           value: fn,
-        });
+        } });
       }
       log.warn("Auto-killed function", { functionId, reason });
     } else if (decision === "improve") {
@@ -213,10 +217,10 @@ registerFunction(
       };
     }
 
-    const fn: any = await trigger("state::get", {
+    const fn: any = await trigger({ function_id: "state::get", payload: {
       scope: "evolved_functions",
       key: functionId,
-    });
+    } });
     if (!fn) {
       throw Object.assign(new Error("Function not found"), {
         statusCode: 404,
@@ -240,7 +244,7 @@ registerFunction(
     const nameParts = fn.functionId.match(/^evolved::(.+)_v\d+$/);
     const baseName = nameParts ? nameParts[1] : fn.functionId.replace("evolved::", "");
 
-    const newFn: any = await trigger("evolve::generate", {
+    const newFn: any = await trigger({ function_id: "evolve::generate", payload: {
       headers: { authorization: "Bearer internal" },
       body: {
         goal: fn.description,
@@ -254,7 +258,7 @@ registerFunction(
       name: baseName,
       agentId: fn.authorAgentId,
       metadata: { ...fn.metadata, improvedFrom: functionId, depth: depth + 1 },
-    });
+    } });
 
     if (!newFn?.functionId) {
       return { improved: false, reason: "Generation failed", depth };
@@ -263,19 +267,19 @@ registerFunction(
     const policy = await getPolicy();
     let newScore = 0;
     if (suiteId) {
-      await trigger("evolve::register", {
+      await trigger({ function_id: "evolve::register", payload: {
         headers: { authorization: "Bearer internal" },
         body: { functionId: newFn.functionId },
         functionId: newFn.functionId,
-      });
+      } });
 
       const suiteResult: any = await safeCall(
         () =>
-          trigger("eval::suite", {
+          trigger({ function_id: "eval::suite", payload: {
             headers: { authorization: "Bearer internal" },
             body: { suiteId },
             suiteId,
-          }),
+          } }),
         null,
         { operation: "improve_eval" },
       );
@@ -287,7 +291,7 @@ registerFunction(
           depth: depth + 1,
           score: newScore,
         });
-        return trigger("feedback::improve", {
+        return trigger({ function_id: "feedback::improve", payload: {
           headers: { authorization: "Bearer internal" },
           body: {
             functionId: newFn.functionId,
@@ -297,14 +301,14 @@ registerFunction(
           functionId: newFn.functionId,
           depth: depth + 1,
           suiteId,
-        });
+        } });
       }
     } else {
-      await trigger("evolve::register", {
+      await trigger({ function_id: "evolve::register", payload: {
         headers: { authorization: "Bearer internal" },
         body: { functionId: newFn.functionId },
         functionId: newFn.functionId,
-      });
+      } });
     }
 
     recordMetric("feedback_improve", 1, { functionId, depth: String(depth) }, "counter");
@@ -333,10 +337,10 @@ registerFunction(
       });
     }
 
-    const fn: any = await trigger("state::get", {
+    const fn: any = await trigger({ function_id: "state::get", payload: {
       scope: "evolved_functions",
       key: functionId,
-    });
+    } });
     if (!fn) {
       throw Object.assign(new Error("Function not found"), {
         statusCode: 404,
@@ -391,11 +395,11 @@ registerFunction(
     }
 
     fn.updatedAt = Date.now();
-    await trigger("state::set", {
+    await trigger({ function_id: "state::set", payload: {
       scope: "evolved_functions",
       key: functionId,
       value: fn,
-    });
+    } });
 
     log.info("Promoted function", { functionId, status: fn.status });
     recordMetric("feedback_promote", 1, { functionId, status: fn.status }, "counter");
@@ -419,10 +423,10 @@ registerFunction(
       });
     }
 
-    const fn: any = await trigger("state::get", {
+    const fn: any = await trigger({ function_id: "state::get", payload: {
       scope: "evolved_functions",
       key: functionId,
-    });
+    } });
     if (!fn) {
       throw Object.assign(new Error("Function not found"), {
         statusCode: 404,
@@ -442,11 +446,11 @@ registerFunction(
     }
 
     fn.updatedAt = Date.now();
-    await trigger("state::set", {
+    await trigger({ function_id: "state::set", payload: {
       scope: "evolved_functions",
       key: functionId,
       value: fn,
-    });
+    } });
 
     log.info("Demoted function", { functionId, status: fn.status });
     return { demoted: true, functionId, newStatus: fn.status };
@@ -464,7 +468,7 @@ registerFunction(
     const { status, limit: rawLimit } = req.query || req.body || req;
 
     const all: any[] = await safeCall(
-      () => trigger("state::list", { scope: "evolved_functions" }),
+      () => trigger({ function_id: "state::list", payload: { scope: "evolved_functions" } }),
       [],
       { operation: "leaderboard" },
     );
@@ -546,11 +550,11 @@ registerFunction(
         (updated as any)[k] = v;
       }
     }
-    await trigger("state::set", {
+    await trigger({ function_id: "state::set", payload: {
       scope: "feedback_policy",
       key: "default",
       value: updated,
-    });
+    } });
     log.info("Updated feedback policy", updated as any);
     return updated;
   },
@@ -567,10 +571,10 @@ registerFunction(
 
     const lastRun: any = await safeCall(
       () =>
-        trigger("state::get", {
+        trigger({ function_id: "state::get", payload: {
           scope: "feedback_policy",
           key: "auto_review_last_run",
-        }),
+        } }),
       null,
       { operation: "get_last_run" },
     );
@@ -582,14 +586,14 @@ registerFunction(
       return { reviewed: 0, skipped: true, results: [] };
     }
 
-    await trigger("state::set", {
+    await trigger({ function_id: "state::set", payload: {
       scope: "feedback_policy",
       key: "auto_review_last_run",
       value: Date.now(),
-    });
+    } });
 
     const all: any[] = await safeCall(
-      () => trigger("state::list", { scope: "evolved_functions" }),
+      () => trigger({ function_id: "state::list", payload: { scope: "evolved_functions" } }),
       [],
       { operation: "auto_review" },
     );
@@ -604,11 +608,11 @@ registerFunction(
     for (const fn of reviewable) {
       const result: any = await safeCall(
         () =>
-          trigger("feedback::review", {
+          trigger({ function_id: "feedback::review", payload: {
             headers: { authorization: "Bearer internal" },
             body: { functionId: fn.functionId },
             functionId: fn.functionId,
-          }),
+          } }),
         null,
         { operation: "auto_review_single", functionId: fn.functionId },
       );

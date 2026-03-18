@@ -56,15 +56,19 @@ const mockTriggerVoid = vi.fn();
 
 const handlers: Record<string, Function> = {};
 vi.mock("iii-sdk", () => ({
-  init: () => ({
+  registerWorker: () => ({
     registerFunction: (config: any, handler: Function) => {
       handlers[config.id] = handler;
       return { unregister: vi.fn() };
     },
     registerTrigger: vi.fn(),
-    trigger: mockTrigger,
-    triggerVoid: mockTriggerVoid,
+    trigger: (req: any) =>
+      req.action
+        ? mockTriggerVoid(req.function_id, req.payload)
+        : mockTrigger(req.function_id, req.payload),
+    shutdown: vi.fn(),
   }),
+  TriggerAction: { Void: () => ({}) },
 }));
 
 vi.mock("../shared/utils.js", () => ({

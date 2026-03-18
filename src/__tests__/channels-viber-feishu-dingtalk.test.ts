@@ -9,14 +9,17 @@ const mockTriggerVoid = vi.fn();
 
 const handlers: Record<string, Function> = {};
 vi.mock("iii-sdk", () => ({
-  init: () => ({
+  registerWorker: () => ({
     registerFunction: (config: any, handler: Function) => {
       handlers[config.id] = handler;
     },
     registerTrigger: vi.fn(),
-    trigger: mockTrigger,
-    triggerVoid: mockTriggerVoid,
+    trigger: (req: any) =>
+      req.action
+        ? mockTriggerVoid(req.function_id, req.payload)
+        : mockTrigger(req.function_id, req.payload),
   }),
+  TriggerAction: { Void: () => ({}) },
 }));
 
 vi.mock("../shared/utils.js", () => ({
@@ -33,7 +36,7 @@ vi.mock("crypto", async () => {
   const actual = await vi.importActual("crypto");
   return {
     ...actual,
-    createHmac: (algo: string, key: string) => ({
+      createHmac: (algo: string, key: string) => ({
       update: (data: string) => ({
         digest: (enc: string) => "mock-signature-base64",
       }),

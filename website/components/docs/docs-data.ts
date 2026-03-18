@@ -61,9 +61,12 @@ export OPENAI_API_KEY=sk-...
 **3. Create your first agent**
 
 \`\`\`typescript
-import { initSDK } from "./shared/config.js";
+import { registerWorker } from "iii-sdk";
+import { ENGINE_URL, OTEL_CONFIG, registerShutdown } from "./shared/config.js";
 
-const { registerFunction, trigger } = initSDK("greeter");
+const sdk = registerWorker(ENGINE_URL, { workerName: "greeter", otel: OTEL_CONFIG });
+registerShutdown(sdk);
+const { registerFunction, trigger } = sdk;
 
 registerFunction(
   { id: "greet::reply" },
@@ -117,9 +120,12 @@ AgentOS is built on iii-engine's three primitives. Every agent, tool, and workfl
 A Worker is a long-running process that handles requests. Think of it as a microservice that processes messages.
 
 \`\`\`typescript
-import { initSDK } from "./shared/config.js";
+import { registerWorker } from "iii-sdk";
+import { ENGINE_URL, OTEL_CONFIG, registerShutdown } from "./shared/config.js";
 
-const { registerFunction, trigger } = initSDK("analyst");
+const sdk = registerWorker(ENGINE_URL, { workerName: "analyst", otel: OTEL_CONFIG });
+registerShutdown(sdk);
+const { registerFunction, trigger } = sdk;
 
 registerFunction(
   { id: "analyst::analyze", description: "Analyze data from URL" },
@@ -134,7 +140,7 @@ registerFunction(
 \`\`\`
 
 **Key properties:**
-- Long-running process via \`init()\`
+- Long-running process via direct \`registerWorker()\`
 - Registers functions on the iii-engine bus
 - Calls other functions via \`trigger()\`
 - Supports concurrency controls
@@ -501,9 +507,12 @@ channels = ["support", "general"]
 ## Writing Custom Adapters
 
 \`\`\`typescript
-import { initSDK } from "./shared/config.js";
+import { registerWorker } from "iii-sdk";
+import { ENGINE_URL, OTEL_CONFIG, registerShutdown } from "./shared/config.js";
 
-const { registerFunction, registerTrigger, trigger } = initSDK("custom-channel");
+const sdk = registerWorker(ENGINE_URL, { workerName: "custom-channel", otel: OTEL_CONFIG });
+registerShutdown(sdk);
+const { registerFunction, registerTrigger, trigger } = sdk;
 
 registerFunction(
   { id: "channel::webhook_handler" },
@@ -1307,9 +1316,12 @@ Navigation: Tab to switch screens, / for help, q to quit.`,
 Watches GitHub PRs and posts reviews:
 
 \`\`\`typescript
-import { initSDK } from "./shared/config.js";
+import { registerWorker } from "iii-sdk";
+import { ENGINE_URL, OTEL_CONFIG, registerShutdown } from "./shared/config.js";
 
-const { registerFunction, registerTrigger, trigger } = initSDK("code-reviewer");
+const sdk = registerWorker(ENGINE_URL, { workerName: "code-reviewer", otel: OTEL_CONFIG });
+registerShutdown(sdk);
+const { registerFunction, registerTrigger, trigger } = sdk;
 
 registerFunction(
   { id: "review::pr", description: "Review a GitHub PR" },

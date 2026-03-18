@@ -31,7 +31,7 @@ const mockTrigger = vi.fn(async (fnId: string, data?: any): Promise<any> => {
   if (fnId === "state::update") {
     const scope = getScope(data.scope);
     const current: any = scope.get(data.key) || {};
-    for (const op of data.operations || []) {
+    for (const op of data.ops || data.operations || []) {
       if (op.type === "set") {
         current[op.path] = op.value;
       } else if (op.type === "increment") {
@@ -47,14 +47,18 @@ const mockTriggerVoid = vi.fn();
 
 const handlers: Record<string, Function> = {};
 vi.mock("iii-sdk", () => ({
-  init: () => ({
+  registerWorker: () => ({
     registerFunction: (config: any, handler: Function) => {
       handlers[config.id] = handler;
     },
     registerTrigger: vi.fn(),
-    trigger: mockTrigger,
-    triggerVoid: mockTriggerVoid,
+    trigger: (req: any) =>
+      req.action
+        ? mockTriggerVoid(req.function_id, req.payload)
+        : mockTrigger(req.function_id, req.payload),
+    shutdown: vi.fn(),
   }),
+  TriggerAction: { Void: () => ({}) },
 }));
 
 beforeEach(() => {

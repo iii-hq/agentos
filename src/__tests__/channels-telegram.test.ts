@@ -13,14 +13,17 @@ const mockTriggerVoid = vi.fn();
 
 const handlers: Record<string, Function> = {};
 vi.mock("iii-sdk", () => ({
-  init: () => ({
+  registerWorker: () => ({
     registerFunction: (config: any, handler: Function) => {
       handlers[config.id] = handler;
     },
     registerTrigger: vi.fn(),
-    trigger: mockTrigger,
-    triggerVoid: mockTriggerVoid,
+    trigger: (req: any) =>
+      req.action
+        ? mockTriggerVoid(req.function_id, req.payload)
+        : mockTrigger(req.function_id, req.payload),
   }),
+  TriggerAction: { Void: () => ({}) },
 }));
 
 vi.mock("../shared/utils.js", () => ({
@@ -30,6 +33,7 @@ vi.mock("../shared/utils.js", () => ({
       chunks.push(text.slice(i, i + limit));
     return chunks.length ? chunks : [text];
   }),
+  TriggerAction: { Void: () => ({}) },
   resolveAgent: vi.fn(async () => "default-agent"),
   verifyTelegramUpdate: vi.fn(() => true),
 }));

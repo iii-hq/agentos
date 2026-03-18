@@ -9,9 +9,12 @@ const tabs = [
     label: "TypeScript",
     lang: "typescript",
     filename: "agent.ts",
-    code: `import { initSDK } from "./shared/config.js";
+    code: `import { registerWorker } from "iii-sdk";
+import { ENGINE_URL, OTEL_CONFIG, registerShutdown } from "./shared/config.js";
 
-const { registerFunction, registerTrigger, trigger } = initSDK("coder");
+const sdk = registerWorker(ENGINE_URL, { workerName: "coder", otel: OTEL_CONFIG });
+registerShutdown(sdk);
+const { registerFunction, registerTrigger, trigger } = sdk;
 
 registerFunction(
   {
@@ -23,10 +26,13 @@ registerFunction(
     ],
   },
   async (input: { pr: number }) => {
-    const diff = await trigger("tool::git_diff", { pr: input.pr });
-    const issues = await trigger("llm::chat", {
-      prompt: "Find bugs in this diff",
-      context: diff,
+    const diff = await trigger({
+      function_id: "tool::git_diff",
+      payload: { pr: input.pr },
+    });
+    const issues = await trigger({
+      function_id: "llm::chat",
+      payload: { prompt: "Find bugs in this diff", context: diff },
     });
     return { issues, count: issues.length };
   }
@@ -42,48 +48,53 @@ registerTrigger({
     label: "Rust",
     lang: "rust",
     filename: "worker.rs",
-    code: `use iii_sdk::{init, Config, Value};
+    code: `use iii_sdk::{register_worker, InitOptions};
+use serde_json::{json, Value};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let engine = init(Config {
-        url: "ws://localhost:49134".into(),
-        worker_name: "coder-rust".into(),
-    }).await?;
+    let iii = register_worker("ws://localhost:49134", InitOptions::default());
 
-    engine.register_function("review::analyze", |input: Value| async move {
-        let diff = engine.trigger("tool::git_diff", &input).await?;
-        let issues = engine.trigger("llm::chat", &json!({
-            "prompt": "Find bugs", "context": diff,
-        })).await?;
-        Ok(json!({ "issues": issues }))
-    }).await?;
+    iii.register_function("review::analyze", |input: Value| async move {
+        Ok(json!({
+            "status_code": 200,
+            "body": { "ok": true, "input": input }
+        }))
+    });
 
-    engine.listen().await
+    iii.register_trigger(
+        "http",
+        "review::analyze",
+        json!({ "api_path": "api/review", "http_method": "POST" })
+    )?;
+
+    tokio::signal::ctrl_c().await?;
+    Ok(())
 }`,
   },
   {
     label: "Python",
     lang: "python",
     filename: "embed.py",
-    code: `from iii_sdk import init
+    code: `from iii import register_worker
 
-engine = init("ws://localhost:49134", worker_name="embedder")
+iii = register_worker("ws://localhost:49134")
 
-@engine.register("embed::generate")
 async def generate_embedding(input: dict) -> dict:
     from sentence_transformers import SentenceTransformer
     model = SentenceTransformer("all-MiniLM-L6-v2")
     vec = model.encode(input["text"]).tolist()
     return {"embedding": vec, "dimensions": len(vec)}
 
-engine.register_trigger(
+iii.register_function("embed::generate", generate_embedding)
+
+iii.register_trigger(
     type="http",
     function_id="embed::generate",
     config={"api_path": "api/embed", "http_method": "POST"},
 )
 
-engine.listen()`,
+iii.listen()`,
   },
 ];
 

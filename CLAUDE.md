@@ -9,8 +9,8 @@ npm run start      # Production start
 
 ## Architecture
 - **Runtime**: TypeScript workers on iii-sdk (Worker/Function/Trigger primitives)
-- **SDK**: `iii-sdk` v0.8.0 — `init()`, `registerFunction()`, `registerTrigger()`, `trigger()`, `triggerVoid()`
-- **Each worker file**: calls `initSDK(workerName)` from `src/shared/config.js`, registers functions + HTTP/cron triggers
+- **SDK**: `iii-sdk` v0.9.0 — direct `registerWorker()` usage with object-style `trigger({ function_id, payload })`; fire-and-forget via `TriggerAction.Void()`
+- **Each worker file**: calls `registerWorker(ENGINE_URL, { workerName, otel })` directly, then registers functions + HTTP/cron triggers
 - **Entry point**: `src/index.ts` imports all workers
 - **43 TypeScript workers**, Rust crates for CLI/TUI/security, Python for embeddings
 

@@ -1,9 +1,18 @@
-import { initSDK } from "./shared/config.js";
+import { registerWorker, TriggerAction } from "iii-sdk";
+import { ENGINE_URL, OTEL_CONFIG, registerShutdown } from "./shared/config.js";
 import { createVerify } from "crypto";
 import { writeFileSync, unlinkSync, rmdirSync, mkdtempSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
-const { registerFunction, registerTrigger, trigger, triggerVoid } = initSDK("skill-security");
+
+const sdk = registerWorker(ENGINE_URL, {
+  workerName: "skill-security",
+  otel: OTEL_CONFIG,
+});
+registerShutdown(sdk);
+const { registerFunction, registerTrigger, trigger } = sdk;
+const triggerVoid = (id: string, payload: unknown) =>
+  trigger({ function_id: id, payload, action: TriggerAction.Void() });
 
 interface ScanFinding {
   severity: "critical" | "high" | "medium" | "low";
@@ -249,18 +258,19 @@ registerFunction(
     let signatureResult: { verified: boolean; signer?: string } | undefined;
 
     if (signature && publicKey) {
-      signatureResult = await trigger("skill::verify_signature", {
-        skillContent: content,
-        signature,
-        publicKey,
+      signatureResult = await trigger({
+        function_id: "skill::verify_signature",
+        payload: { skillContent: content, signature, publicKey },
       });
     }
 
-    const scanResult: ScanResult = await trigger("skill::scan_content", {
-      content,
+    const scanResult: ScanResult = await trigger({
+      function_id: "skill::scan_content",
+      payload: { content },
     });
-    const sandboxResult: SandboxResult = await trigger("skill::sandbox_test", {
-      skillContent: content,
+    const sandboxResult: SandboxResult = await trigger({
+      function_id: "skill::sandbox_test",
+      payload: { skillContent: content },
     });
 
     const signatureOk = !signature || signatureResult?.verified === true;

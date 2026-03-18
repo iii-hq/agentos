@@ -1,8 +1,14 @@
-import { initSDK } from "./shared/config.js";
+import { registerWorker, TriggerAction } from "iii-sdk";
+import { ENGINE_URL, OTEL_CONFIG, registerShutdown } from "./shared/config.js";
 import { PRICING } from "./shared/pricing.js";
 import Anthropic from "@anthropic-ai/sdk";
 
-const { registerFunction, trigger, triggerVoid } = initSDK("llm-router");
+const sdk = registerWorker(ENGINE_URL, {
+  workerName: "llm-router",
+  otel: OTEL_CONFIG,
+});
+registerShutdown(sdk);
+const { registerFunction, trigger } = sdk;
 
 interface ModelSelection {
   provider: string;
@@ -156,18 +162,22 @@ registerFunction(
             (result.usage.input * pricing.input) / 1_000_000 +
             (result.usage.output * pricing.output) / 1_000_000;
 
-          triggerVoid("state::update", {
-            scope: "costs",
-            key: new Date().toISOString().slice(0, 10),
-            operations: [
-              {
-                type: "increment",
-                path: `${req.model.model}.cost`,
-                value: cost,
-              },
-              { type: "increment", path: `${req.model.model}.calls`, value: 1 },
-              { type: "increment", path: "totalCost", value: cost },
-            ],
+          trigger({
+            function_id: "state::update",
+            payload: {
+              scope: "costs",
+              key: new Date().toISOString().slice(0, 10),
+              operations: [
+                {
+                  type: "increment",
+                  path: `${req.model.model}.cost`,
+                  value: cost,
+                },
+                { type: "increment", path: `${req.model.model}.calls`, value: 1 },
+                { type: "increment", path: "totalCost", value: cost },
+              ],
+            },
+            action: TriggerAction.Void(),
           });
         }
 

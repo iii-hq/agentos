@@ -1,7 +1,15 @@
-import { initSDK } from "./shared/config.js";
+import { registerWorker, TriggerAction } from "iii-sdk";
+import { ENGINE_URL, OTEL_CONFIG, registerShutdown } from "./shared/config.js";
 import { assertNoSsrf, requireAuth } from "./shared/utils.js";
 
-const { registerFunction, registerTrigger, trigger, triggerVoid } = initSDK("a2a");
+const sdk = registerWorker(ENGINE_URL, {
+  workerName: "a2a",
+  otel: OTEL_CONFIG,
+});
+registerShutdown(sdk);
+const { registerFunction, registerTrigger, trigger } = sdk;
+const triggerVoid = (id: string, payload: unknown) =>
+  trigger({ function_id: id, payload, action: TriggerAction.Void() });
 
 type TaskState =
   | "submitted"
@@ -68,16 +76,12 @@ const MAX_TASKS = 1000;
 
 async function getTaskOrder(): Promise<string[]> {
   return (
-    (await trigger("state::get", { scope: "a2a_tasks", key: "_order" })) || []
+    (await trigger({ function_id: "state::get", payload: { scope: "a2a_tasks", key: "_order" } })) || []
   );
 }
 
 async function setTaskOrder(order: string[]): Promise<void> {
-  await triggerVoid("state::set", {
-    scope: "a2a_tasks",
-    key: "_order",
-    value: order,
-  });
+  await triggerVoid("state::set", { scope: "a2a_tasks", key: "_order", value: order });
 }
 
 async function evictOldTasks(): Promise<void> {
@@ -150,7 +154,7 @@ registerFunction(
   }) => {
     const agentSkills =
       skills ||
-      (await trigger("skill::list", {})
+      (await trigger({ function_id: "skill::list", payload: {} })
         .then((list: unknown) =>
           (list as any[]).slice(0, 20).map((s: any) => ({
             id: s.id,
@@ -180,10 +184,9 @@ registerFunction(
       defaultOutputModes: ["text/plain"],
     };
 
-    await trigger("state::set", {
-      scope: "a2a",
-      key: "agent_card",
-      value: card,
+    await trigger({
+      function_id: "state::set",
+      payload: { scope: "a2a", key: "agent_card", value: card },
     });
 
     return card;
@@ -279,9 +282,9 @@ registerFunction(
       return rpcCall(agentUrl, "tasks/get", { id: taskId });
     }
 
-    const task: A2aTask | null = await trigger("state::get", {
-      scope: "a2a_tasks",
-      key: taskId,
+    const task: A2aTask | null = await trigger({
+      function_id: "state::get",
+      payload: { scope: "a2a_tasks", key: taskId },
     });
     if (!task) throw new Error(`Task not found: ${taskId}`);
     return task;
@@ -295,9 +298,9 @@ registerFunction(
       return rpcCall(agentUrl, "tasks/cancel", { id: taskId });
     }
 
-    const task: A2aTask | null = await trigger("state::get", {
-      scope: "a2a_tasks",
-      key: taskId,
+    const task: A2aTask | null = await trigger({
+      function_id: "state::get",
+      payload: { scope: "a2a_tasks", key: taskId },
     });
     if (!task) throw new Error(`Task not found: ${taskId}`);
 
@@ -368,10 +371,13 @@ registerFunction(
         .join("\n");
 
       try {
-        const response: any = await trigger("agent::chat", {
-          agentId: "default",
-          message: userText,
-          sessionId: task.sessionId,
+        const response: any = await trigger({
+          function_id: "agent::chat",
+          payload: {
+            agentId: "default",
+            message: userText,
+            sessionId: task.sessionId,
+          },
         });
 
         const agentMessage: A2aMessage = {
@@ -411,9 +417,9 @@ registerFunction(
     }
 
     if (method === "tasks/get") {
-      const task: A2aTask | null = await trigger("state::get", {
-        scope: "a2a_tasks",
-        key: params.id,
+      const task: A2aTask | null = await trigger({
+        function_id: "state::get",
+        payload: { scope: "a2a_tasks", key: params.id },
       });
       if (!task) {
         return {
@@ -426,9 +432,9 @@ registerFunction(
     }
 
     if (method === "tasks/cancel") {
-      const task: A2aTask | null = await trigger("state::get", {
-        scope: "a2a_tasks",
-        key: params.id,
+      const task: A2aTask | null = await trigger({
+        function_id: "state::get",
+        payload: { scope: "a2a_tasks", key: params.id },
       });
       if (!task) {
         return {
@@ -477,10 +483,13 @@ registerFunction(
 
       const card = (await resp.json()) as AgentCard;
 
-      await trigger("state::set", {
-        scope: "a2a",
-        key: `discovered:${new URL(url).hostname}`,
-        value: { card, discoveredAt: Date.now(), url },
+      await trigger({
+        function_id: "state::set",
+        payload: {
+          scope: "a2a",
+          key: `discovered:${new URL(url).hostname}`,
+          value: { card, discoveredAt: Date.now(), url },
+        },
       });
 
       return { discovered: true, card };

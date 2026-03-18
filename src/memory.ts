@@ -1,4 +1,5 @@
-import { initSDK } from "./shared/config.js";
+import { registerWorker, TriggerAction } from "iii-sdk";
+import { ENGINE_URL, OTEL_CONFIG, registerShutdown } from "./shared/config.js";
 import { createHash } from "crypto";
 import { safeCall } from "./shared/errors.js";
 import { createLogger } from "./shared/logger.js";
@@ -6,7 +7,12 @@ import { recordMetric } from "./shared/metrics.js";
 
 const log = createLogger("memory");
 
-const { registerFunction, trigger, triggerVoid } = initSDK("memory");
+const sdk = registerWorker(ENGINE_URL, {
+  workerName: "memory",
+  otel: OTEL_CONFIG,
+});
+registerShutdown(sdk);
+const { registerFunction, trigger } = sdk;
 
 interface MemoryEntry {
   id: string;
@@ -43,7 +49,11 @@ registerFunction(
       .slice(0, 16);
 
     const existing: any = await safeCall(
-      () => trigger("state::get", { scope: `memory:${agentId}`, key: hash }),
+      () =>
+        trigger({
+          function_id: "state::get",
+          payload: { scope: `memory:${agentId}`, key: hash },
+        }),
       null,
       { agentId, operation: "dedup_check", functionId: "memory::store" },
     );
@@ -69,7 +79,11 @@ registerFunction(
     };
 
     const embedding = await safeCall(
-      () => trigger("memory::embed", { text: content }) as Promise<number[]>,
+      () =>
+        trigger({
+          function_id: "memory::embed",
+          payload: { text: content },
+        }) as Promise<number[]>,
       null,
       { agentId, operation: "embed_content", functionId: "memory::store" },
     );
@@ -77,23 +91,27 @@ registerFunction(
       entry.embedding = embedding;
     }
 
-    await trigger("state::set", {
-      scope: `memory:${agentId}`,
-      key: id,
-      value: entry,
+    await trigger({
+      function_id: "state::set",
+      payload: { scope: `memory:${agentId}`, key: id, value: entry },
     });
 
-    await trigger("state::set", {
-      scope: `memory:${agentId}`,
-      key: hash,
-      value: { id, timestamp: entry.timestamp },
+    await trigger({
+      function_id: "state::set",
+      payload: {
+        scope: `memory:${agentId}`,
+        key: hash,
+        value: { id, timestamp: entry.timestamp },
+      },
     });
 
     if (sessionId) {
-      await trigger("state::update", {
-        scope: `sessions:${agentId}`,
-        key: sessionId,
-        operations: [
+      await trigger({
+        function_id: "state::update",
+        payload: {
+          scope: `sessions:${agentId}`,
+          key: sessionId,
+          operations: [
           {
             type: "merge",
             path: "messages",
@@ -101,20 +119,25 @@ registerFunction(
           },
           { type: "set", path: "updatedAt", value: Date.now() },
         ],
+        },
       });
     }
 
     if (tokenUsage) {
-      triggerVoid("state::update", {
-        scope: `sessions:${agentId}`,
-        key: sessionId || "default",
-        operations: [
-          {
-            type: "increment",
-            path: "totalTokens",
-            value: tokenUsage.total || 0,
-          },
-        ],
+      trigger({
+        function_id: "state::update",
+        payload: {
+          scope: `sessions:${agentId}`,
+          key: sessionId || "default",
+          operations: [
+            {
+              type: "increment",
+              path: "totalTokens",
+              value: tokenUsage.total || 0,
+            },
+          ],
+        },
+        action: TriggerAction.Void(),
       });
     }
 
@@ -131,8 +154,9 @@ registerFunction(
   },
   async ({ agentId, query, limit: rawLimit = 10 }) => {
     const limit = Math.max(1, Math.min(Number(rawLimit) || 10, 200));
-    const entries: any = await trigger("state::list", {
-      scope: `memory:${agentId}`,
+    const entries: any = await trigger({
+      function_id: "state::list",
+      payload: { scope: `memory:${agentId}` },
     });
 
     const memories: MemoryEntry[] = (entries || [])
@@ -142,7 +166,11 @@ registerFunction(
     if (!memories.length) return [];
 
     const queryEmbedding = await safeCall(
-      () => trigger("memory::embed", { text: query }) as Promise<number[]>,
+      () =>
+        trigger({
+          function_id: "memory::embed",
+          payload: { text: query },
+        }) as Promise<number[]>,
       null,
       { operation: "embed_query", functionId: "memory::recall" },
     );
@@ -212,16 +240,18 @@ registerFunction(
     metadata: { category: "memory" },
   },
   async ({ agentId, entity }: { agentId: string; entity: KGEntity }) => {
-    await trigger("state::set", {
-      scope: `kg:${agentId}`,
-      key: entity.id,
-      value: entity,
+    await trigger({
+      function_id: "state::set",
+      payload: { scope: `kg:${agentId}`, key: entity.id, value: entity },
     });
 
     for (const rel of entity.relations || []) {
       const target: any = await safeCall(
         () =>
-          trigger("state::get", { scope: `kg:${agentId}`, key: rel.target }),
+          trigger({
+            function_id: "state::get",
+            payload: { scope: `kg:${agentId}`, key: rel.target },
+          }),
         null,
         {
           agentId,
@@ -238,10 +268,13 @@ registerFunction(
           )
         ) {
           backRefs.push({ target: entity.id, type: `inverse:${rel.type}` });
-          await trigger("state::update", {
-            scope: `kg:${agentId}`,
-            key: rel.target,
-            operations: [{ type: "set", path: "relations", value: backRefs }],
+          await trigger({
+            function_id: "state::update",
+            payload: {
+              scope: `kg:${agentId}`,
+              key: rel.target,
+              operations: [{ type: "set", path: "relations", value: backRefs }],
+            },
           });
         }
       }
@@ -278,14 +311,22 @@ registerFunction(
       visited.add(id);
 
       const entity: any = await safeCall(
-        () => trigger("state::get", { scope: `kg:${agentId}`, key: id }),
+        () =>
+          trigger({
+            function_id: "state::get",
+            payload: { scope: `kg:${agentId}`, key: id },
+          }),
         null,
         { agentId, operation: "kg_traverse", functionId: "memory::kg::query" },
       );
 
       if (!entity && allowShared) {
         const shared: any = await safeCall(
-          () => trigger("state::get", { scope: "kg:shared", key: id }),
+          () =>
+            trigger({
+              function_id: "state::get",
+              payload: { scope: "kg:shared", key: id },
+            }),
           null,
           {
             agentId,
@@ -327,8 +368,9 @@ registerFunction(
     minImportance = 0.2,
     cap = 10_000,
   }) => {
-    const entries: any = await trigger("state::list", {
-      scope: `memory:${agentId}`,
+    const entries: any = await trigger({
+      function_id: "state::list",
+      payload: { scope: `memory:${agentId}` },
     });
     const memories: MemoryEntry[] = (entries || [])
       .filter((e: any) => e.value?.content)
@@ -342,13 +384,13 @@ registerFunction(
       const isLowValue = (m.importance || 0) < minImportance;
 
       if (isStale && isLowValue) {
-        await trigger("state::delete", {
-          scope: `memory:${agentId}`,
-          key: m.id,
+        await trigger({
+          function_id: "state::delete",
+          payload: { scope: `memory:${agentId}`, key: m.id },
         });
-        await trigger("state::delete", {
-          scope: `memory:${agentId}`,
-          key: m.hash,
+        await trigger({
+          function_id: "state::delete",
+          payload: { scope: `memory:${agentId}`, key: m.hash },
         });
         evicted++;
       }
@@ -366,9 +408,9 @@ registerFunction(
 
       const overflow = sorted.slice(0, sorted.length - cap);
       for (const m of overflow) {
-        await trigger("state::delete", {
-          scope: `memory:${agentId}`,
-          key: m.id,
+        await trigger({
+          function_id: "state::delete",
+          payload: { scope: `memory:${agentId}`, key: m.id },
         });
         evicted++;
       }

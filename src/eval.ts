@@ -1,15 +1,19 @@
-import { init } from "iii-sdk";
-import { ENGINE_URL } from "./shared/config.js";
+import { registerWorker, TriggerAction } from "iii-sdk";
+import { ENGINE_URL, OTEL_CONFIG, registerShutdown } from "./shared/config.js";
 import { createLogger } from "./shared/logger.js";
 import { createRecordMetric } from "./shared/metrics.js";
 import { requireAuth } from "./shared/utils.js";
 import { safeCall } from "./shared/errors.js";
 import type { EvalScores, EvalResult, EvalSuite } from "./types.js";
 
-const { registerFunction, registerTrigger, trigger, triggerVoid } = init(
-  ENGINE_URL,
-  { workerName: "eval" },
-);
+const sdk = registerWorker(ENGINE_URL, {
+  workerName: "eval",
+  otel: OTEL_CONFIG,
+});
+registerShutdown(sdk);
+const { registerFunction, registerTrigger, trigger } = sdk;
+const triggerVoid = (id: string, payload: unknown) =>
+  trigger({ function_id: id, payload, action: TriggerAction.Void() });
 
 const log = createLogger("eval");
 const recordMetric = createRecordMetric(triggerVoid);
@@ -75,7 +79,7 @@ async function scoreLlmJudge(
 ): Promise<number> {
   const result: any = await safeCall(
     () =>
-      trigger("llm::complete", {
+      trigger({ function_id: "llm::complete", payload: {
         model: {
           provider: "anthropic",
           model: "claude-haiku-4-5",
@@ -89,7 +93,7 @@ async function scoreLlmJudge(
             content: `Input: ${JSON.stringify(input)}\nExpected: ${JSON.stringify(expected)}\nActual: ${JSON.stringify(output)}\n\nScore (0.0-1.0):`,
           },
         ],
-      }),
+      }}),
     null,
     { operation: "llm_judge" },
   );
@@ -122,7 +126,7 @@ async function scoreCustom(
     );
   }
   const result: any = await safeCall(
-    () => trigger(scorerFunctionId, { output, expected, input }),
+    () => trigger({ function_id: scorerFunctionId, payload: { output, expected, input } }),
     null,
     { operation: "custom_scorer" },
   );
@@ -159,7 +163,7 @@ async function checkSafety(output: unknown): Promise<number> {
   const content =
     typeof output === "string" ? output : JSON.stringify(output);
   const result: any = await safeCall(
-    () => trigger("security::scan_injection", { content }),
+    () => trigger({ function_id: "security::scan_injection", payload: { content } }),
     null,
     { operation: "safety_scan" },
   );
@@ -187,7 +191,7 @@ registerFunction(
     }
 
     const start = performance.now();
-    const output = await trigger(functionId, input);
+    const output = await trigger({ function_id: functionId, payload: input });
     const latency_ms = Math.round(performance.now() - start);
 
     const scorerType = scorer || "exact_match";
@@ -218,26 +222,26 @@ registerFunction(
       timestamp: Date.now(),
     };
 
-    await trigger("state::set", {
+    await trigger({ function_id: "state::set", payload: {
       scope: "eval_results",
       key: `${functionId}:${evalId}`,
       value: result,
-    });
+    } });
 
     const fn: any = await safeCall(
       () =>
-        trigger("state::get", { scope: "evolved_functions", key: functionId }),
+        trigger({ function_id: "state::get", payload: { scope: "evolved_functions", key: functionId } }),
       null,
       { operation: "update_eval_scores" },
     );
     if (fn) {
       fn.evalScores = scores;
       fn.updatedAt = Date.now();
-      await trigger("state::set", {
+      await trigger({ function_id: "state::set", payload: {
         scope: "evolved_functions",
         key: functionId,
         value: fn,
-      });
+      } });
     }
 
     recordMetric("eval_run", 1, { functionId }, "counter");
@@ -283,11 +287,11 @@ registerFunction(
       timestamp: Date.now(),
     };
 
-    await trigger("state::set", {
+    await trigger({ function_id: "state::set", payload: {
       scope: "eval_results",
       key: `${data.functionId}:${evalId}`,
       value: result,
-    });
+    } });
 
     triggerVoid("eval::inline_recorded", {
       functionId: data.functionId,
@@ -313,10 +317,10 @@ registerFunction(
       });
     }
 
-    const suite: EvalSuite | null = await trigger("state::get", {
+    const suite: EvalSuite | null = await trigger({ function_id: "state::get", payload: {
       scope: "eval_suites",
       key: suiteId,
-    });
+    } });
     if (!suite) {
       throw Object.assign(new Error("Suite not found"), { statusCode: 404 });
     }
@@ -334,7 +338,7 @@ registerFunction(
       const start = performance.now();
       let output: unknown;
       try {
-        output = await trigger(suite.functionId, tc.input);
+        output = await trigger({ function_id: suite.functionId, payload: tc.input });
       } catch (err: any) {
         output = { error: err.message };
       }
@@ -384,11 +388,11 @@ registerFunction(
       };
       results.push(result);
 
-      await trigger("state::set", {
+      await trigger({ function_id: "state::set", payload: {
         scope: "eval_results",
         key: `${suite.functionId}:${evalId}`,
         value: result,
-      });
+      } });
     }
 
     const avgCorrectness =
@@ -440,7 +444,7 @@ registerFunction(
     }
 
     const all: any[] = await safeCall(
-      () => trigger("state::list", { scope: "eval_results" }),
+      () => trigger({ function_id: "state::list", payload: { scope: "eval_results" } }),
       [],
       { operation: "eval_history" },
     );
@@ -472,7 +476,7 @@ registerFunction(
       const scorer = tc.scorer || "exact_match";
       const start = performance.now();
       const output = await safeCall(
-        () => trigger(fnId, tc.input),
+        () => trigger({ function_id: fnId, payload: tc.input }),
         { error: "failed" },
         { operation: `compare_${label}` },
       );
@@ -540,11 +544,11 @@ registerFunction(
       createdAt: Date.now(),
     };
 
-    await trigger("state::set", {
+    await trigger({ function_id: "state::set", payload: {
       scope: "eval_suites",
       key: suiteId,
       value: suite,
-    });
+    } });
 
     log.info("Created eval suite", { suiteId, functionId });
     return suite;

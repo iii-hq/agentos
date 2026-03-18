@@ -8,11 +8,13 @@
     "start": "iii --config config.yaml & tsx src/",
     "test": "vitest --run",
     "test:watch": "vitest",
-    "test:coverage": "vitest --run --coverage"
+    "test:coverage": "vitest --run --coverage",
+    "test:e2e": "AGENTOS_E2E=1 vitest --run --config vitest.e2e.config.ts",
+    "test:e2e:smoke": "AGENTOS_E2E=1 vitest --run --config vitest.e2e.config.ts --testNamePattern=\"health|chat_completions\""
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.39.0",
-    "iii-sdk": "^0.8.0",
+    "iii-sdk": "^0.9.0",
     "nodemailer": "^8.0.1"
   },
   "devDependencies": {

@@ -1,5 +1,6 @@
 import { timingSafeEqual } from "crypto";
-import { initSDK, createSecretGetter } from "../shared/config.js";
+import { registerWorker, TriggerAction } from "iii-sdk";
+import { ENGINE_URL, OTEL_CONFIG, registerShutdown } from "../shared/config.js";
 import { splitMessage, resolveAgent } from "../shared/utils.js";
 
 function safeCompare(a: string, b: string): boolean {
@@ -10,8 +11,21 @@ function safeCompare(a: string, b: string): boolean {
   return timingSafeEqual(bufA, bufB);
 }
 
-const { registerFunction, registerTrigger, trigger, triggerVoid } = initSDK("channel-messenger");
-const getSecret = createSecretGetter(trigger);
+const sdk = registerWorker(ENGINE_URL, {
+  workerName: "channel-messenger",
+  otel: OTEL_CONFIG,
+});
+registerShutdown(sdk);
+const { registerFunction, registerTrigger, trigger } = sdk;
+
+async function getSecret(key: string): Promise<string> {
+  try {
+    const result = await sdk.trigger({ function_id: "vault::get", payload: { key } });
+    return result?.value || process.env[key] || "";
+  } catch {
+    return process.env[key] || "";
+  }
+}
 
 const API_URL = "https://graph.facebook.com/v18.0/me/messages";
 
@@ -46,20 +60,27 @@ registerFunction(
     const senderId = messaging.sender.id;
     const text = messaging.message.text;
 
-    const agentId = await resolveAgent(trigger, "messenger", senderId);
+    const agentId = await resolveAgent(sdk, "messenger", senderId);
 
-    const response: any = await trigger("agent::chat", {
-      agentId,
-      message: text,
-      sessionId: `messenger:${senderId}`,
+    const response: any = await trigger({
+      function_id: "agent::chat",
+      payload: {
+        agentId,
+        message: text,
+        sessionId: `messenger:${senderId}`,
+      },
     });
 
     await sendMessage(senderId, response.content);
 
-    triggerVoid("security::audit", {
-      type: "channel_message",
-      agentId,
-      detail: { channel: "messenger", senderId },
+    trigger({
+      function_id: "security::audit",
+      payload: {
+        type: "channel_message",
+        agentId,
+        detail: { channel: "messenger", senderId },
+      },
+      action: TriggerAction.Void(),
     });
 
     return { status_code: 200, body: { ok: true } };

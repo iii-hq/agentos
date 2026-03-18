@@ -1,6 +1,6 @@
 use dashmap::DashMap;
+use iii_sdk::{register_worker, InitOptions, III};
 use iii_sdk::error::IIIError;
-use iii_sdk::iii::III;
 use serde_json::{json, Value};
 use std::sync::Arc;
 use std::time::Instant;
@@ -163,7 +163,7 @@ async fn call_openai_compat(
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing_subscriber::fmt::init();
 
-    let iii = III::new("ws://localhost:49134");
+    let iii = register_worker("ws://localhost:49134", InitOptions::default())?;
 
     let state = Arc::new(RouterState {
         usage: DashMap::new(),
