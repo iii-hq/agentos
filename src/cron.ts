@@ -76,7 +76,7 @@ registerFunction(
         payload: {
           scope: "costs",
           key: today,
-          ops: [
+          operations: [
             { type: "set", path: "totalTokens", value: totalTokens },
             { type: "set", path: "aggregatedAt", value: new Date().toISOString() },
           ],

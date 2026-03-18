@@ -1,4 +1,4 @@
-import { registerWorker, TriggerAction } from "iii-sdk";
+import { registerWorker } from "iii-sdk";
 import { ENGINE_URL, OTEL_CONFIG, registerShutdown } from "./shared/config.js";
 import { requireAuth } from "./shared/utils.js";
 import { SECURITY_HEADERS } from "./security-headers.js";

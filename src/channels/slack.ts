@@ -1,5 +1,6 @@
 import { registerWorker } from "iii-sdk";
 import { ENGINE_URL, OTEL_CONFIG, registerShutdown } from "../shared/config.js";
+import { createSecretGetter } from "../shared/secrets.js";
 import {
   splitMessage,
   resolveAgent,
@@ -13,14 +14,7 @@ const sdk = registerWorker(ENGINE_URL, {
 registerShutdown(sdk);
 const { registerFunction, registerTrigger, trigger } = sdk;
 
-async function getSecret(key: string): Promise<string> {
-  try {
-    const result = await sdk.trigger({ function_id: "vault::get", payload: { key } });
-    return result?.value || process.env[key] || "";
-  } catch {
-    return process.env[key] || "";
-  }
-}
+const getSecret = createSecretGetter(sdk.trigger.bind(sdk));
 
 registerFunction(
   { id: "channel::slack::events", description: "Handle Slack Events API" },

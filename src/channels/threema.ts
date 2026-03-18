@@ -1,5 +1,6 @@
 import { registerWorker, TriggerAction } from "iii-sdk";
 import { ENGINE_URL, OTEL_CONFIG, registerShutdown } from "../shared/config.js";
+import { createSecretGetter } from "../shared/secrets.js";
 import { splitMessage, resolveAgent } from "../shared/utils.js";
 
 const sdk = registerWorker(ENGINE_URL, {
@@ -9,14 +10,7 @@ const sdk = registerWorker(ENGINE_URL, {
 registerShutdown(sdk);
 const { registerFunction, registerTrigger, trigger } = sdk;
 
-async function getSecret(key: string): Promise<string> {
-  try {
-    const result = await sdk.trigger({ function_id: "vault::get", payload: { key } });
-    return result?.value || process.env[key] || "";
-  } catch {
-    return process.env[key] || "";
-  }
-}
+const getSecret = createSecretGetter(sdk.trigger.bind(sdk));
 
 const API_URL = "https://msgapi.threema.ch";
 

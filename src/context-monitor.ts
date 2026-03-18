@@ -186,15 +186,15 @@ registerFunction(
       const llmSummary: any = await trigger({
         function_id: "llm::complete",
         payload: {
-        model: {
-          provider: "anthropic",
-          model: "claude-haiku-4-5",
-          maxTokens: 1024,
+          model: {
+            provider: "anthropic",
+            model: "claude-haiku-4-5",
+            maxTokens: 1024,
+          },
+          systemPrompt:
+            "Summarize this conversation concisely, preserving key facts and decisions.",
+          messages: [{ role: "user", content: summaryText.slice(0, 8000) }],
         },
-        systemPrompt:
-          "Summarize this conversation concisely, preserving key facts and decisions.",
-        messages: [{ role: "user", content: summaryText.slice(0, 8000) }],
-      },
       });
       const condensed: Message = {
         role: "system",

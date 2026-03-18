@@ -31,7 +31,7 @@ const mockTrigger = vi.fn(async (fnId: string, data?: any): Promise<any> => {
   if (fnId === "state::update") {
     const scope = getScope(data.scope);
     const current: any = scope.get(data.key) || {};
-    for (const op of data.ops || data.operations || []) {
+    for (const op of data.operations || []) {
       if (op.type === "set") {
         current[op.path] = op.value;
       } else if (op.type === "increment") {
