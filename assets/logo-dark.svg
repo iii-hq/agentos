@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 48" width="320" height="48">
+  <g transform="translate(0, 4)">
+    <rect width="40" height="40" rx="6" fill="#000"/>
+    <rect x="1.5" y="1.5" width="37" height="37" rx="5" fill="none" stroke="#facc15" stroke-width="1.5"/>
+    <path d="M12.5 28L20 14L27.5 28" stroke="#facc15" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+    <line x1="15.5" y1="23.5" x2="24.5" y2="23.5" stroke="#facc15" stroke-width="2" stroke-linecap="round"/>
+  </g>
+  <text x="52" y="33" font-family="'SF Mono','Cascadia Code','Fira Code','JetBrains Mono','Consolas','Courier New',monospace" font-size="32" font-weight="800" letter-spacing="-1">
+    <tspan fill="#ffffff">Agent</tspan><tspan fill="#facc15">OS</tspan>
+  </text>
+</svg>

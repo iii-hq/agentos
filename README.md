@@ -1,50 +1,31 @@
-# AgentOS
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/banner-dark.svg">
+    <source media="(prefers-color-scheme: light)" srcset="assets/banner-light.svg">
+    <img alt="AgentOS — The Agent Operating System" src="assets/banner-dark.svg" width="800">
+  </picture>
+</p>
 
-Agent Operating System built on three primitives: **Worker**, **Function**, **Trigger**.
+<p align="center">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-Apache_2.0-facc15?style=for-the-badge" alt="License"></a>
+  <img src="https://img.shields.io/badge/Tests-2,727_passing-22c55e?style=for-the-badge" alt="Tests">
+  <img src="https://img.shields.io/badge/Tools-60+-facc15?style=for-the-badge" alt="Tools">
+  <img src="https://img.shields.io/badge/LLM_Providers-25-fde68a?style=for-the-badge" alt="LLM Providers">
+  <img src="https://img.shields.io/badge/Models-47-71717a?style=for-the-badge" alt="Models">
+</p>
 
-**60+ tools** · **2,727 tests** · **25 LLM providers** · **47 models** · **40 channels** · **65K LOC**
+<p align="center">
+  <a href="https://agentos.sh">Website</a> ·
+  <a href="#quickstart">Quickstart</a> ·
+  <a href="#architecture">Architecture</a> ·
+  <a href="https://github.com/iii-hq/agentos">GitHub</a>
+</p>
 
 Every capability — agents, memory, security, LLM routing, workflows, tools, swarms, knowledge graphs, session replay, vault, **self-evolving functions**, **DAG-based artifact exchange**, **inter-agent coordination** — is a plain function registered on an [iii-engine](https://iii.dev) bus. No frameworks, no vendor lock-in, no magic.
 
-```
-┌──────────────────────────────────────────────────────────────┐
-│                        iii-engine                            │
-│              Worker · Function · Trigger                     │
-├──────────┬───────────┬───────────┬───────────┬───────────────┤
-│ agent    │ security  │    llm    │  memory   │     wasm      │
-│ core     │  rbac     │  router   │  store    │    sandbox    │
-│ workflow │  audit    │ 25 LLMs   │  session  │   (wasmtime)  │
-│ api      │  taint    │  catalog  │  recall   │    (Rust)     │
-│ hand     │  sign     │   (Rust)  │  (Rust)   │               │
-│ (Rust)   │  (Rust)   │           │           │               │
-├──────────┴───────────┴───────────┴───────────┴───────────────┤
-│                   Control Plane (Rust)                       │
-│  realm · hierarchy · directive · mission · ledger            │
-│  council · pulse · bridge (8 crates, 45 functions)           │
-├──────────────────────────────────────────────────────────────┤
-│             Evolve / Eval / Feedback Loop                    │
-│  evolve (LLM code gen + vm sandbox + DAG branching)          │
-│  eval (pluggable scorers + suites + inline auto-scoring)     │
-│  feedback (review + improve + promote/kill + leaderboard)    │
-│                      (TypeScript)                            │
-├──────────────────────────────────────────────────────────────┤
-│  artifact-dag (DAG content exchange + diff + frontier)       │
-│  coordination (channels + threaded posts + pinning)          │
-│                      (TypeScript)                            │
-├──────────────────────────────────────────────────────────────┤
-│  api · workflows · tools(60+) · skills · channels · hooks    │
-│  approval · streaming · mcp · a2a · vault · browser · swarm  │
-│  knowledge-graph · session-replay · skillkit · tool-profiles │
-│                      (TypeScript)                            │
-├──────────────────────────────────────────────────────────────┤
-│                    embedding (Python)                        │
-├──────────────────────────────────────────────────────────────┤
-│     CLI (Rust)              TUI (Rust/ratatui)               │
-├──────────────────────────────────────────────────────────────┤
-│ 45 agents · 7 hands · 25 integrations · 40 channels          │
-│ 8 tool profiles · 47 models · 21 TUI screens                 │
-└──────────────────────────────────────────────────────────────┘
-```
+<p align="center">
+  <img src="assets/architecture.svg" alt="AgentOS architecture: Rust (18 crates), TypeScript (46 workers), Python (embeddings) on iii-engine" width="720">
+</p>
 
 ## Install
 
