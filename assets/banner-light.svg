@@ -1,0 +1,45 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 180" width="800" height="180">
+  <defs>
+    <radialGradient id="glow" cx="50%" cy="35%" r="60%">
+      <stop offset="0%" stop-color="#eab308" stop-opacity="0.06"/>
+      <stop offset="100%" stop-color="#eab308" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+
+  <rect width="800" height="180" rx="12" fill="#ffffff"/>
+  <rect width="800" height="180" rx="12" fill="url(#glow)"/>
+  <rect x="0.5" y="0.5" width="799" height="179" rx="12" fill="none" stroke="#000000" stroke-opacity="0.08"/>
+
+  <g transform="translate(346, 24)">
+    <rect width="40" height="40" rx="6" fill="#000"/>
+    <rect x="1.5" y="1.5" width="37" height="37" rx="5" fill="none" stroke="#facc15" stroke-width="1.5"/>
+    <path d="M12.5 28L20 14L27.5 28" stroke="#facc15" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+    <line x1="15.5" y1="23.5" x2="24.5" y2="23.5" stroke="#facc15" stroke-width="2" stroke-linecap="round"/>
+  </g>
+
+  <g transform="translate(396, 30)">
+    <text x="0" y="28" font-family="'SF Mono','Cascadia Code','Fira Code','JetBrains Mono','Consolas','Courier New',monospace" font-size="32" font-weight="800" letter-spacing="-1">
+      <tspan fill="#1a1a1a">Agent</tspan><tspan fill="#eab308">OS</tspan>
+    </text>
+  </g>
+
+  <text x="400" y="92" text-anchor="middle" font-family="'SF Mono','Cascadia Code','Fira Code','JetBrains Mono','Consolas','Courier New',monospace" font-size="14" fill="#71717a">
+    The Agent Operating System
+  </text>
+
+  <g transform="translate(400, 115)" text-anchor="middle">
+    <text x="0" y="0" font-family="'SF Mono','Cascadia Code','Fira Code','JetBrains Mono','Consolas','Courier New',monospace" font-size="12" fill="#71717a">
+      Built on three primitives:
+    </text>
+    <g transform="translate(0, 24)">
+      <rect x="-160" y="-14" width="90" height="24" rx="12" fill="#eab308" fill-opacity="0.08" stroke="#eab308" stroke-opacity="0.2" stroke-width="1"/>
+      <text x="-115" y="2" text-anchor="middle" font-family="'SF Mono','Cascadia Code','Fira Code','JetBrains Mono','Consolas','Courier New',monospace" font-size="11" font-weight="600" fill="#eab308">Worker</text>
+
+      <rect x="-52" y="-14" width="104" height="24" rx="12" fill="#eab308" fill-opacity="0.08" stroke="#eab308" stroke-opacity="0.2" stroke-width="1"/>
+      <text x="0" y="2" text-anchor="middle" font-family="'SF Mono','Cascadia Code','Fira Code','JetBrains Mono','Consolas','Courier New',monospace" font-size="11" font-weight="600" fill="#eab308">Function</text>
+
+      <rect x="70" y="-14" width="90" height="24" rx="12" fill="#eab308" fill-opacity="0.08" stroke="#eab308" stroke-opacity="0.2" stroke-width="1"/>
+      <text x="115" y="2" text-anchor="middle" font-family="'SF Mono','Cascadia Code','Fira Code','JetBrains Mono','Consolas','Courier New',monospace" font-size="11" font-weight="600" fill="#eab308">Trigger</text>
+    </g>
+  </g>
+</svg>
