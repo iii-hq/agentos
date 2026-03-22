@@ -235,8 +235,15 @@ impl App {
     }
 
     fn client() -> reqwest::Client {
+        let mut headers = reqwest::header::HeaderMap::new();
+        if let Ok(key) = std::env::var("AGENTOS_API_KEY") {
+            if let Ok(val) = reqwest::header::HeaderValue::from_str(&format!("Bearer {}", key)) {
+                headers.insert(reqwest::header::AUTHORIZATION, val);
+            }
+        }
         reqwest::Client::builder()
             .timeout(std::time::Duration::from_secs(5))
+            .default_headers(headers)
             .build()
             .unwrap_or_default()
     }

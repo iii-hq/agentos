@@ -294,7 +294,7 @@ async function callOpenAICompat(req: CompleteRequest, providerId: string) {
 
   const body: Record<string, unknown> = {
     model: req.model.model,
-    max_tokens: req.model.maxTokens,
+    max_completion_tokens: req.model.maxTokens,
     messages,
   };
 
@@ -302,8 +302,8 @@ async function callOpenAICompat(req: CompleteRequest, providerId: string) {
     body.tools = req.tools.map((t) => ({
       type: "function",
       function: {
-        name: t.id.replace(/::/g, "_"),
-        description: t.description || t.id,
+        name: (t.id || t.function_id || "unknown").replace(/::/g, "_"),
+        description: t.description || t.id || t.function_id || "",
         parameters: { type: "object", properties: {} },
       },
     }));
