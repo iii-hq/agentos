@@ -363,3 +363,52 @@ describe("swarm::dissolve", () => {
     expect(swarm.dissolvedAt).toBeDefined();
   });
 });
+
+describe("swarm runtime controls", () => {
+  it("returns swarm status with message counts", async () => {
+    const swarmId = "swarm-status";
+    seedKv("swarms", swarmId, {
+      id: swarmId,
+      goal: "triage",
+      agentIds: ["a1", "a2"],
+      maxDurationMs: 600000,
+      consensusThreshold: 0.66,
+      createdAt: 1,
+      status: "active",
+    });
+    seedKv(`swarm_messages:${swarmId}`, "m1", {
+      id: "m1",
+      swarmId,
+      agentId: "a1",
+      message: "found issue",
+      type: "observation",
+      timestamp: 2,
+    });
+
+    const result = await call("swarm::status", authReq({ swarmId }));
+    expect(result).toEqual(expect.objectContaining({
+      swarmId,
+      status: "active",
+      totalMessages: 1,
+    }));
+  });
+
+  it("cancels an active swarm", async () => {
+    const swarmId = "swarm-cancel";
+    seedKv("swarms", swarmId, {
+      id: swarmId,
+      goal: "triage",
+      agentIds: ["a1", "a2"],
+      maxDurationMs: 600000,
+      consensusThreshold: 0.66,
+      createdAt: 1,
+      status: "active",
+    });
+
+    const result = await call("swarm::cancel", authReq({ swarmId, reason: "operator cancel" }));
+    expect(result).toEqual({ cancelled: true, swarmId });
+    expect(getScope("swarms").get(swarmId)).toEqual(
+      expect.objectContaining({ status: "cancelled", cancelReason: "operator cancel" }),
+    );
+  });
+});
