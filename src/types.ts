@@ -118,9 +118,22 @@ export interface ToolCall {
 export type EvolveStatus =
   | "draft"
   | "staging"
+  | "shadow"
+  | "canary"
   | "production"
   | "deprecated"
   | "killed";
+
+export type EvolveCandidateClass =
+  | "retrieval"
+  | "planning"
+  | "routing"
+  | "workflow_transform"
+  | "recommendation";
+
+export type EvolveRiskLabel = "low" | "medium" | "high" | "critical";
+
+export type EvolveRolloutHint = "staging" | "shadow" | "canary";
 
 export interface EvalScores {
   correctness: number | null;
@@ -146,7 +159,15 @@ export interface EvolvedFunction {
     findingCount: number;
   };
   parentVersion?: string;
-  metadata: Record<string, unknown>;
+  metadata: Record<string, unknown> & {
+    candidateClass?: EvolveCandidateClass;
+    riskLabel?: EvolveRiskLabel;
+    rolloutState?: EvolveStatus;
+    rolloutHint?: EvolveRolloutHint;
+    sourceObservationId?: string;
+    improvedFrom?: string;
+    depth?: number;
+  };
 }
 
 export interface EvalResult {
@@ -164,6 +185,10 @@ export interface EvalSuite {
   suiteId: string;
   name: string;
   functionId: string;
+  metadata?: {
+    candidateClass?: EvolveCandidateClass | null;
+    baselineFunctionId?: string | null;
+  };
   testCases: Array<{
     input: unknown;
     expected?: unknown;
@@ -184,8 +209,16 @@ export interface FeedbackPolicy {
 export interface ReviewResult {
   decisionId: string;
   functionId: string;
-  decision: "keep" | "improve" | "kill";
+  decision: "keep" | "improve" | "promote" | "demote" | "kill";
   reason: string;
+  reasonCode?:
+    | "no_eval_data"
+    | "avg_below_threshold"
+    | "too_many_failures"
+    | "ready_for_staging"
+    | "ready_for_shadow"
+    | "ready_for_canary"
+    | "ready_for_production";
   avgOverall: number;
   recentFailures: number;
   evalCount: number;

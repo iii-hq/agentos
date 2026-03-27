@@ -239,6 +239,38 @@ describe("eval::suite", () => {
       call("eval::suite", authReq({ suiteId: "nope" })),
     ).rejects.toThrow("Suite not found");
   });
+
+  it("returns suite metadata and baseline comparison context BeeOS can display", async () => {
+    seedKv("eval_suites", "suite-routing", {
+      suiteId: "suite-routing",
+      name: "Routing Suite",
+      functionId: "test::double",
+      metadata: {
+        candidateClass: "routing",
+        baselineFunctionId: "beeos::route-task-baseline",
+      },
+      testCases: [
+        {
+          input: { value: 2 },
+          expected: { result: 4 },
+          scorer: "exact_match",
+        },
+      ],
+    });
+
+    const result = await call(
+      "eval::suite",
+      authReq({ suiteId: "suite-routing" }),
+    );
+
+    expect(result.metadata).toEqual({
+      candidateClass: "routing",
+      baselineFunctionId: "beeos::route-task-baseline",
+      baselineAggregate: expect.objectContaining({
+        testCount: 1,
+      }),
+    });
+  });
 });
 
 describe("eval::history", () => {

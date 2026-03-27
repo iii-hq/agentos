@@ -277,7 +277,10 @@ Example: async (input) => { return { result: input.value * 2 }; }`;
       evalScores: null,
       securityReport: { scanSafe: false, sandboxPassed: false, findingCount: 0 },
       parentVersion,
-      metadata: extraMeta || {},
+      metadata: {
+        rolloutState: "draft",
+        ...(extraMeta || {}),
+      },
     };
 
     await trigger({ function_id: "state::set", payload: {
@@ -374,6 +377,10 @@ registerFunction(
 
     fn.securityReport.sandboxPassed = true;
     fn.status = "staging";
+    fn.metadata = {
+      ...fn.metadata,
+      rolloutState: fn.status,
+    };
     fn.updatedAt = Date.now();
     await trigger({ function_id: "state::set", payload: {
       scope: "evolved_functions",

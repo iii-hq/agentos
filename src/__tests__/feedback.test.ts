@@ -164,6 +164,26 @@ describe("feedback::review", () => {
       authReq({ functionId: "evolved::mid_v1" }),
     );
     expect(result.decision).toBe("improve");
+    expect(result.reasonCode).toBe("avg_below_threshold");
+  });
+
+  it("returns promote with reason code when a staged candidate is ready for shadow", async () => {
+    seedKv("evolved_functions", "evolved::router_v1", {
+      functionId: "evolved::router_v1",
+      status: "staging",
+      metadata: { candidateClass: "routing", rolloutState: "staging" },
+    });
+    for (let i = 0; i < 5; i++) {
+      seedEval("evolved::router_v1", `e${i}`, 0.95, 0.92, 1000 + i);
+    }
+
+    const result = await call(
+      "feedback::review",
+      authReq({ functionId: "evolved::router_v1" }),
+    );
+
+    expect(result.decision).toBe("promote");
+    expect(result.reasonCode).toBe("ready_for_shadow");
   });
 
   it("directly kills function in state on kill decision", async () => {
@@ -253,27 +273,34 @@ describe("feedback::promote", () => {
     expect(result.newStatus).toBe("staging");
   });
 
-  it("promotes staging to production with safety check", async () => {
+  it("promotes staging to shadow and shadow to canary before production", async () => {
     seedKv("evolved_functions", "evolved::safe_v1", {
       functionId: "evolved::safe_v1",
       status: "staging",
+      metadata: { rolloutState: "staging" },
     });
     for (let i = 0; i < 5; i++) {
       seedEval("evolved::safe_v1", `e${i}`, 0.9, 0.85, 1000 + i);
     }
 
-    const result = await call(
+    const first = await call(
       "feedback::promote",
       authReq({ functionId: "evolved::safe_v1" }),
     );
-    expect(result.promoted).toBe(true);
-    expect(result.newStatus).toBe("production");
+    const second = await call(
+      "feedback::promote",
+      authReq({ functionId: "evolved::safe_v1" }),
+    );
+    expect(first.promoted).toBe(true);
+    expect(first.newStatus).toBe("shadow");
+    expect(second.promoted).toBe(true);
+    expect(second.newStatus).toBe("canary");
   });
 
   it("blocks production promotion with low safety", async () => {
     seedKv("evolved_functions", "evolved::unsafe_v1", {
       functionId: "evolved::unsafe_v1",
-      status: "staging",
+      status: "canary",
     });
     for (let i = 0; i < 5; i++) {
       seedKv("eval_results", `evolved::unsafe_v1:e${i}`, {
@@ -319,7 +346,7 @@ describe("feedback::promote", () => {
 });
 
 describe("feedback::demote", () => {
-  it("demotes production to staging", async () => {
+  it("demotes production to canary", async () => {
     seedKv("evolved_functions", "evolved::down_v1", {
       functionId: "evolved::down_v1",
       status: "production",
@@ -329,7 +356,7 @@ describe("feedback::demote", () => {
       "feedback::demote",
       authReq({ functionId: "evolved::down_v1" }),
     );
-    expect(result.newStatus).toBe("staging");
+    expect(result.newStatus).toBe("canary");
   });
 
   it("kills when kill flag is set", async () => {
@@ -357,6 +384,41 @@ describe("feedback::demote", () => {
     );
     expect(result.demoted).toBe(false);
     expect(result.reason).toContain("Already killed");
+  });
+});
+
+describe("feedback::history", () => {
+  it("lists stored review decisions newest first", async () => {
+    seedKv("feedback_decisions", "fn-1:d1", {
+      decisionId: "d1",
+      functionId: "fn-1",
+      decision: "keep",
+      reason: "old",
+      timestamp: 1000,
+    });
+    seedKv("feedback_decisions", "fn-1:d2", {
+      decisionId: "d2",
+      functionId: "fn-1",
+      decision: "promote",
+      reason: "new",
+      timestamp: 2000,
+    });
+    seedKv("feedback_decisions", "fn-2:d3", {
+      decisionId: "d3",
+      functionId: "fn-2",
+      decision: "kill",
+      reason: "other",
+      timestamp: 1500,
+    });
+
+    const result = await call(
+      "feedback::history",
+      authReq({ functionId: "fn-1" }),
+    );
+
+    expect(result).toHaveLength(2);
+    expect(result[0].decisionId).toBe("d2");
+    expect(result[1].decisionId).toBe("d1");
   });
 });
 
