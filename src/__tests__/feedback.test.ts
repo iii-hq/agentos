@@ -549,4 +549,20 @@ describe("feedback::auto_review", () => {
     const result = await call("feedback::auto_review", {});
     expect(result.reviewed).toBe(2);
   });
+
+  it("also reviews shadow and canary functions", async () => {
+    seedKv("evolved_functions", "evolved::shadow_v1", {
+      functionId: "evolved::shadow_v1",
+      status: "shadow",
+    });
+    seedKv("evolved_functions", "evolved::canary_v1", {
+      functionId: "evolved::canary_v1",
+      status: "canary",
+    });
+
+    const result = await call("feedback::auto_review", {});
+
+    expect(result.reviewed).toBe(2);
+    expect(result.results).toHaveLength(2);
+  });
 });

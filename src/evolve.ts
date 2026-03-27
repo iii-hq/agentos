@@ -28,6 +28,13 @@ interface LiveHandle {
 
 const liveHandles = new Map<string, LiveHandle>();
 
+function syncRolloutState(fn: EvolvedFunction) {
+  fn.metadata = {
+    ...fn.metadata,
+    rolloutState: fn.status,
+  };
+}
+
 function truncateResult(value: unknown): unknown {
   try {
     const str = JSON.stringify(value);
@@ -340,6 +347,7 @@ registerFunction(
 
     if (!scanSafe) {
       fn.status = "killed";
+      syncRolloutState(fn);
       fn.updatedAt = Date.now();
       await trigger({ function_id: "state::set", payload: {
         scope: "evolved_functions",
@@ -362,6 +370,7 @@ registerFunction(
     } catch (err: any) {
       fn.securityReport.sandboxPassed = false;
       fn.status = "killed";
+      syncRolloutState(fn);
       fn.updatedAt = Date.now();
       await trigger({ function_id: "state::set", payload: {
         scope: "evolved_functions",
@@ -377,10 +386,7 @@ registerFunction(
 
     fn.securityReport.sandboxPassed = true;
     fn.status = "staging";
-    fn.metadata = {
-      ...fn.metadata,
-      rolloutState: fn.status,
-    };
+    syncRolloutState(fn);
     fn.updatedAt = Date.now();
     await trigger({ function_id: "state::set", payload: {
       scope: "evolved_functions",
@@ -443,6 +449,7 @@ registerFunction(
     }
 
     fn.status = "killed";
+    syncRolloutState(fn);
     fn.updatedAt = Date.now();
     await trigger({ function_id: "state::set", payload: {
       scope: "evolved_functions",

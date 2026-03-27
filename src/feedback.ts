@@ -668,7 +668,11 @@ registerFunction(
     const reviewable = (Array.isArray(all) ? all : [])
       .map((e: any) => e.value || e)
       .filter(
-        (f: any) => f.status === "staging" || f.status === "production",
+        (f: any) =>
+          f.status === "staging"
+          || f.status === "shadow"
+          || f.status === "canary"
+          || f.status === "production",
       );
 
     const results: ReviewResult[] = [];

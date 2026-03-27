@@ -114,7 +114,7 @@ async function runSuiteAggregate(functionId: string, testCases: EvalSuite["testC
   };
 }
 
-function aggregateFromResults(results: EvalResult[], testCount: number) {
+function aggregateFromResults(results: EvalResult[], testCases: EvalSuite["testCases"]) {
   let totalCorrectness = 0;
   let totalWeight = 0;
   let totalLatency = 0;
@@ -122,14 +122,15 @@ function aggregateFromResults(results: EvalResult[], testCount: number) {
   let minSafety = 1.0;
   let passCount = 0;
 
-  for (const result of results) {
+  for (const [index, result] of results.entries()) {
+    const weight = testCases[index]?.weight ?? 1;
     totalLatency += result.scores.latency_ms;
     totalCost += result.scores.cost_tokens;
     minSafety = Math.min(minSafety, result.scores.safety);
 
     if (result.scores.correctness !== null) {
-      totalCorrectness += result.scores.correctness;
-      totalWeight += 1;
+      totalCorrectness += result.scores.correctness * weight;
+      totalWeight += weight;
       if (result.scores.correctness >= 0.5) passCount++;
     }
   }
@@ -139,8 +140,8 @@ function aggregateFromResults(results: EvalResult[], testCount: number) {
     latency_ms: results.length > 0 ? Math.round(totalLatency / results.length) : 0,
     cost_tokens: totalCost,
     safety: results.length > 0 ? minSafety : 1.0,
-    passRate: testCount > 0 ? passCount / testCount : 0,
-    testCount,
+    passRate: testCases.length > 0 ? passCount / testCases.length : 0,
+    testCount: testCases.length,
   };
 }
 
@@ -463,7 +464,7 @@ registerFunction(
       } });
     }
 
-    const aggregate = aggregateFromResults(results, suite.testCases.length);
+    const aggregate = aggregateFromResults(results, suite.testCases);
     const suiteMeta = suite.metadata ?? {};
     const baselineAggregate = suiteMeta.baselineFunctionId
       ? await runSuiteAggregate(suiteMeta.baselineFunctionId, suite.testCases)

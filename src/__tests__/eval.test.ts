@@ -271,6 +271,36 @@ describe("eval::suite", () => {
       }),
     });
   });
+
+  it("preserves weighted aggregation for candidate suite results", async () => {
+    seedKv("eval_suites", "weighted-suite", {
+      suiteId: "weighted-suite",
+      name: "Weighted Suite",
+      functionId: "test::double",
+      testCases: [
+        {
+          input: { value: 2 },
+          expected: { result: 999 },
+          scorer: "exact_match",
+          weight: 1,
+        },
+        {
+          input: { value: 5 },
+          expected: { result: 10 },
+          scorer: "exact_match",
+          weight: 3,
+        },
+      ],
+    });
+
+    const result = await call(
+      "eval::suite",
+      authReq({ suiteId: "weighted-suite" }),
+    );
+
+    expect(result.aggregate.correctness).toBe(0.75);
+    expect(result.aggregate.passRate).toBe(0.5);
+  });
 });
 
 describe("eval::history", () => {

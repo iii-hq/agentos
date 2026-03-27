@@ -242,6 +242,14 @@ describe("evolve::register", () => {
     );
     expect(result.registered).toBe(false);
     expect(result.reason).toContain("Security scan failed");
+    expect(getScope("evolved_functions").get("evolved::bad_v1")).toEqual(
+      expect.objectContaining({
+        status: "killed",
+        metadata: expect.objectContaining({
+          rolloutState: "killed",
+        }),
+      }),
+    );
 
     mockTrigger.mockImplementation(originalImpl);
   });
@@ -300,6 +308,36 @@ describe("evolve::register", () => {
       }),
     );
   });
+
+  it("marks rollout metadata killed when sandbox validation fails", async () => {
+    seedKv("evolved_functions", "evolved::sandbox_bad_v1", {
+      functionId: "evolved::sandbox_bad_v1",
+      code: "async () => { throw new Error('boom'); }",
+      description: "sandbox fail",
+      authorAgentId: "agent-1",
+      version: 1,
+      status: "draft",
+      securityReport: { scanSafe: false, sandboxPassed: false, findingCount: 0 },
+      metadata: {
+        rolloutState: "draft",
+      },
+    });
+
+    const result = await call(
+      "evolve::register",
+      authReq({ functionId: "evolved::sandbox_bad_v1" }),
+    );
+
+    expect(result.registered).toBe(false);
+    expect(getScope("evolved_functions").get("evolved::sandbox_bad_v1")).toEqual(
+      expect.objectContaining({
+        status: "killed",
+        metadata: expect.objectContaining({
+          rolloutState: "killed",
+        }),
+      }),
+    );
+  });
 });
 
 describe("evolve::unregister", () => {
@@ -319,6 +357,7 @@ describe("evolve::unregister", () => {
 
     const stored: any = getScope("evolved_functions").get("evolved::rm_v1");
     expect(stored.status).toBe("killed");
+    expect(stored.metadata.rolloutState).toBe("killed");
   });
 
   it("rejects non-author agents", async () => {
