@@ -134,7 +134,8 @@ function sanitizeToolPairs(messages: Message[]): Message[] {
   for (const cid of orphanedCalls) {
     filtered.push({
       role: "tool",
-      content: JSON.stringify({ stub: true, tool_call_id: cid }),
+      tool_call_id: cid,
+      content: "[Result cleared — see context summary]",
     } as any);
   }
 
@@ -213,6 +214,10 @@ registerFunction(
       if (recentTokens + msgTokens > recentBudget) break;
       recentTokens += msgTokens;
       splitIdx = i;
+    }
+
+    if (splitIdx === messages.length && messages.length > 0) {
+      splitIdx = messages.length - 1;
     }
 
     const oldMessages = messages.slice(0, splitIdx);

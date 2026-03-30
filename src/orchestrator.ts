@@ -115,7 +115,7 @@ registerFunction(
       throw Object.assign(new Error("Plan not found"), { statusCode: 404 });
     }
 
-    if (plan.status !== "planned" && plan.status !== "paused") {
+    if (plan.status !== "planned") {
       throw Object.assign(
         new Error(`Cannot execute plan in status: ${plan.status}`),
         { statusCode: 400 },
@@ -144,16 +144,17 @@ registerFunction(
         function_id: "state::set",
         payload: { scope: "orchestrator_runs", key: planId, value: run },
       }),
-      ...plan.reactions.map((reaction) =>
-        safeCall(
+      ...plan.reactions.map((reaction) => {
+        const reactionId = crypto.randomUUID();
+        return safeCall(
           () =>
             trigger({
               function_id: "state::set",
               payload: {
                 scope: "lifecycle_reactions",
-                key: crypto.randomUUID(),
+                key: reactionId,
                 value: {
-                  id: crypto.randomUUID(),
+                  id: reactionId,
                   from: reaction.from,
                   to: reaction.to,
                   action: reaction.action,
@@ -165,8 +166,8 @@ registerFunction(
             }),
           undefined,
           { operation: "register_reaction" },
-        ),
-      ),
+        );
+      }),
     ]);
 
     plan.status = "executing";

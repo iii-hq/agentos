@@ -93,6 +93,7 @@ interface PreparedContext {
   tools: any;
   allowedToolIds: Set<string>;
   replaySessionId: string;
+  profilePrompt: string;
 }
 
 async function prepareContext(
@@ -131,9 +132,10 @@ async function prepareContext(
     message,
     toolCount: tools.length,
     config: config?.model,
+    agentTier: config?.agentTier,
   }, 10_000);
 
-  const messages: any[] = [];
+  let profilePrompt = "";
   if (userProfile) {
     const profileSummary = Object.entries(userProfile)
       .filter(([k, v]) => k !== "updatedAt" && v !== undefined && v !== null)
@@ -141,9 +143,11 @@ async function prepareContext(
       .join("\n")
       .slice(0, 2000);
     if (profileSummary) {
-      messages.push({ role: "system", content: `[User Profile]\n${profileSummary}` });
+      profilePrompt = `\n\n[User Profile]\n${profileSummary}`;
     }
   }
+
+  const messages: any[] = [];
   messages.push(...(memories || []));
   messages.push({ role: "user", content: message });
 
@@ -174,7 +178,7 @@ async function prepareContext(
 
   const replaySessionId = sessionId || `default:${agentId}`;
 
-  return { config, model, messages, tools, allowedToolIds, replaySessionId };
+  return { config, model, messages, tools, allowedToolIds, replaySessionId, profilePrompt };
 }
 
 async function executeLlmCall(
@@ -778,9 +782,10 @@ registerFunction(
             tools,
             allowedToolIds,
             replaySessionId,
+            profilePrompt,
           } = ctx as PreparedContext;
 
-          const resolvedPrompt = systemPrompt || config?.systemPrompt;
+          const resolvedPrompt = (systemPrompt || config?.systemPrompt || "") + profilePrompt;
 
           let response = await executeLlmCall(
             model,

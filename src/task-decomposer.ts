@@ -215,41 +215,44 @@ registerFunction(
       payload: { scope: `tasks:${rootId}`, key: taskId, value: task },
     });
 
-    if (task.parentId) {
+    let parentId = task.parentId;
+    while (parentId) {
       const parent: any = await trigger({
         function_id: "state::get",
-        payload: { scope: `tasks:${rootId}`, key: task.parentId },
+        payload: { scope: `tasks:${rootId}`, key: parentId },
       });
 
-      if (parent && parent.children.length > 0) {
-        const siblings: any[] = await Promise.all(
-          parent.children.map((childId: string) =>
-            trigger({
-              function_id: "state::get",
-              payload: { scope: `tasks:${rootId}`, key: childId },
-            }),
-          ),
-        );
+      if (!parent || parent.children.length === 0) break;
 
-        const allComplete = siblings.every((s) => s?.status === "complete");
-        const anyFailed = siblings.some((s) => s?.status === "failed");
+      const siblings: any[] = await Promise.all(
+        parent.children.map((childId: string) =>
+          trigger({
+            function_id: "state::get",
+            payload: { scope: `tasks:${rootId}`, key: childId },
+          }),
+        ),
+      );
 
-        let newParentStatus: TaskStatus | null = null;
-        if (allComplete) {
-          newParentStatus = "complete";
-        } else if (anyFailed) {
-          newParentStatus = "blocked";
-        }
+      const allComplete = siblings.every((s) => s?.status === "complete");
+      const anyFailed = siblings.some((s) => s?.status === "failed");
 
-        if (newParentStatus && parent.status !== newParentStatus) {
-          parent.status = newParentStatus;
-          parent.updatedAt = Date.now();
-          await trigger({
-            function_id: "state::set",
-            payload: { scope: `tasks:${rootId}`, key: parent.id, value: parent },
-          });
-        }
+      let newParentStatus: TaskStatus | null = null;
+      if (allComplete) {
+        newParentStatus = "complete";
+      } else if (anyFailed) {
+        newParentStatus = "blocked";
       }
+
+      if (!newParentStatus || parent.status === newParentStatus) break;
+
+      parent.status = newParentStatus;
+      parent.updatedAt = Date.now();
+      await trigger({
+        function_id: "state::set",
+        payload: { scope: `tasks:${rootId}`, key: parent.id, value: parent },
+      });
+
+      parentId = parent.parentId;
     }
 
     log.info("Task status updated", { rootId, taskId, status });
@@ -319,20 +322,18 @@ registerFunction(
       (t: any) => t.status === "pending" && t.children.length === 0,
     );
 
-    const spawned: string[] = [];
+    let spawned = 0;
     for (const task of leafPending) {
-      const agentId = `task-worker-${rootId}-${task.id}`;
       triggerVoid("tool::agent_spawn", {
         template: "task-worker",
-        agentId,
         message: task.description,
         metadata: { rootId, taskId: task.id },
       });
-      spawned.push(agentId);
+      spawned++;
     }
 
-    log.info("Spawned task workers", { rootId, count: spawned.length });
-    recordMetric("task_workers_spawned", spawned.length, { rootId }, "counter");
+    log.info("Spawned task workers", { rootId, count: spawned });
+    recordMetric("task_workers_spawned", spawned, { rootId }, "counter");
 
     return { rootId, spawned };
   },

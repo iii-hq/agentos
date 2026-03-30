@@ -127,7 +127,7 @@ registerFunction(
       () =>
         trigger({
           function_id: "state::list",
-          payload: { scope: "lifecycle_reactions" },
+          payload: { scope: `lifecycle_reactions:${agentId}` },
         }),
       [],
       { operation: "list_reactions" },
@@ -178,7 +178,7 @@ registerFunction(
       await trigger({
         function_id: "state::update",
         payload: {
-          scope: "lifecycle_reactions",
+          scope: `lifecycle_reactions:${agentId}`,
           key: reaction.id,
           operations: [
             { type: "increment", path: "attempts", value: 1 },
@@ -225,12 +225,14 @@ registerFunction(
     metadata: { category: "lifecycle" },
   },
   async ({
+    agentId,
     from,
     to,
     action,
     payload,
     escalateAfter = 3,
   }: {
+    agentId: string;
     from: LifecycleState;
     to: LifecycleState;
     action: Reaction["action"];
@@ -250,7 +252,7 @@ registerFunction(
 
     await trigger({
       function_id: "state::set",
-      payload: { scope: "lifecycle_reactions", key: id, value: reaction },
+      payload: { scope: `lifecycle_reactions:${agentId}`, key: id, value: reaction },
     });
 
     return { id, registered: true };
@@ -263,12 +265,13 @@ registerFunction(
     description: "List configured reaction rules",
     metadata: { category: "lifecycle" },
   },
-  async () => {
+  async ({ agentId }: { agentId?: string } = {}) => {
+    const scope = agentId ? `lifecycle_reactions:${agentId}` : "lifecycle_reactions";
     const all: any[] = await safeCall(
       () =>
         trigger({
           function_id: "state::list",
-          payload: { scope: "lifecycle_reactions" },
+          payload: { scope },
         }),
       [],
       { operation: "list_reactions" },

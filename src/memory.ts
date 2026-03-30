@@ -438,7 +438,7 @@ registerFunction(
     agentId: string;
     updates: Record<string, unknown>;
   }) => {
-    const scope = `profile:${agentId}`;
+    const scope = `user:profile:${agentId}`;
     const existing: any = await safeCall(
       () =>
         trigger({
@@ -493,7 +493,7 @@ registerFunction(
       () =>
         trigger({
           function_id: "state::get",
-          payload: { scope: `profile:${agentId}`, key: "profile" },
+          payload: { scope: `user:profile:${agentId}`, key: "profile" },
         }),
       null,
       { agentId, operation: "get_profile" },

@@ -401,7 +401,7 @@ Multi-agent coordination and lifecycle management.
 
 Formal state machine for agent sessions with declarative reaction rules:
 
-```
+```text
 spawning → working → blocked → working (retry)
 working → pr_open → review → merged → done
 working → failed → recovering → working
@@ -493,7 +493,7 @@ trigger("feedback::inject_signal", {
 
 Agents can write, register, evaluate, and improve functions at runtime. The evolve-eval-feedback loop turns AgentOS from a static orchestrator into a self-evolving system.
 
-```
+```text
 Agent goal/spec
     ↓
 evolve::generate  →  LLM writes function code

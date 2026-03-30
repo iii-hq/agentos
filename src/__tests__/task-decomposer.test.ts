@@ -261,7 +261,7 @@ describe("task::spawn_workers", () => {
     });
 
     const result = await call("task::spawn_workers", { rootId: "root-1" });
-    expect(result.spawned.length).toBe(1);
+    expect(result.spawned).toBe(1);
     expect(mockTriggerVoid).toHaveBeenCalledWith(
       "tool::agent_spawn",
       expect.objectContaining({
@@ -280,7 +280,7 @@ describe("task::spawn_workers", () => {
     });
 
     const result = await call("task::spawn_workers", { rootId: "root-1" });
-    expect(result.spawned.length).toBe(0);
+    expect(result.spawned).toBe(0);
   });
 
   it("requires rootId", async () => {

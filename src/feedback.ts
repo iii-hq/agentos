@@ -2,7 +2,7 @@ import { registerWorker, TriggerAction } from "iii-sdk";
 import { ENGINE_URL, OTEL_CONFIG, registerShutdown } from "./shared/config.js";
 import { createLogger } from "./shared/logger.js";
 import { createRecordMetric } from "./shared/metrics.js";
-import { requireAuth } from "./shared/utils.js";
+import { requireAuth, sanitizeId } from "./shared/utils.js";
 import { safeCall } from "./shared/errors.js";
 import type { FeedbackPolicy, ReviewResult } from "./types.js";
 
@@ -650,6 +650,7 @@ registerFunction(
     metadata: { category: "feedback" },
   },
   async (req: any) => {
+    if (req.headers) requireAuth(req);
     const { agentId, content, signalType, metadata: signalMeta } = req.body || req;
 
     if (!agentId || typeof agentId !== "string") {
@@ -665,10 +666,12 @@ registerFunction(
       );
     }
 
+    const sanitizedId = sanitizeId(agentId);
+
     const signalId = `sig_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
     const signal = {
       id: signalId,
-      agentId,
+      agentId: sanitizedId,
       content,
       signalType,
       metadata: signalMeta || {},
@@ -676,19 +679,19 @@ registerFunction(
     };
 
     await trigger({ function_id: "state::set", payload: {
-      scope: `feedback_signals:${agentId}`,
+      scope: `feedback_signals:${sanitizedId}`,
       key: signalId,
       value: signal,
     } });
 
     const prefix = SIGNAL_PREFIX_MAP[signalType as SignalType] || "[Signal]";
     triggerVoid("tool::agent_send", {
-      targetAgentId: agentId,
+      targetAgentId: sanitizedId,
       message: `${prefix} ${content}`,
     });
 
     recordMetric("feedback_signal_injected", 1, { signalType }, "counter");
-    log.info("Signal injected", { agentId, signalType, signalId });
+    log.info("Signal injected", { agentId: sanitizedId, signalType, signalId });
 
     return { signalId, injected: true };
   },

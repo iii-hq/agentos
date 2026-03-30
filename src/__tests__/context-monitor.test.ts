@@ -233,9 +233,10 @@ describe("context::compress - orphan removal", () => {
       targetTokens: 50,
     });
     const stub = result.compressed.find(
-      (m: any) => m.role === "tool" && m.content?.includes("tc2"),
+      (m: any) => m.role === "tool" && m.tool_call_id === "tc2",
     );
     expect(stub).toBeDefined();
+    expect(stub.content).toBe("[Result cleared — see context summary]");
   });
 });
 
@@ -294,7 +295,7 @@ describe("context::compress - structured template", () => {
   });
 
   it("falls back gracefully on LLM failure", async () => {
-    mockTrigger.mockImplementation(async (fnId: string, data?: any) => {
+    mockTrigger.mockImplementationOnce(async (fnId: string, data?: any) => {
       if (fnId === "llm::complete") throw new Error("LLM unavailable");
       if (fnId === "context::health") return { overall: -1 };
       return null;

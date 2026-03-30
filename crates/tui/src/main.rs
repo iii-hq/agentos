@@ -776,10 +776,10 @@ fn draw(f: &mut Frame, app: &App) {
         Screen::Settings => draw_settings(f, app, content_block, body_chunks[1]),
         Screen::Wizard => draw_wizard(f, app, body_chunks[1]),
         Screen::WorkflowBuilder => draw_workflow_builder(f, app, content_block, body_chunks[1]),
-        Screen::Lifecycle => draw_placeholder(f, content_block, "Lifecycle", "Session state machine — spawning → working → blocked → done. Reactions fire on transitions."),
-        Screen::Tasks => draw_placeholder(f, content_block, "Tasks", "Recursive task decomposition with hierarchical IDs. Status propagates from children to parents."),
-        Screen::Recovery => draw_placeholder(f, content_block, "Recovery", "Session health scanning — healthy / degraded / dead / unrecoverable. Auto-recovery every 10m."),
-        Screen::Orchestrator => draw_placeholder(f, content_block, "Orchestrator", "Multi-agent coordination — plan features, decompose tasks, spawn workers, monitor progress."),
+        Screen::Lifecycle => draw_placeholder(f, content_block, body_chunks[1], "Lifecycle", "Session state machine — spawning → working → blocked → done. Reactions fire on transitions."),
+        Screen::Tasks => draw_placeholder(f, content_block, body_chunks[1], "Tasks", "Recursive task decomposition with hierarchical IDs. Status propagates from children to parents."),
+        Screen::Recovery => draw_placeholder(f, content_block, body_chunks[1], "Recovery", "Session health scanning — healthy / degraded / dead / unrecoverable. Auto-recovery every 10m."),
+        Screen::Orchestrator => draw_placeholder(f, content_block, body_chunks[1], "Orchestrator", "Multi-agent coordination — plan features, decompose tasks, spawn workers, monitor progress."),
     }
 
     let footer = Block::default().borders(Borders::ALL);
@@ -1505,14 +1505,14 @@ fn draw_workflow_builder(f: &mut Frame, app: &App, block: Block, area: Rect) {
     f.render_widget(table, chunks[1]);
 }
 
-fn draw_placeholder(f: &mut Frame, block: Block, title: &str, desc: &str) {
-    let area = block.inner(f.area());
-    f.render_widget(block, f.area());
+fn draw_placeholder(f: &mut Frame, block: Block, area: Rect, title: &str, desc: &str) {
+    let inner = block.inner(area);
+    f.render_widget(block, area);
 
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([Constraint::Length(3), Constraint::Min(0)])
-        .split(area);
+        .split(inner);
 
     let header = Paragraph::new(vec![
         Line::from(Span::styled(title, Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))),

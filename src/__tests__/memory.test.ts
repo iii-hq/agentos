@@ -653,7 +653,7 @@ describe("memory::user_profile::update", () => {
   });
 
   it("deep-merges objects", async () => {
-    seedKv("profile:a1", "profile", {
+    seedKv("user:profile:a1", "profile", {
       preferences: { theme: "dark", lang: "en" },
     });
     const result = await call("memory::user_profile::update", {
@@ -665,7 +665,7 @@ describe("memory::user_profile::update", () => {
   });
 
   it("concatenates arrays", async () => {
-    seedKv("profile:a1", "profile", {
+    seedKv("user:profile:a1", "profile", {
       skills: ["typescript"],
     });
     const result = await call("memory::user_profile::update", {
@@ -676,7 +676,7 @@ describe("memory::user_profile::update", () => {
   });
 
   it("skips null/undefined values", async () => {
-    seedKv("profile:a1", "profile", { name: "Alice" });
+    seedKv("user:profile:a1", "profile", { name: "Alice" });
     const result = await call("memory::user_profile::update", {
       agentId: "a1",
       updates: { name: null, age: undefined, role: "dev" },
@@ -695,7 +695,7 @@ describe("memory::user_profile::get", () => {
   });
 
   it("returns stored profile", async () => {
-    seedKv("profile:a1", "profile", { name: "Bob", updatedAt: 123 });
+    seedKv("user:profile:a1", "profile", { name: "Bob", updatedAt: 123 });
     const result = await call("memory::user_profile::get", { agentId: "a1" });
     expect(result.name).toBe("Bob");
   });

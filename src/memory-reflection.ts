@@ -16,6 +16,8 @@ const triggerVoid = (id: string, payload: unknown) =>
   trigger({ function_id: id, payload, action: TriggerAction.Void() });
 
 const REFLECTION_INTERVAL = 5;
+const lastDiscovery = new Map<string, number>();
+const DISCOVERY_COOLDOWN_MS = 5 * 60 * 1000;
 
 registerFunction(
   {
@@ -52,7 +54,11 @@ registerFunction(
       triggerVoid("reflect::curate_memory", { agentId, sessionId });
     }
     if (shouldReviewSkills) {
-      triggerVoid("reflect::discover_skills", { agentId, sessionId, iterations });
+      const lastTs = lastDiscovery.get(sessionId) || 0;
+      if (Date.now() - lastTs >= DISCOVERY_COOLDOWN_MS) {
+        lastDiscovery.set(sessionId, Date.now());
+        triggerVoid("reflect::discover_skills", { agentId, sessionId, iterations });
+      }
     }
 
     return { shouldReflect, shouldReviewSkills, turnCount };

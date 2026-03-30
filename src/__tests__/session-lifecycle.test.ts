@@ -150,7 +150,7 @@ describe("lifecycle::transition", () => {
   });
 
   it("fires matching reactions", async () => {
-    seedKv("lifecycle_reactions", "rxn_1", {
+    seedKv("lifecycle_reactions:a1", "rxn_1", {
       id: "rxn_1",
       from: "spawning",
       to: "working",
@@ -202,6 +202,7 @@ describe("lifecycle::get_state", () => {
 describe("lifecycle::add_reaction", () => {
   it("registers a reaction rule", async () => {
     const result = await call("lifecycle::add_reaction", {
+      agentId: "a1",
       from: "working",
       to: "blocked",
       action: "notify",
@@ -212,13 +213,14 @@ describe("lifecycle::add_reaction", () => {
 
   it("clamps escalateAfter to minimum 1", async () => {
     const result = await call("lifecycle::add_reaction", {
+      agentId: "a1",
       from: "working",
       to: "blocked",
       action: "send_to_agent",
       escalateAfter: 0,
     });
     expect(result.registered).toBe(true);
-    const stored = getScope("lifecycle_reactions").get(result.id) as any;
+    const stored = getScope("lifecycle_reactions:a1").get(result.id) as any;
     expect(stored.escalateAfter).toBe(1);
   });
 });
@@ -230,13 +232,13 @@ describe("lifecycle::list_reactions", () => {
   });
 
   it("returns stored reactions", async () => {
-    seedKv("lifecycle_reactions", "r1", {
+    seedKv("lifecycle_reactions:a1", "r1", {
       id: "r1",
       from: "working",
       to: "blocked",
       action: "notify",
     });
-    const result = await call("lifecycle::list_reactions", {});
+    const result = await call("lifecycle::list_reactions", { agentId: "a1" });
     expect(result.length).toBe(1);
     expect(result[0].id).toBe("r1");
   });
