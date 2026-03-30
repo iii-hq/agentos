@@ -626,6 +626,175 @@ registerFunction(
   },
 );
 
+const VALID_SIGNAL_TYPES = new Set([
+  "ci_failure",
+  "review_comment",
+  "merge_conflict",
+  "dependency_update",
+  "custom",
+]);
+
+registerFunction(
+  {
+    id: "feedback::inject_signal",
+    description: "Push external signal (CI failure, review comment) into an agent's context",
+    metadata: { category: "feedback" },
+  },
+  async ({
+    agentId,
+    signalType,
+    content,
+    source,
+  }: {
+    agentId: string;
+    signalType: string;
+    content: string;
+    source?: string;
+  }) => {
+    if (!agentId || !content) {
+      throw Object.assign(new Error("agentId and content are required"), {
+        statusCode: 400,
+      });
+    }
+    if (!VALID_SIGNAL_TYPES.has(signalType)) {
+      throw Object.assign(
+        new Error(`Invalid signalType. Must be one of: ${[...VALID_SIGNAL_TYPES].join(", ")}`),
+        { statusCode: 400 },
+      );
+    }
+
+    const signalId = `sig_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    const signal = {
+      id: signalId,
+      agentId,
+      signalType,
+      content: content.slice(0, 10_000),
+      source: source || "external",
+      createdAt: Date.now(),
+      injected: false,
+    };
+
+    await trigger({
+      function_id: "state::set",
+      payload: {
+        scope: `feedback_signals:${agentId}`,
+        key: signalId,
+        value: signal,
+      },
+    });
+
+    const prefix =
+      signalType === "ci_failure"
+        ? "[CI Failure]"
+        : signalType === "review_comment"
+          ? "[Review Comment]"
+          : signalType === "merge_conflict"
+            ? "[Merge Conflict]"
+            : `[${signalType}]`;
+
+    triggerVoid("tool::agent_send", {
+      targetAgentId: agentId,
+      message: `${prefix} ${content.slice(0, 5000)}`,
+    });
+
+    signal.injected = true;
+    await trigger({
+      function_id: "state::set",
+      payload: {
+        scope: `feedback_signals:${agentId}`,
+        key: signalId,
+        value: signal,
+      },
+    });
+
+    recordMetric("feedback_signals_total", 1, { signalType, agentId }, "counter");
+    log.info("Signal injected", { signalId, agentId, signalType });
+
+    return { signalId, injected: true };
+  },
+);
+
+registerFunction(
+  {
+    id: "feedback::register_source",
+    description: "Register an external signal source",
+    metadata: { category: "feedback" },
+  },
+  async ({
+    name,
+    type,
+    config,
+  }: {
+    name: string;
+    type: string;
+    config?: Record<string, unknown>;
+  }) => {
+    if (!name || !type) {
+      throw Object.assign(new Error("name and type are required"), {
+        statusCode: 400,
+      });
+    }
+    const sourceId = `src_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    const source = {
+      id: sourceId,
+      name,
+      type,
+      config: config || {},
+      createdAt: Date.now(),
+    };
+
+    await trigger({
+      function_id: "state::set",
+      payload: { scope: "feedback_sources", key: sourceId, value: source },
+    });
+
+    return { sourceId, registered: true };
+  },
+);
+
+registerFunction(
+  {
+    id: "feedback::list_signals",
+    description: "List recent signals for an agent",
+    metadata: { category: "feedback" },
+  },
+  async ({
+    agentId,
+    limit: rawLimit = 20,
+  }: {
+    agentId: string;
+    limit?: number;
+  }) => {
+    const limit = Math.max(1, Math.min(Number(rawLimit) || 20, 100));
+    const all: any[] = await safeCall(
+      () =>
+        trigger({
+          function_id: "state::list",
+          payload: { scope: `feedback_signals:${agentId}` },
+        }),
+      [],
+      { operation: "list_signals" },
+    );
+
+    return (all || [])
+      .map((e: any) => e.value)
+      .filter(Boolean)
+      .sort((a: any, b: any) => (b.createdAt || 0) - (a.createdAt || 0))
+      .slice(0, limit);
+  },
+);
+
+registerTrigger({
+  type: "http",
+  function_id: "feedback::inject_signal",
+  config: { api_path: "api/feedback/inject", http_method: "POST" },
+});
+registerTrigger({
+  type: "http",
+  function_id: "feedback::list_signals",
+  config: { api_path: "api/feedback/signals/:agentId", http_method: "GET" },
+});
+
 registerTrigger({
   type: "http",
   function_id: "feedback::review",

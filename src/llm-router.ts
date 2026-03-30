@@ -109,7 +109,7 @@ const PROVIDERS: Record<string, (req: CompleteRequest) => Promise<any>> = {
 
 registerFunction(
   { id: "llm::route", description: "Select optimal model by query complexity" },
-  async ({ message, toolCount, config }): Promise<ModelSelection> => {
+  async ({ message, toolCount, config, agentTier }): Promise<ModelSelection> => {
     if (config?.model) {
       return {
         provider: config.provider || "anthropic",
@@ -119,6 +119,28 @@ registerFunction(
     }
 
     const score = scoreComplexity(message, toolCount || 0);
+
+    if (agentTier === "economy") {
+      return {
+        provider: "anthropic",
+        model: "claude-haiku-4-5",
+        maxTokens: 2048,
+      };
+    }
+    if (agentTier === "premium") {
+      if (score < 0.5) {
+        return {
+          provider: "anthropic",
+          model: "claude-sonnet-4-6",
+          maxTokens: 4096,
+        };
+      }
+      return {
+        provider: "anthropic",
+        model: "claude-opus-4-6",
+        maxTokens: 8192,
+      };
+    }
 
     if (score < 0.3) {
       return {
@@ -344,9 +366,25 @@ function scoreComplexity(message: string, toolCount: number): number {
   else if (len > 500) score += 0.15;
   else if (len < 50) score -= 0.1;
 
-  if (/```[\s\S]*```/.test(message)) score += 0.2;
-  if (/\b(analyze|architect|design|implement|refactor|debug)\b/i.test(message))
+  const codeBlockCount = (message.match(/```/g) || []).length / 2;
+  if (codeBlockCount >= 3) score += 0.3;
+  else if (codeBlockCount >= 1) score += 0.2;
+
+  if (
+    /\b(step\s*\d|first|then|next|finally|after that|phase\s*\d)\b/i.test(
+      message,
+    ) ||
+    /^\s*[-*\d]+[.)]\s/m.test(message)
+  )
     score += 0.15;
+
+  if (
+    /\b(analyze|architect|design|implement|refactor|debug|compare|evaluate|optimize|migrate)\b/i.test(
+      message,
+    )
+  )
+    score += 0.15;
+
   if (/\b(hi|hello|thanks|yes|no|ok)\b/i.test(message) && len < 30)
     score -= 0.2;
 

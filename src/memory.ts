@@ -12,7 +12,7 @@ const sdk = registerWorker(ENGINE_URL, {
   otel: OTEL_CONFIG,
 });
 registerShutdown(sdk);
-const { registerFunction, trigger } = sdk;
+const { registerFunction, registerTrigger, trigger } = sdk;
 
 interface MemoryEntry {
   id: string;
@@ -424,6 +424,159 @@ registerFunction(
     return { evicted };
   },
 );
+
+registerFunction(
+  {
+    id: "memory::user_profile::update",
+    description: "Merge structured updates into user profile",
+    metadata: { category: "memory" },
+  },
+  async ({ agentId, updates }: { agentId: string; updates: Record<string, unknown> }) => {
+    const existing: any = await safeCall(
+      () =>
+        trigger({
+          function_id: "state::get",
+          payload: { scope: `profile:${agentId}`, key: "profile" },
+        }),
+      null,
+      { agentId, operation: "get_profile", functionId: "memory::user_profile::update" },
+    );
+
+    const profile: Record<string, unknown> = existing || {};
+    for (const [key, value] of Object.entries(updates || {})) {
+      if (value === null || value === undefined) continue;
+      if (Array.isArray(value) && Array.isArray(profile[key])) {
+        profile[key] = [...(profile[key] as unknown[]), ...value];
+      } else if (
+        typeof value === "object" &&
+        !Array.isArray(value) &&
+        typeof profile[key] === "object" &&
+        profile[key] !== null
+      ) {
+        profile[key] = { ...(profile[key] as Record<string, unknown>), ...value };
+      } else {
+        profile[key] = value;
+      }
+    }
+    profile.updatedAt = Date.now();
+
+    await trigger({
+      function_id: "state::set",
+      payload: { scope: `profile:${agentId}`, key: "profile", value: profile },
+    });
+
+    recordMetric("memory_operations_total", 1, { operation: "profile_update" });
+    return { updated: true, profile };
+  },
+);
+
+registerFunction(
+  {
+    id: "memory::user_profile::get",
+    description: "Get user profile for system prompt injection",
+    metadata: { category: "memory" },
+  },
+  async ({ agentId }: { agentId: string }) => {
+    const profile: any = await safeCall(
+      () =>
+        trigger({
+          function_id: "state::get",
+          payload: { scope: `profile:${agentId}`, key: "profile" },
+        }),
+      null,
+      { agentId, operation: "get_profile", functionId: "memory::user_profile::get" },
+    );
+    return profile || null;
+  },
+);
+
+registerFunction(
+  {
+    id: "memory::session_search",
+    description: "Full-text search across past sessions",
+    metadata: { category: "memory" },
+  },
+  async ({
+    agentId,
+    query,
+    limit: rawLimit = 10,
+  }: {
+    agentId: string;
+    query: string;
+    limit?: number;
+  }) => {
+    const limit = Math.max(1, Math.min(Number(rawLimit) || 10, 100));
+    const entries: any = await trigger({
+      function_id: "state::list",
+      payload: { scope: `memory:${agentId}` },
+    });
+
+    const memories: MemoryEntry[] = (entries || [])
+      .filter((e: any) => e.value?.content && e.value?.sessionId)
+      .map((e: any) => e.value);
+
+    if (!memories.length) return [];
+
+    const keywords = query.toLowerCase().split(/\s+/).filter(Boolean);
+    if (!keywords.length) return [];
+
+    const scored = memories.map((m) => {
+      const content = m.content.toLowerCase();
+      const keywordHits = keywords.filter((k: string) => content.includes(k)).length;
+      const keywordScore = keywordHits / Math.max(keywords.length, 1);
+
+      const ageHours = (Date.now() - m.timestamp) / 3_600_000;
+      const recencyScore = Math.exp(-ageHours / 168);
+
+      return {
+        ...m,
+        score: keywordScore * 0.7 + recencyScore * 0.2 + (m.importance || 0.5) * 0.1,
+      };
+    });
+
+    const results = scored
+      .filter((m) => m.score > 0.1)
+      .sort((a, b) => b.score - a.score)
+      .slice(0, limit);
+
+    const sessionGroups = new Map<string, typeof results>();
+    for (const r of results) {
+      const sid = r.sessionId || "unknown";
+      if (!sessionGroups.has(sid)) sessionGroups.set(sid, []);
+      sessionGroups.get(sid)!.push(r);
+    }
+
+    recordMetric("memory_operations_total", 1, { operation: "session_search" });
+
+    return Array.from(sessionGroups.entries()).map(([sessionId, msgs]) => ({
+      sessionId,
+      matchCount: msgs.length,
+      topScore: msgs[0].score,
+      highlights: msgs.slice(0, 3).map((m) => ({
+        content: m.content.slice(0, 200),
+        role: m.role,
+        timestamp: m.timestamp,
+        score: m.score,
+      })),
+    }));
+  },
+);
+
+registerTrigger({
+  type: "http",
+  function_id: "memory::user_profile::update",
+  config: { api_path: "api/memory/profile", http_method: "PUT" },
+});
+registerTrigger({
+  type: "http",
+  function_id: "memory::user_profile::get",
+  config: { api_path: "api/memory/profile/:agentId", http_method: "GET" },
+});
+registerTrigger({
+  type: "http",
+  function_id: "memory::session_search",
+  config: { api_path: "api/memory/search", http_method: "POST" },
+});
 
 function cosineSimilarity(a: number[], b: number[]): number {
   if (a.length !== b.length) return 0;

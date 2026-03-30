@@ -189,6 +189,41 @@ describe("llm::route - complexity scoring", () => {
     });
     expect(result.maxTokens).toBe(4096);
   });
+
+  it("boosts score for multi-step instructions", async () => {
+    const result = await call("llm::route", {
+      message: "Step 1: create the database. Then add the API. Finally deploy.",
+      toolCount: 0,
+    });
+    expect(result.model).not.toBe("claude-haiku-4-5");
+  });
+
+  it("boosts score for multiple code blocks", async () => {
+    const result = await call("llm::route", {
+      message:
+        "Compare these:\n```\nfoo()\n```\nvs\n```\nbar()\n```\nand\n```\nbaz()\n```",
+      toolCount: 0,
+    });
+    expect(result.model).not.toBe("claude-haiku-4-5");
+  });
+
+  it("routes economy tier always to haiku", async () => {
+    const result = await call("llm::route", {
+      message: "Please analyze and refactor this complex multi-step architecture",
+      toolCount: 15,
+      agentTier: "economy",
+    });
+    expect(result.model).toBe("claude-haiku-4-5");
+  });
+
+  it("routes premium tier to sonnet or opus only", async () => {
+    const result = await call("llm::route", {
+      message: "hi",
+      toolCount: 0,
+      agentTier: "premium",
+    });
+    expect(result.model).not.toBe("claude-haiku-4-5");
+  });
 });
 
 describe("llm::complete", () => {

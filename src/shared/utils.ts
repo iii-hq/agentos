@@ -179,3 +179,10 @@ export function sanitizeId(id: string): string {
   }
   return id;
 }
+
+export function stripCodeFences(text: string): string {
+  return text
+    .replace(/^```\w*\s*\n?/gm, "")
+    .replace(/\n?```\s*$/gm, "")
+    .trim();
+}

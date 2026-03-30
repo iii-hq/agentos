@@ -613,3 +613,133 @@ describe("memory::evict - eviction rules", () => {
     expect(result.evicted).toBe(1);
   });
 });
+
+describe("memory::user_profile::update", () => {
+  it("creates new profile when none exists", async () => {
+    const result = await call("memory::user_profile::update", {
+      agentId: "p1",
+      updates: { workStyle: "concise", preferences: { lang: "TypeScript" } },
+    });
+    expect(result.updated).toBe(true);
+    expect(result.profile.workStyle).toBe("concise");
+    expect(result.profile.updatedAt).toBeDefined();
+  });
+
+  it("merges updates into existing profile", async () => {
+    await call("memory::user_profile::update", {
+      agentId: "p2",
+      updates: { workStyle: "verbose", preferences: { lang: "Go" } },
+    });
+    const result = await call("memory::user_profile::update", {
+      agentId: "p2",
+      updates: { communicationStyle: "direct", preferences: { editor: "vim" } },
+    });
+    expect(result.profile.workStyle).toBe("verbose");
+    expect(result.profile.communicationStyle).toBe("direct");
+    expect(result.profile.preferences).toEqual({ lang: "Go", editor: "vim" });
+  });
+
+  it("skips null and undefined values", async () => {
+    await call("memory::user_profile::update", {
+      agentId: "p3",
+      updates: { workStyle: "fast" },
+    });
+    const result = await call("memory::user_profile::update", {
+      agentId: "p3",
+      updates: { workStyle: null, extra: undefined },
+    });
+    expect(result.profile.workStyle).toBe("fast");
+  });
+});
+
+describe("memory::user_profile::get", () => {
+  it("returns null when no profile exists", async () => {
+    const result = await call("memory::user_profile::get", {
+      agentId: "missing",
+    });
+    expect(result).toBeNull();
+  });
+
+  it("returns stored profile", async () => {
+    seedKv("profile:p4", "profile", {
+      workStyle: "concise",
+      updatedAt: Date.now(),
+    });
+    const result = await call("memory::user_profile::get", {
+      agentId: "p4",
+    });
+    expect(result.workStyle).toBe("concise");
+  });
+});
+
+describe("memory::session_search", () => {
+  it("returns grouped results by sessionId", async () => {
+    seedKv("memory:s1", "m1", {
+      id: "m1",
+      content: "kubernetes deployment pipeline",
+      role: "user",
+      timestamp: Date.now(),
+      sessionId: "sess-a",
+      importance: 0.7,
+    });
+    seedKv("memory:s1", "m2", {
+      id: "m2",
+      content: "kubernetes pod scaling",
+      role: "assistant",
+      timestamp: Date.now() - 1000,
+      sessionId: "sess-b",
+      importance: 0.6,
+    });
+    const results = await call("memory::session_search", {
+      agentId: "s1",
+      query: "kubernetes",
+    });
+    expect(results.length).toBeGreaterThan(0);
+    expect(results[0]).toHaveProperty("sessionId");
+    expect(results[0]).toHaveProperty("matchCount");
+    expect(results[0]).toHaveProperty("highlights");
+  });
+
+  it("returns empty for empty query keywords", async () => {
+    seedKv("memory:s2", "m1", {
+      id: "m1",
+      content: "some content",
+      role: "user",
+      timestamp: Date.now(),
+      sessionId: "sess-x",
+      importance: 0.5,
+    });
+    const results = await call("memory::session_search", {
+      agentId: "s2",
+      query: "   ",
+    });
+    expect(results).toEqual([]);
+  });
+
+  it("returns empty when no memories exist", async () => {
+    const results = await call("memory::session_search", {
+      agentId: "empty-agent",
+      query: "test",
+    });
+    expect(results).toEqual([]);
+  });
+
+  it("respects limit parameter", async () => {
+    for (let i = 0; i < 10; i++) {
+      seedKv("memory:s3", `m${i}`, {
+        id: `m${i}`,
+        content: `matching keyword content ${i}`,
+        role: "user",
+        timestamp: Date.now() - i * 1000,
+        sessionId: `sess-${i}`,
+        importance: 0.7,
+      });
+    }
+    const results = await call("memory::session_search", {
+      agentId: "s3",
+      query: "matching keyword",
+      limit: 3,
+    });
+    expect(results.length).toBeLessThanOrEqual(3);
+  });
+});

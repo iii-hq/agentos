@@ -116,6 +116,12 @@ async function prepareContext(
     limit: 20,
   }, 30_000);
 
+  const userProfile: any = await safeCall(
+    () => triggerFn("memory::user_profile::get", { agentId }, 5_000),
+    null,
+    { agentId, operation: "get_user_profile" },
+  );
+
   const tools: any = await triggerFn("agent::list_tools", { agentId }, 10_000);
   const allowedToolIds = new Set<string>(
     tools.map((t: any) => t.function_id || t.id),
@@ -127,10 +133,24 @@ async function prepareContext(
     config: config?.model,
   }, 10_000);
 
-  const messages: any[] = [
-    ...(memories || []),
-    { role: "user", content: message },
-  ];
+  const messages: any[] = [];
+  if (userProfile) {
+    const profileSummary = Object.entries(userProfile)
+      .filter(([k, v]) => k !== "updatedAt" && v !== undefined && v !== null)
+      .map(([k, v]) =>
+        `${k}: ${typeof v === "string" ? v : JSON.stringify(v)}`,
+      )
+      .join("\n")
+      .slice(0, 2000);
+    if (profileSummary) {
+      messages.push({
+        role: "system",
+        content: `[User Profile]\n${profileSummary}`,
+      });
+    }
+  }
+  messages.push(...(memories || []));
+  messages.push({ role: "user", content: message });
 
   const injectionScan: any = await safeCall(
     () => triggerFn("security::scan_injection", { text: message }, 10_000),
@@ -644,6 +664,14 @@ function recordChatResult(
         tokenUsage: response.usage,
       });
     }
+  } catch {}
+
+  try {
+    triggerVoidFn("nudge::check_turn", {
+      agentId,
+      sessionId: replaySessionId,
+      iterations,
+    });
   } catch {}
 
   try {

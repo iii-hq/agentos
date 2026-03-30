@@ -185,6 +185,107 @@ describe("context::compress", () => {
     expect(result.removedCount).toBeGreaterThan(0);
     expect(result.savedTokens).toBeGreaterThan(0);
   });
+
+  it("removes orphaned tool results without matching tool_calls", async () => {
+    const messages = [
+      { role: "user", content: "start" },
+      { role: "tool", content: "orphaned result", tool_call_id: "orphan-123" },
+      ...Array.from({ length: 20 }, (_, i) => ({
+        role: i % 2 === 0 ? "user" : "assistant",
+        content: "x".repeat(200) + ` msg${i}`,
+      })),
+    ];
+    const result = await call("context::compress", {
+      messages,
+      targetTokens: 50,
+    });
+    const hasOrphan = result.compressed.some(
+      (m: any) => m.tool_call_id === "orphan-123",
+    );
+    expect(hasOrphan).toBe(false);
+  });
+
+  it("preserves recent 40% of messages during compression", async () => {
+    const messages = Array.from({ length: 20 }, (_, i) => ({
+      role: i % 2 === 0 ? "user" : "assistant",
+      content: "x".repeat(500) + ` msg${i}`,
+    }));
+    const result = await call("context::compress", {
+      messages,
+      targetTokens: 500,
+    });
+    const lastMsg = result.compressed[result.compressed.length - 1];
+    expect(lastMsg.content).toContain("msg19");
+  });
+
+  it("uses structured summary template in LLM call", async () => {
+    const messages = Array.from({ length: 20 }, (_, i) => ({
+      role: i % 2 === 0 ? "user" : "assistant",
+      content: "x".repeat(500) + ` msg${i}`,
+    }));
+    await call("context::compress", {
+      messages,
+      targetTokens: 200,
+    });
+    const llmCall = mockTrigger.mock.calls.find(
+      (c: any) => c[0] === "llm::complete",
+    );
+    expect(llmCall).toBeDefined();
+    expect(llmCall![1].messages[0].content).toContain("## Goal");
+    expect(llmCall![1].messages[0].content).toContain("## Progress");
+    expect(llmCall![1].messages[0].content).toContain("## Key Decisions");
+  });
+
+  it("detects existing structured summary for iterative update", async () => {
+    const messages = [
+      { role: "system", content: "[Structured Summary]\n## Goal\nBuild a feature" },
+      ...Array.from({ length: 20 }, (_, i) => ({
+        role: i % 2 === 0 ? "user" : "assistant",
+        content: "x".repeat(500) + ` msg${i}`,
+      })),
+    ];
+    await call("context::compress", {
+      messages,
+      targetTokens: 200,
+    });
+    const llmCall = mockTrigger.mock.calls.find(
+      (c: any) => c[0] === "llm::complete",
+    );
+    expect(llmCall).toBeDefined();
+    expect(llmCall![1].messages[0].content).toContain("PREVIOUS SUMMARY");
+  });
+
+  it("falls back to text summary when LLM fails", async () => {
+    const originalImpl = mockTrigger.getMockImplementation();
+    mockTrigger.mockImplementation(async (fnId: string, data?: any) => {
+      if (fnId === "llm::complete") throw new Error("LLM unavailable");
+      if (fnId === "state::get")
+        return getScope(data.scope).get(data.key) ?? null;
+      if (fnId === "context::health") {
+        const handler = handlers["context::health"];
+        if (handler) return handler(data);
+        return { overall: -1 };
+      }
+      return null;
+    });
+
+    const messages = Array.from({ length: 20 }, (_, i) => ({
+      role: i % 2 === 0 ? "user" : "assistant",
+      content: "x".repeat(500) + ` msg${i}`,
+    }));
+    const result = await call("context::compress", {
+      messages,
+      targetTokens: 200,
+    });
+    expect(result.compressed.length).toBeLessThan(messages.length);
+    const summary = result.compressed.find((m: any) =>
+      m.content?.includes("[Structured Summary"),
+    );
+    expect(summary).toBeDefined();
+
+    if (originalImpl) mockTrigger.mockImplementation(originalImpl);
+    else mockTrigger.mockRestore();
+  });
 });
 
 describe("context::stats", () => {

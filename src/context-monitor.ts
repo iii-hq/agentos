@@ -107,15 +107,65 @@ registerFunction(
   },
 );
 
+function sanitizeToolPairs(messages: Message[]): Message[] {
+  const callIds = new Set<string>();
+  const resultIds = new Set<string>();
+
+  for (const msg of messages) {
+    if (msg.role === "assistant" && msg.tool_calls) {
+      for (const tc of msg.tool_calls) {
+        const cid = tc.callId || tc.id;
+        if (cid) callIds.add(cid);
+      }
+    }
+    if (msg.role === "tool" && msg.tool_call_id) {
+      resultIds.add(msg.tool_call_id);
+    }
+  }
+
+  const orphanedResults = new Set(
+    [...resultIds].filter((id) => !callIds.has(id)),
+  );
+  let filtered = messages.filter(
+    (m) => !(m.role === "tool" && orphanedResults.has(m.tool_call_id)),
+  );
+
+  const missingResults = new Set(
+    [...callIds].filter((id) => !resultIds.has(id)),
+  );
+  if (missingResults.size > 0) {
+    const patched: Message[] = [];
+    for (const msg of filtered) {
+      patched.push(msg);
+      if (msg.role === "assistant" && msg.tool_calls) {
+        for (const tc of msg.tool_calls) {
+          const cid = tc.callId || tc.id;
+          if (missingResults.has(cid)) {
+            patched.push({
+              role: "tool",
+              content: "[Result cleared — see context summary]",
+              tool_call_id: cid,
+            } as Message);
+          }
+        }
+      }
+    }
+    filtered = patched;
+  }
+
+  return filtered;
+}
+
 registerFunction(
   {
     id: "context::compress",
-    description: "Proactive context compression",
+    description: "Structured context compression with iterative updates",
     metadata: { category: "context" },
   },
   async (input: {
     messages: Message[];
     targetTokens: number;
+    agentId?: string;
   }): Promise<{
     compressed: Message[];
     removedCount: number;
@@ -129,13 +179,18 @@ registerFunction(
     let messages = [...input.messages];
     let removedCount = 0;
 
-    const recentBoundary = Math.max(0, messages.length - 10);
+    const recentBoundary = Math.max(
+      0,
+      messages.length - Math.ceil(messages.length * 0.4),
+    );
     for (let i = 0; i < recentBoundary; i++) {
-      if (messages[i].role === "tool" || messages[i].toolResults) {
-        const summary = `[Tool result summarized: ${(messages[i].content || "").slice(0, 100)}...]`;
+      if (
+        (messages[i].role === "tool" || messages[i].toolResults) &&
+        (messages[i].content || "").length > 200
+      ) {
         messages[i] = {
           ...messages[i],
-          content: summary,
+          content: `[Tool result truncated: ${(messages[i].content || "").slice(0, 200)}]`,
           toolResults: undefined,
         };
         removedCount++;
@@ -149,6 +204,8 @@ registerFunction(
         savedTokens: originalTokens - estimateMessagesTokens(messages),
       };
     }
+
+    messages = sanitizeToolPairs(messages);
 
     const merged: Message[] = [];
     for (let i = 0; i < messages.length; i++) {
@@ -173,48 +230,128 @@ registerFunction(
       };
     }
 
-    const halfIdx = Math.floor(messages.length / 2);
-    const oldMessages = messages.slice(0, halfIdx);
-    const recentMessages = messages.slice(halfIdx);
+    const tailBudget = Math.floor(input.targetTokens * 0.4);
+    let tailStart = messages.length;
+    let tailTokens = 0;
+    const headEnd = Math.min(3, messages.length);
+    for (let i = messages.length - 1; i >= headEnd; i--) {
+      const msgTokens = estimateTokens(messages[i].content || "") + 10;
+      if (tailTokens + msgTokens > tailBudget) break;
+      tailTokens += msgTokens;
+      tailStart = i;
+    }
 
-    const summaryText = oldMessages
-      .filter((m) => m.content)
-      .map((m) => `[${m.role}]: ${(m.content || "").slice(0, 150)}`)
-      .join("\n");
+    if (headEnd >= tailStart) {
+      return {
+        compressed: messages,
+        removedCount,
+        savedTokens: originalTokens - estimateMessagesTokens(messages),
+      };
+    }
 
+    const turnsToSummarize = messages.slice(headEnd, tailStart);
+    const serialized = turnsToSummarize
+      .map((m) => {
+        const content = (m.content || "").slice(0, 3000);
+        if (m.role === "tool") return `[TOOL RESULT]: ${content}`;
+        if (m.role === "assistant") return `[ASSISTANT]: ${content}`;
+        return `[${(m.role || "unknown").toUpperCase()}]: ${content}`;
+      })
+      .join("\n\n");
+
+    const existingSummary = messages.find(
+      (m) =>
+        m.role === "system" && (m.content || "").includes("[Structured Summary]"),
+    );
+
+    const summaryBudget = Math.min(
+      Math.floor(estimateTokens(serialized) * 0.3),
+      12000,
+    );
+
+    const SUMMARY_TEMPLATE = `## Goal
+What the user is trying to accomplish.
+
+## Progress
+### Done
+Completed work — include file paths, commands, results.
+### In Progress
+Work currently underway.
+
+## Key Decisions
+Important decisions and why they were made.
+
+## Files Modified
+File paths that were read, modified, or created.
+
+## Next Steps
+What needs to happen next.
+
+## Critical Context
+Values, error messages, config that would be lost without preservation.`;
+
+    let prompt: string;
+    if (existingSummary) {
+      prompt = `Update this existing context summary with the new conversation data.
+
+PREVIOUS SUMMARY:
+${existingSummary.content}
+
+NEW TURNS TO INCORPORATE:
+${serialized}
+
+Use this structure. PRESERVE existing info, ADD new progress:
+${SUMMARY_TEMPLATE}
+
+Target ~${summaryBudget} tokens. Be specific.`;
+    } else {
+      prompt = `Create a structured handoff summary of this conversation.
+
+TURNS TO SUMMARIZE:
+${serialized}
+
+Use this structure:
+${SUMMARY_TEMPLATE}
+
+Target ~${summaryBudget} tokens. Be specific.`;
+    }
+
+    let summary: string;
     try {
-      const llmSummary: any = await trigger({
+      const llmResult: any = await trigger({
         function_id: "llm::complete",
         payload: {
           model: {
             provider: "anthropic",
             model: "claude-haiku-4-5",
-            maxTokens: 1024,
+            maxTokens: Math.max(1024, summaryBudget * 2),
           },
           systemPrompt:
-            "Summarize this conversation concisely, preserving key facts and decisions.",
-          messages: [{ role: "user", content: summaryText.slice(0, 8000) }],
+            "You create structured context summaries. Output only the summary using the exact template provided.",
+          messages: [{ role: "user", content: prompt.slice(0, 16000) }],
         },
       });
-      const condensed: Message = {
-        role: "system",
-        content: `[Conversation summary - ${oldMessages.length} messages condensed]\n${llmSummary.content}`,
-      };
-      removedCount += oldMessages.length;
-      messages = [condensed, ...recentMessages];
+      summary = (llmResult?.content || "").trim();
     } catch {
-      const condensed: Message = {
-        role: "system",
-        content: `[Conversation summary - ${oldMessages.length} messages condensed]\n${summaryText.slice(0, 2000)}`,
-      };
-      removedCount += oldMessages.length;
-      messages = [condensed, ...recentMessages];
+      summary = serialized.slice(0, 2000);
     }
 
+    removedCount += turnsToSummarize.length;
+    const isOldSummary = (m: Message) =>
+      m.role === "system" && (m.content || "").includes("[Structured Summary");
+    const compressed: Message[] = [
+      ...messages.slice(0, headEnd).filter((m) => !isOldSummary(m)),
+      {
+        role: "system",
+        content: `[Structured Summary — ${turnsToSummarize.length} messages condensed]\n${summary}`,
+      } as Message,
+      ...messages.slice(tailStart).filter((m) => !isOldSummary(m)),
+    ];
+
     return {
-      compressed: messages,
+      compressed,
       removedCount,
-      savedTokens: originalTokens - estimateMessagesTokens(messages),
+      savedTokens: originalTokens - estimateMessagesTokens(compressed),
     };
   },
 );
