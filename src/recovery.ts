@@ -3,6 +3,7 @@ import { ENGINE_URL, OTEL_CONFIG, registerShutdown } from "./shared/config.js";
 import { createLogger } from "./shared/logger.js";
 import { recordMetric } from "./shared/metrics.js";
 import { safeCall } from "./shared/errors.js";
+import { requireAuth, sanitizeId } from "./shared/utils.js";
 
 const log = createLogger("recovery");
 const sdk = registerWorker(ENGINE_URL, { workerName: "recovery", otel: OTEL_CONFIG });
@@ -52,13 +53,7 @@ registerFunction(
               function_id: "recovery::validate",
               payload: { agentId },
             }) as Promise<ValidationResult>,
-          {
-            agentId,
-            lifecycle: null,
-            lastActivity: null,
-            circuitBreakerOpen: false,
-            memoryHealthy: false,
-          },
+          null,
           { agentId, operation: "validate_agent" },
         );
       }),
@@ -79,11 +74,13 @@ registerFunction(
     metadata: { category: "recovery" },
   },
   async (req: any) => {
-    const { agentId } = req.body || req;
+    if (req.headers) requireAuth(req);
+    const { agentId: rawAgentId } = req.body || req;
 
-    if (!agentId) {
+    if (!rawAgentId) {
       throw Object.assign(new Error("agentId is required"), { statusCode: 400 });
     }
+    const agentId = sanitizeId(rawAgentId);
 
     const lifecycleEntry: any = await safeCall(
       () =>
@@ -154,11 +151,13 @@ registerFunction(
     metadata: { category: "recovery" },
   },
   async (req: any) => {
-    const { agentId, checks: providedChecks } = req.body || req;
+    if (req.headers) requireAuth(req);
+    const { agentId: rawAgentId, checks: providedChecks } = req.body || req;
 
-    if (!agentId) {
+    if (!rawAgentId) {
       throw Object.assign(new Error("agentId is required"), { statusCode: 400 });
     }
+    const agentId = sanitizeId(rawAgentId);
 
     const checks: ValidationResult = providedChecks ||
       (await trigger({
@@ -211,11 +210,13 @@ registerFunction(
     metadata: { category: "recovery" },
   },
   async (req: any) => {
-    const { agentId } = req.body || req;
+    if (req.headers) requireAuth(req);
+    const { agentId: rawAgentId } = req.body || req;
 
-    if (!agentId) {
+    if (!rawAgentId) {
       throw Object.assign(new Error("agentId is required"), { statusCode: 400 });
     }
+    const agentId = sanitizeId(rawAgentId);
 
     const attemptsEntry: any = await safeCall(
       () =>
@@ -237,15 +238,6 @@ registerFunction(
       log.warn("Recovery attempts exhausted", { agentId, attempts });
       return { agentId, action: "exhausted", attempts };
     }
-
-    await trigger({
-      function_id: "state::set",
-      payload: {
-        scope: "recovery_attempts",
-        key: agentId,
-        value: { count: attempts + 1, lastAttempt: Date.now() },
-      },
-    });
 
     const classified: ClassificationResult = await trigger({
       function_id: "recovery::classify",
@@ -276,21 +268,6 @@ registerFunction(
         action = "none";
       }
     } else if (classified.classification === "dead") {
-      if (classified.checks.circuitBreakerOpen) {
-        await safeCall(
-          () =>
-            trigger({
-              function_id: "state::set",
-              payload: {
-                scope: "circuit_breakers",
-                key: agentId,
-                value: { state: "closed", resetAt: Date.now() },
-              },
-            }),
-          undefined,
-          { agentId, operation: "reset_circuit_breaker" },
-        );
-      }
       const transitionResult: any = await safeCall(
         () =>
           trigger({
@@ -301,8 +278,23 @@ registerFunction(
         { agentId, operation: "lifecycle_transition_restart" },
       );
       if (transitionResult?.transitioned) {
+        if (classified.checks.circuitBreakerOpen) {
+          await safeCall(
+            () =>
+              trigger({
+                function_id: "state::set",
+                payload: {
+                  scope: "circuit_breakers",
+                  key: agentId,
+                  value: { state: "closed", resetAt: Date.now() },
+                },
+              }),
+            undefined,
+            { agentId, operation: "reset_circuit_breaker" },
+          );
+        }
         const restartMsg = classified.checks.circuitBreakerOpen
-          ? "Circuit breaker open. Resetting and restarting."
+          ? "Circuit breaker reset. Restarting."
           : "Recovery: session detected as inactive. Restarting.";
         triggerVoid("tool::agent_send", {
           targetAgentId: agentId,
@@ -322,10 +314,26 @@ registerFunction(
       action = "escalate";
     }
 
-    log.info("Recovery action taken", { agentId, action, attempt: attempts + 1 });
+    if (action !== "none") {
+      await safeCall(
+        () =>
+          trigger({
+            function_id: "state::set",
+            payload: {
+              scope: "recovery_attempts",
+              key: agentId,
+              value: { count: attempts + 1, lastAttempt: Date.now() },
+            },
+          }),
+        undefined,
+        { agentId, operation: "increment_recovery_attempts" },
+      );
+    }
+
+    log.info("Recovery action taken", { agentId, action, attempt: action !== "none" ? attempts + 1 : attempts });
     recordMetric("recovery_action", 1, { action }, "counter");
 
-    return { agentId, action, attempt: attempts + 1, classification: classified.classification };
+    return { agentId, action, attempt: action !== "none" ? attempts + 1 : attempts, classification: classified.classification };
   },
 );
 
