@@ -2,7 +2,7 @@ import { registerWorker, TriggerAction } from "iii-sdk";
 import { ENGINE_URL, OTEL_CONFIG, registerShutdown } from "./shared/config.js";
 import { createLogger } from "./shared/logger.js";
 import { createRecordMetric } from "./shared/metrics.js";
-import { requireAuth } from "./shared/utils.js";
+import { requireAuth, sanitizeId } from "./shared/utils.js";
 import { safeCall } from "./shared/errors.js";
 import type { FeedbackPolicy, ReviewResult } from "./types.js";
 
@@ -625,6 +625,155 @@ registerFunction(
     return { reviewed: results.length, results };
   },
 );
+
+const VALID_SIGNAL_TYPES = [
+  "ci_failure",
+  "review_comment",
+  "merge_conflict",
+  "dependency_update",
+  "custom",
+] as const;
+type SignalType = (typeof VALID_SIGNAL_TYPES)[number];
+
+const SIGNAL_PREFIX_MAP: Record<SignalType, string> = {
+  ci_failure: "[CI Failure]",
+  review_comment: "[Review Comment]",
+  merge_conflict: "[Merge Conflict]",
+  dependency_update: "[Dependency Update]",
+  custom: "[Signal]",
+};
+
+registerFunction(
+  {
+    id: "feedback::inject_signal",
+    description: "Push external signal into agent context",
+    metadata: { category: "feedback" },
+  },
+  async (req: any) => {
+    if (req.headers) requireAuth(req);
+    const { agentId, content, signalType, metadata: signalMeta } = req.body || req;
+
+    if (!agentId || typeof agentId !== "string") {
+      throw Object.assign(new Error("agentId is required"), { statusCode: 400 });
+    }
+    if (!content || typeof content !== "string") {
+      throw Object.assign(new Error("content is required"), { statusCode: 400 });
+    }
+    if (!signalType || !VALID_SIGNAL_TYPES.includes(signalType)) {
+      throw Object.assign(
+        new Error(`signalType must be one of: ${VALID_SIGNAL_TYPES.join(", ")}`),
+        { statusCode: 400 },
+      );
+    }
+
+    const sanitizedId = sanitizeId(agentId);
+
+    const signalId = `sig_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    const signal = {
+      id: signalId,
+      agentId: sanitizedId,
+      content,
+      signalType,
+      metadata: signalMeta || {},
+      createdAt: Date.now(),
+    };
+
+    await trigger({ function_id: "state::set", payload: {
+      scope: `feedback_signals:${sanitizedId}`,
+      key: signalId,
+      value: signal,
+    } });
+
+    const prefix = SIGNAL_PREFIX_MAP[signalType as SignalType] || "[Signal]";
+    triggerVoid("tool::agent_send", {
+      targetAgentId: sanitizedId,
+      message: `${prefix} ${content}`,
+    });
+
+    recordMetric("feedback_signal_injected", 1, { signalType }, "counter");
+    log.info("Signal injected", { agentId: sanitizedId, signalType, signalId });
+
+    return { signalId, injected: true };
+  },
+);
+
+registerFunction(
+  {
+    id: "feedback::register_source",
+    description: "Register an external signal source",
+    metadata: { category: "feedback" },
+  },
+  async (req: any) => {
+    const { name, type: sourceType, config: sourceConfig } = req.body || req;
+
+    if (!name || typeof name !== "string") {
+      throw Object.assign(new Error("name is required"), { statusCode: 400 });
+    }
+    if (!sourceType || typeof sourceType !== "string") {
+      throw Object.assign(new Error("type is required"), { statusCode: 400 });
+    }
+
+    const sourceId = `src_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    const source = {
+      id: sourceId,
+      name,
+      type: sourceType,
+      config: sourceConfig || {},
+      registeredAt: Date.now(),
+    };
+
+    await trigger({ function_id: "state::set", payload: {
+      scope: "feedback_sources",
+      key: sourceId,
+      value: source,
+    } });
+
+    return { sourceId, registered: true };
+  },
+);
+
+registerFunction(
+  {
+    id: "feedback::list_signals",
+    description: "List recent signals for an agent sorted by createdAt desc",
+    metadata: { category: "feedback" },
+  },
+  async (req: any) => {
+    const { agentId, limit: rawLimit } = req.body || req;
+
+    if (!agentId || typeof agentId !== "string") {
+      throw Object.assign(new Error("agentId is required"), { statusCode: 400 });
+    }
+
+    const parsed = Number(rawLimit);
+    const limit = Math.max(1, Math.min(Number.isFinite(parsed) ? parsed : 50, 200));
+
+    const entries: any[] = await safeCall(
+      () => trigger({ function_id: "state::list", payload: { scope: `feedback_signals:${agentId}` } }),
+      [],
+      { agentId, operation: "list_signals" },
+    );
+
+    const signals = (Array.isArray(entries) ? entries : [])
+      .map((e: any) => e.value || e)
+      .filter((s: any) => s.createdAt)
+      .sort((a: any, b: any) => b.createdAt - a.createdAt)
+      .slice(0, limit);
+
+    return { agentId, count: signals.length, signals };
+  },
+);
+
+registerTrigger({
+  type: "http",
+  function_id: "feedback::inject_signal",
+  config: { api_path: "api/feedback/inject-signal", http_method: "POST" },
+});
+registerTrigger({
+  type: "http",
+  function_id: "feedback::list_signals",
+  config: { api_path: "api/feedback/signals", http_method: "POST" },
+});
 
 registerTrigger({
   type: "http",

@@ -187,6 +187,137 @@ describe("context::compress", () => {
   });
 });
 
+describe("context::compress - orphan removal", () => {
+  it("removes orphaned tool results", async () => {
+    const messages = [
+      {
+        role: "assistant",
+        content: null,
+        tool_calls: [{ callId: "tc1", id: "tool::read" }],
+      },
+      { role: "tool", content: "result 1", tool_call_id: "tc1" },
+      { role: "tool", content: "orphaned result", tool_call_id: "tc_missing" },
+      ...Array.from({ length: 15 }, (_, i) => ({
+        role: i % 2 === 0 ? "user" : "assistant",
+        content: `Msg ${i} ${"x".repeat(200)}`,
+      })),
+    ];
+    const result = await call("context::compress", {
+      messages,
+      targetTokens: 50,
+    });
+    const orphanedContent = result.compressed.find(
+      (m: any) => m.tool_call_id === "tc_missing",
+    );
+    expect(orphanedContent).toBeUndefined();
+  });
+
+  it("adds stub for orphaned tool calls", async () => {
+    const messages = [
+      {
+        role: "assistant",
+        content: null,
+        tool_calls: [
+          { callId: "tc1", id: "tool::read" },
+          { callId: "tc2", id: "tool::write" },
+        ],
+      },
+      { role: "tool", content: "result 1", tool_call_id: "tc1" },
+      ...Array.from({ length: 15 }, (_, i) => ({
+        role: i % 2 === 0 ? "user" : "assistant",
+        content: `Msg ${i} ${"x".repeat(200)}`,
+      })),
+    ];
+    const result = await call("context::compress", {
+      messages,
+      targetTokens: 50,
+    });
+    const stub = result.compressed.find(
+      (m: any) => m.role === "tool" && m.tool_call_id === "tc2",
+    );
+    expect(stub).toBeDefined();
+    expect(stub.content).toBe("[Result cleared — see context summary]");
+  });
+});
+
+describe("context::compress - tail protection", () => {
+  it("preserves recent messages within 40% budget", async () => {
+    const messages = Array.from({ length: 30 }, (_, i) => ({
+      role: i % 2 === 0 ? "user" : "assistant",
+      content: `Message number ${i} with content ${"y".repeat(100)}`,
+    }));
+    const result = await call("context::compress", {
+      messages,
+      targetTokens: 200,
+    });
+    const lastMsg = result.compressed[result.compressed.length - 1];
+    expect(lastMsg.content).toContain("Message number 29");
+  });
+});
+
+describe("context::compress - structured template", () => {
+  it("uses structured summary template", async () => {
+    const messages = Array.from({ length: 30 }, (_, i) => ({
+      role: i % 2 === 0 ? "user" : "assistant",
+      content: `Long message ${i} ${"z".repeat(300)}`,
+    }));
+    const result = await call("context::compress", {
+      messages,
+      targetTokens: 100,
+    });
+    const summaryMsg = result.compressed.find(
+      (m: any) =>
+        m.role === "system" && m.content?.includes("[Structured Summary]"),
+    );
+    expect(summaryMsg).toBeDefined();
+  });
+
+  it("handles iterative update with existing summary", async () => {
+    const messages = [
+      {
+        role: "system" as const,
+        content: "[Structured Summary]\nGoal: Build API\nProgress: Started",
+      },
+      ...Array.from({ length: 30 }, (_, i) => ({
+        role: (i % 2 === 0 ? "user" : "assistant") as string,
+        content: `Continuation message ${i} ${"w".repeat(300)}`,
+      })),
+    ];
+    const result = await call("context::compress", {
+      messages,
+      targetTokens: 100,
+    });
+    const summaries = result.compressed.filter(
+      (m: any) =>
+        m.role === "system" && m.content?.includes("[Structured Summary]"),
+    );
+    expect(summaries.length).toBeLessThanOrEqual(1);
+  });
+
+  it("falls back gracefully on LLM failure", async () => {
+    mockTrigger.mockImplementationOnce(async (fnId: string, data?: any) => {
+      if (fnId === "llm::complete") throw new Error("LLM unavailable");
+      if (fnId === "context::health") return { overall: -1 };
+      return null;
+    });
+
+    const messages = Array.from({ length: 30 }, (_, i) => ({
+      role: i % 2 === 0 ? "user" : "assistant",
+      content: `Fallback test ${i} ${"f".repeat(300)}`,
+    }));
+    const result = await call("context::compress", {
+      messages,
+      targetTokens: 100,
+    });
+    expect(result.compressed.length).toBeGreaterThan(0);
+    const summaryMsg = result.compressed.find(
+      (m: any) =>
+        m.role === "system" && m.content?.includes("[Structured Summary]"),
+    );
+    expect(summaryMsg).toBeDefined();
+  });
+});
+
 describe("context::stats", () => {
   it("returns correct message count and tool count", async () => {
     const messages = [

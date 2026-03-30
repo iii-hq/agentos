@@ -12,8 +12,8 @@ const layers = [
   },
   {
     lang: "TypeScript",
-    count: "46 workers",
-    items: ["agent-core", "tools", "channels", "security", "api", "evolve", "eval", "feedback", "artifact-dag", "coordination", "swarm", "knowledge-graph"],
+    count: "51 workers",
+    items: ["agent-core", "tools", "channels", "security", "api", "evolve", "eval", "feedback", "artifact-dag", "coordination", "swarm", "knowledge-graph", "memory-reflection", "session-lifecycle", "task-decomposer", "recovery", "orchestrator"],
     accent: "border-white/10 bg-white/[0.02]",
     pill: "bg-white/5 border-white/10 text-zinc-400",
     label: "text-white",

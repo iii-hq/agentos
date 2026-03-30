@@ -93,6 +93,7 @@ interface PreparedContext {
   tools: any;
   allowedToolIds: Set<string>;
   replaySessionId: string;
+  profilePrompt: string;
 }
 
 async function prepareContext(
@@ -116,6 +117,12 @@ async function prepareContext(
     limit: 20,
   }, 30_000);
 
+  const userProfile: any = await safeCall(
+    () => triggerFn("memory::user_profile::get", { agentId }, 5_000),
+    null,
+    { agentId, operation: "get_user_profile" },
+  );
+
   const tools: any = await triggerFn("agent::list_tools", { agentId }, 10_000);
   const allowedToolIds = new Set<string>(
     tools.map((t: any) => t.function_id || t.id),
@@ -125,12 +132,24 @@ async function prepareContext(
     message,
     toolCount: tools.length,
     config: config?.model,
+    agentTier: config?.agentTier,
   }, 10_000);
 
-  const messages: any[] = [
-    ...(memories || []),
-    { role: "user", content: message },
-  ];
+  let profilePrompt = "";
+  if (userProfile) {
+    const profileSummary = Object.entries(userProfile)
+      .filter(([k, v]) => k !== "updatedAt" && v !== undefined && v !== null)
+      .map(([k, v]) => `${k}: ${typeof v === "string" ? v : JSON.stringify(v)}`)
+      .join("\n")
+      .slice(0, 2000);
+    if (profileSummary) {
+      profilePrompt = `\n\n[User Profile]\n${profileSummary}`;
+    }
+  }
+
+  const messages: any[] = [];
+  messages.push(...(memories || []));
+  messages.push({ role: "user", content: message });
 
   const injectionScan: any = await safeCall(
     () => triggerFn("security::scan_injection", { text: message }, 10_000),
@@ -159,7 +178,7 @@ async function prepareContext(
 
   const replaySessionId = sessionId || `default:${agentId}`;
 
-  return { config, model, messages, tools, allowedToolIds, replaySessionId };
+  return { config, model, messages, tools, allowedToolIds, replaySessionId, profilePrompt };
 }
 
 async function executeLlmCall(
@@ -647,6 +666,14 @@ function recordChatResult(
   } catch {}
 
   try {
+    triggerVoidFn("reflect::check_turn", {
+      agentId,
+      sessionId: replaySessionId,
+      iterations,
+    });
+  } catch {}
+
+  try {
     triggerVoidFn("state::update", {
       scope: "metering",
       key: agentId,
@@ -755,9 +782,10 @@ registerFunction(
             tools,
             allowedToolIds,
             replaySessionId,
+            profilePrompt,
           } = ctx as PreparedContext;
 
-          const resolvedPrompt = systemPrompt || config?.systemPrompt;
+          const resolvedPrompt = (systemPrompt || config?.systemPrompt || "") + profilePrompt;
 
           let response = await executeLlmCall(
             model,

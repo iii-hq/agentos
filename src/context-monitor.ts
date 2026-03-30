@@ -107,15 +107,51 @@ registerFunction(
   },
 );
 
+function sanitizeToolPairs(messages: Message[]): Message[] {
+  const callIds = new Set<string>();
+  const resultIds = new Set<string>();
+
+  for (const m of messages) {
+    if (m.role === "assistant" && (m as any).tool_calls) {
+      for (const tc of (m as any).tool_calls) {
+        const cid = tc.callId || tc.id;
+        if (cid) callIds.add(cid);
+      }
+    }
+    if (m.role === "tool" && (m as any).tool_call_id) {
+      resultIds.add((m as any).tool_call_id);
+    }
+  }
+
+  const filtered = messages.filter((m) => {
+    if (m.role === "tool" && (m as any).tool_call_id) {
+      return callIds.has((m as any).tool_call_id);
+    }
+    return true;
+  });
+
+  const orphanedCalls = [...callIds].filter((cid) => !resultIds.has(cid));
+  for (const cid of orphanedCalls) {
+    filtered.push({
+      role: "tool",
+      tool_call_id: cid,
+      content: "[Result cleared — see context summary]",
+    } as any);
+  }
+
+  return filtered;
+}
+
 registerFunction(
   {
     id: "context::compress",
-    description: "Proactive context compression",
+    description: "Proactive 5-phase context compression",
     metadata: { category: "context" },
   },
   async (input: {
     messages: Message[];
     targetTokens: number;
+    agentId?: string;
   }): Promise<{
     compressed: Message[];
     removedCount: number;
@@ -129,9 +165,12 @@ registerFunction(
     let messages = [...input.messages];
     let removedCount = 0;
 
-    const recentBoundary = Math.max(0, messages.length - 10);
-    for (let i = 0; i < recentBoundary; i++) {
-      if (messages[i].role === "tool" || messages[i].toolResults) {
+    const recentCutoff = Math.floor(messages.length * 0.6);
+    for (let i = 0; i < recentCutoff; i++) {
+      if (
+        (messages[i].role === "tool" || messages[i].toolResults) &&
+        (messages[i].content || "").length > 200
+      ) {
         const summary = `[Tool result summarized: ${(messages[i].content || "").slice(0, 100)}...]`;
         messages[i] = {
           ...messages[i],
@@ -142,13 +181,7 @@ registerFunction(
       }
     }
 
-    if (estimateMessagesTokens(messages) <= input.targetTokens) {
-      return {
-        compressed: messages,
-        removedCount,
-        savedTokens: originalTokens - estimateMessagesTokens(messages),
-      };
-    }
+    messages = sanitizeToolPairs(messages);
 
     const merged: Message[] = [];
     for (let i = 0; i < messages.length; i++) {
@@ -173,14 +206,55 @@ registerFunction(
       };
     }
 
-    const halfIdx = Math.floor(messages.length / 2);
-    const oldMessages = messages.slice(0, halfIdx);
-    const recentMessages = messages.slice(halfIdx);
+    const recentBudget = Math.floor(input.targetTokens * 0.4);
+    let recentTokens = 0;
+    let splitIdx = messages.length;
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const msgTokens = estimateTokens(messages[i].content || "");
+      if (recentTokens + msgTokens > recentBudget) break;
+      recentTokens += msgTokens;
+      splitIdx = i;
+    }
+
+    if (splitIdx === messages.length && messages.length > 0) {
+      splitIdx = messages.length - 1;
+    }
+
+    const oldMessages = messages.slice(0, splitIdx);
+    const recentMessages = messages.slice(splitIdx);
+
+    if (oldMessages.length === 0) {
+      return {
+        compressed: messages,
+        removedCount,
+        savedTokens: originalTokens - estimateMessagesTokens(messages),
+      };
+    }
 
     const summaryText = oldMessages
       .filter((m) => m.content)
       .map((m) => `[${m.role}]: ${(m.content || "").slice(0, 150)}`)
       .join("\n");
+
+    const SUMMARY_TEMPLATE = `[Structured Summary]
+Goal: <primary objective>
+Progress: <completed steps>
+Decisions: <key decisions made>
+Files: <important files/paths mentioned>
+Next Steps: <pending work>
+Critical Context: <must-preserve details>`;
+
+    const existingSummaryIdx = messages.findIndex(
+      (m) =>
+        m.role === "system" &&
+        m.content?.includes("[Structured Summary]"),
+    );
+    const existingSummaryContent =
+      existingSummaryIdx >= 0 ? messages[existingSummaryIdx].content : "";
+
+    const iterativeBlock = existingSummaryContent
+      ? `\nPREVIOUS SUMMARY TO UPDATE:\n${existingSummaryContent}\n`
+      : "";
 
     try {
       const llmSummary: any = await trigger({
@@ -192,23 +266,42 @@ registerFunction(
             maxTokens: 1024,
           },
           systemPrompt:
-            "Summarize this conversation concisely, preserving key facts and decisions.",
-          messages: [{ role: "user", content: summaryText.slice(0, 8000) }],
+            "Summarize this conversation into the structured template. Preserve key facts and decisions.",
+          messages: [
+            {
+              role: "user",
+              content: `${iterativeBlock}TEMPLATE:\n${SUMMARY_TEMPLATE}\n\nCONVERSATION:\n${summaryText.slice(0, 8000)}`,
+            },
+          ],
         },
       });
       const condensed: Message = {
         role: "system",
-        content: `[Conversation summary - ${oldMessages.length} messages condensed]\n${llmSummary.content}`,
+        content: `[Structured Summary]\n${llmSummary.content}`,
       };
       removedCount += oldMessages.length;
-      messages = [condensed, ...recentMessages];
+      const filtered = recentMessages.filter(
+        (m) =>
+          !(
+            m.role === "system" &&
+            m.content?.includes("[Structured Summary]")
+          ),
+      );
+      messages = [condensed, ...filtered];
     } catch {
       const condensed: Message = {
         role: "system",
-        content: `[Conversation summary - ${oldMessages.length} messages condensed]\n${summaryText.slice(0, 2000)}`,
+        content: `[Structured Summary]\nGoal: ${summaryText.slice(0, 500)}\nProgress: ${oldMessages.length} messages processed\nDecisions: See context\nFiles: N/A\nNext Steps: Continue conversation\nCritical Context: ${summaryText.slice(0, 1000)}`,
       };
       removedCount += oldMessages.length;
-      messages = [condensed, ...recentMessages];
+      const filtered = recentMessages.filter(
+        (m) =>
+          !(
+            m.role === "system" &&
+            m.content?.includes("[Structured Summary]")
+          ),
+      );
+      messages = [condensed, ...filtered];
     }
 
     return {

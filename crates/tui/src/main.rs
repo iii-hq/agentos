@@ -36,6 +36,10 @@ enum Screen {
     Settings,
     Wizard,
     WorkflowBuilder,
+    Lifecycle,
+    Tasks,
+    Recovery,
+    Orchestrator,
 }
 
 impl Screen {
@@ -47,6 +51,7 @@ impl Screen {
             Screen::Security, Screen::Peers, Screen::Extensions, Screen::Triggers,
             Screen::Templates, Screen::Usage, Screen::Settings,
             Screen::Wizard, Screen::WorkflowBuilder,
+            Screen::Lifecycle, Screen::Tasks, Screen::Recovery, Screen::Orchestrator,
         ]
     }
 
@@ -73,6 +78,10 @@ impl Screen {
             Screen::Settings => "Settings",
             Screen::Wizard => "Wizard",
             Screen::WorkflowBuilder => "Wf Builder",
+            Screen::Lifecycle => "Lifecycle",
+            Screen::Tasks => "Tasks",
+            Screen::Recovery => "Recovery",
+            Screen::Orchestrator => "Orchestrator",
         }
     }
 
@@ -99,6 +108,10 @@ impl Screen {
             Screen::Settings => "S",
             Screen::Wizard => "w",
             Screen::WorkflowBuilder => "W",
+            Screen::Lifecycle => "L",
+            Screen::Tasks => "K",
+            Screen::Recovery => "R",
+            Screen::Orchestrator => "O",
         }
     }
 
@@ -622,6 +635,10 @@ async fn main() -> Result<()> {
                 KeyCode::Char('T') => navigate_to(&mut app, Screen::Templates),
                 KeyCode::Char('S') => navigate_to(&mut app, Screen::Settings),
                 KeyCode::Char('W') => navigate_to(&mut app, Screen::WorkflowBuilder),
+                KeyCode::Char('L') => navigate_to(&mut app, Screen::Lifecycle),
+                KeyCode::Char('K') => navigate_to(&mut app, Screen::Tasks),
+                KeyCode::Char('R') => navigate_to(&mut app, Screen::Recovery),
+                KeyCode::Char('O') => navigate_to(&mut app, Screen::Orchestrator),
                 KeyCode::Char('d') if app.screen == Screen::Approvals => {
                     app.deny_selected().await;
                 }
@@ -759,6 +776,10 @@ fn draw(f: &mut Frame, app: &App) {
         Screen::Settings => draw_settings(f, app, content_block, body_chunks[1]),
         Screen::Wizard => draw_wizard(f, app, body_chunks[1]),
         Screen::WorkflowBuilder => draw_workflow_builder(f, app, content_block, body_chunks[1]),
+        Screen::Lifecycle => draw_placeholder(f, content_block, body_chunks[1], "Lifecycle", "Session state machine — spawning → working → blocked → done. Reactions fire on transitions."),
+        Screen::Tasks => draw_placeholder(f, content_block, body_chunks[1], "Tasks", "Recursive task decomposition with hierarchical IDs. Status propagates from children to parents."),
+        Screen::Recovery => draw_placeholder(f, content_block, body_chunks[1], "Recovery", "Session health scanning — healthy / degraded / dead / unrecoverable. Auto-recovery every 10m."),
+        Screen::Orchestrator => draw_placeholder(f, content_block, body_chunks[1], "Orchestrator", "Multi-agent coordination — plan features, decompose tasks, spawn workers, monitor progress."),
     }
 
     let footer = Block::default().borders(Borders::ALL);
@@ -1482,6 +1503,27 @@ fn draw_workflow_builder(f: &mut Frame, app: &App, block: Block, area: Rect) {
     .header(Row::new(["#", "Function ID"]).style(Style::default().add_modifier(Modifier::BOLD)));
 
     f.render_widget(table, chunks[1]);
+}
+
+fn draw_placeholder(f: &mut Frame, block: Block, area: Rect, title: &str, desc: &str) {
+    let inner = block.inner(area);
+    f.render_widget(block, area);
+
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Length(3), Constraint::Min(0)])
+        .split(inner);
+
+    let header = Paragraph::new(vec![
+        Line::from(Span::styled(title, Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))),
+        Line::from(""),
+        Line::from(Span::styled(desc, Style::default().fg(Color::DarkGray))),
+    ]);
+    f.render_widget(header, chunks[0]);
+
+    let info = Paragraph::new("  Data loads from API endpoints. Press 'r' to refresh.")
+        .style(Style::default().fg(Color::DarkGray));
+    f.render_widget(info, chunks[1]);
 }
 
 fn default_templates() -> Vec<Value> {

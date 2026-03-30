@@ -189,6 +189,60 @@ describe("llm::route - complexity scoring", () => {
     });
     expect(result.maxTokens).toBe(4096);
   });
+
+  it("boosts score for multi-step indicators", async () => {
+    const result = await call("llm::route", {
+      message: "Step 1: set up the project. Then add auth. Next deploy it. Finally test.",
+      toolCount: 0,
+    });
+    expect(result.model).not.toBe("claude-haiku-4-5");
+  });
+
+  it("boosts score for multiple code blocks", async () => {
+    const message = "Compare:\n```\nconst a = 1;\n```\nwith:\n```\nconst b = 2;\n```";
+    const result = await call("llm::route", {
+      message,
+      toolCount: 0,
+    });
+    expect(
+      result.model === "claude-sonnet-4-6" || result.model === "claude-opus-4-6",
+    ).toBe(true);
+  });
+
+  it("economy tier always returns haiku", async () => {
+    const result = await call("llm::route", {
+      message: "Please analyze and refactor this complex module:\n```\n" + "x".repeat(2500) + "\n```",
+      toolCount: 15,
+      agentTier: "economy",
+    });
+    expect(result.model).toBe("claude-haiku-4-5");
+  });
+
+  it("premium tier returns sonnet minimum", async () => {
+    const result = await call("llm::route", {
+      message: "hello",
+      toolCount: 0,
+      agentTier: "premium",
+    });
+    expect(result.model).toBe("claude-sonnet-4-6");
+  });
+
+  it("premium tier returns opus for complex queries", async () => {
+    const result = await call("llm::route", {
+      message: "Analyze and refactor this complex system:\n```\n" + "x".repeat(3000) + "\n```",
+      toolCount: 15,
+      agentTier: "premium",
+    });
+    expect(result.model).toBe("claude-opus-4-6");
+  });
+
+  it("detects additional reasoning keywords (compare, evaluate, optimize, migrate)", async () => {
+    const result = await call("llm::route", {
+      message: "Compare and evaluate these two approaches to optimize the system",
+      toolCount: 0,
+    });
+    expect(result.model).not.toBe("claude-haiku-4-5");
+  });
 });
 
 describe("llm::complete", () => {

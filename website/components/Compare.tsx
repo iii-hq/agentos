@@ -155,11 +155,31 @@ const rows: { feature: string; values: string[] }[] = [
   {
     feature: "Memory",
     values: [
-      "Knowledge graph + vector",
+      "KG + vector + self-curating reflection",
       "File-based markdown",
       "Unified memory (LanceDB)",
       "Checkpoints + stores",
       "ChromaDB + GraphRAG",
+    ],
+  },
+  {
+    feature: "Orchestration",
+    values: [
+      "Lifecycle + decomposition + recovery",
+      "None",
+      "Crews + Flows",
+      "Supervisor graph",
+      "Swarm + FSM",
+    ],
+  },
+  {
+    feature: "Self-improving",
+    values: [
+      "Memory reflection + skill discovery",
+      "None",
+      "None",
+      "None",
+      "None",
     ],
   },
   {

@@ -3,6 +3,7 @@ import { Menu, X } from "lucide-react";
 
 const NAV_LINKS = [
   { label: "Why", href: "#why" },
+  { label: "Intelligence", href: "#intelligence" },
   { label: "Compare", href: "#compare" },
   { label: "Architecture", href: "#architecture" },
   { label: "Code", href: "#code" },

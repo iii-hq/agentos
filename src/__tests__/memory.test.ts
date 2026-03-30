@@ -80,6 +80,32 @@ vi.mock("iii-sdk", () => ({
   TriggerAction: { Void: () => ({}) },
 }));
 
+vi.mock("../shared/config.js", () => ({
+  ENGINE_URL: "ws://localhost:3111",
+  OTEL_CONFIG: {},
+  registerShutdown: vi.fn(),
+}));
+vi.mock("../shared/logger.js", () => ({
+  createLogger: () => ({
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+    debug: vi.fn(),
+  }),
+}));
+vi.mock("../shared/metrics.js", () => ({
+  recordMetric: vi.fn(),
+}));
+vi.mock("../shared/errors.js", () => ({
+  safeCall: async (fn: Function, fallback: any, _context?: any) => {
+    try {
+      return await fn();
+    } catch {
+      return fallback;
+    }
+  },
+}));
+
 beforeEach(() => {
   resetKv();
   mockTrigger.mockClear();
@@ -611,5 +637,157 @@ describe("memory::evict - eviction rules", () => {
       minImportance: 0.5,
     });
     expect(result.evicted).toBe(1);
+  });
+});
+
+describe("memory::user_profile::update", () => {
+  it("creates a new profile", async () => {
+    const result = await call("memory::user_profile::update", {
+      agentId: "a1",
+      updates: { name: "Alice", preferences: { theme: "dark" } },
+    });
+    expect(result.updated).toBe(true);
+    expect(result.profile.name).toBe("Alice");
+    expect(result.profile.preferences.theme).toBe("dark");
+    expect(result.profile.updatedAt).toBeDefined();
+  });
+
+  it("deep-merges objects", async () => {
+    seedKv("user:profile:a1", "profile", {
+      preferences: { theme: "dark", lang: "en" },
+    });
+    const result = await call("memory::user_profile::update", {
+      agentId: "a1",
+      updates: { preferences: { theme: "light" } },
+    });
+    expect(result.profile.preferences.theme).toBe("light");
+    expect(result.profile.preferences.lang).toBe("en");
+  });
+
+  it("concatenates arrays", async () => {
+    seedKv("user:profile:a1", "profile", {
+      skills: ["typescript"],
+    });
+    const result = await call("memory::user_profile::update", {
+      agentId: "a1",
+      updates: { skills: ["rust"] },
+    });
+    expect(result.profile.skills).toEqual(["typescript", "rust"]);
+  });
+
+  it("skips null/undefined values", async () => {
+    seedKv("user:profile:a1", "profile", { name: "Alice" });
+    const result = await call("memory::user_profile::update", {
+      agentId: "a1",
+      updates: { name: null, age: undefined, role: "dev" },
+    });
+    expect(result.profile.name).toBe("Alice");
+    expect(result.profile.role).toBe("dev");
+  });
+});
+
+describe("memory::user_profile::get", () => {
+  it("returns null for non-existent profile", async () => {
+    const result = await call("memory::user_profile::get", {
+      agentId: "missing",
+    });
+    expect(result).toBeNull();
+  });
+
+  it("returns stored profile", async () => {
+    seedKv("user:profile:a1", "profile", { name: "Bob", updatedAt: 123 });
+    const result = await call("memory::user_profile::get", { agentId: "a1" });
+    expect(result.name).toBe("Bob");
+  });
+});
+
+describe("memory::session_search", () => {
+  it("returns empty for no matches", async () => {
+    const result = await call("memory::session_search", {
+      agentId: "a1",
+      query: "nonexistent",
+    });
+    expect(result).toEqual([]);
+  });
+
+  it("groups results by sessionId", async () => {
+    seedKv("memory:a1", "m1", {
+      id: "m1",
+      content: "kubernetes deployment config",
+      role: "user",
+      sessionId: "s1",
+      timestamp: Date.now(),
+    });
+    seedKv("memory:a1", "m2", {
+      id: "m2",
+      content: "kubernetes pod scaling",
+      role: "assistant",
+      sessionId: "s1",
+      timestamp: Date.now(),
+    });
+    seedKv("memory:a1", "m3", {
+      id: "m3",
+      content: "react component design",
+      role: "user",
+      sessionId: "s2",
+      timestamp: Date.now(),
+    });
+
+    const result = await call("memory::session_search", {
+      agentId: "a1",
+      query: "kubernetes",
+    });
+    expect(result.length).toBe(1);
+    expect(result[0].sessionId).toBe("s1");
+    expect(result[0].matchCount).toBe(2);
+  });
+
+  it("returns highlights", async () => {
+    seedKv("memory:a1", "m1", {
+      id: "m1",
+      content: "debugging auth middleware issue",
+      role: "user",
+      sessionId: "s1",
+      timestamp: Date.now(),
+    });
+
+    const result = await call("memory::session_search", {
+      agentId: "a1",
+      query: "auth middleware",
+    });
+    expect(result[0].highlights.length).toBeGreaterThan(0);
+    expect(result[0].highlights[0]).toContain("auth");
+  });
+
+  it("respects limit", async () => {
+    for (let i = 0; i < 5; i++) {
+      seedKv("memory:a1", `m${i}`, {
+        id: `m${i}`,
+        content: `test query match ${i}`,
+        role: "user",
+        sessionId: `s${i}`,
+        timestamp: Date.now() - i * 1000,
+      });
+    }
+    const result = await call("memory::session_search", {
+      agentId: "a1",
+      query: "test query",
+      limit: 2,
+    });
+    expect(result.length).toBe(2);
+  });
+
+  it("skips entries without sessionId", async () => {
+    seedKv("memory:a1", "m1", {
+      id: "m1",
+      content: "no session entry",
+      role: "user",
+      timestamp: Date.now(),
+    });
+    const result = await call("memory::session_search", {
+      agentId: "a1",
+      query: "session entry",
+    });
+    expect(result).toEqual([]);
   });
 });

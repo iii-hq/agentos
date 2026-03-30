@@ -8,7 +8,7 @@
 
 <p align="center">
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-Apache_2.0-facc15?style=for-the-badge" alt="License"></a>
-  <img src="https://img.shields.io/badge/Tests-2,727_passing-22c55e?style=for-the-badge" alt="Tests">
+  <img src="https://img.shields.io/badge/Tests-2,754_passing-22c55e?style=for-the-badge" alt="Tests">
   <img src="https://img.shields.io/badge/Tools-60+-facc15?style=for-the-badge" alt="Tools">
   <img src="https://img.shields.io/badge/LLM_Providers-25-fde68a?style=for-the-badge" alt="LLM Providers">
   <img src="https://img.shields.io/badge/Models-47-71717a?style=for-the-badge" alt="Models">
@@ -21,7 +21,7 @@
   <a href="https://github.com/iii-hq/agentos">GitHub</a>
 </p>
 
-Every capability — agents, memory, security, LLM routing, workflows, tools, swarms, knowledge graphs, session replay, vault, **self-evolving functions**, **DAG-based artifact exchange**, **inter-agent coordination** — is a plain function registered on an [iii-engine](https://iii.dev) bus. No frameworks, no vendor lock-in, no magic.
+Every capability — agents, memory, security, LLM routing, workflows, tools, swarms, knowledge graphs, session replay, vault, **self-evolving functions**, **DAG-based artifact exchange**, **inter-agent coordination**, **self-curating memory**, **session lifecycle**, **task decomposition**, **multi-agent orchestration** — is a plain function registered on an [iii-engine](https://iii.dev) bus. No frameworks, no vendor lock-in, no magic.
 
 <p align="center">
   <img src="assets/architecture.svg" alt="AgentOS architecture: Rust (18 crates), TypeScript (46 workers), Python (embeddings) on iii-engine" width="720">
@@ -113,7 +113,7 @@ Every component connects to the iii-engine over WebSocket and registers function
 | `llm-router` | Routes to 25 LLM providers with complexity-based model selection | ~320 |
 | `wasm-sandbox` | Executes untrusted code in WASM via wasmtime | ~180 |
 | `cli` | 50+ commands across 15 subcommand groups | ~700 |
-| `tui` | 21-screen terminal dashboard (ratatui) | ~330 |
+| `tui` | 25-screen terminal dashboard (ratatui) | ~350 |
 | `api` | Rust HTTP API layer | ~200 |
 | `hand-runner` | Autonomous hand execution engine | ~150 |
 | `workflow` | Rust workflow step execution | ~200 |
@@ -126,7 +126,7 @@ Every component connects to the iii-engine over WebSocket and registers function
 | `pulse` | Scheduled agent invocation with context-aware ticks | ~250 |
 | `bridge` | External runtime adapters (Process/HTTP/ClaudeCode/Codex/Cursor/OpenCode) | ~300 |
 
-### TypeScript Workers (46)
+### TypeScript Workers (51)
 
 | Worker | Purpose |
 |--------|---------|
@@ -145,7 +145,8 @@ Every component connects to the iii-engine over WebSocket and registers function
 | `streaming.ts` | SSE streaming for chat responses |
 | `approval.ts` | Human-in-the-loop approval gates |
 | `approval-tiers.ts` | Auto/async/sync approval tier classification |
-| `memory.ts` | TypeScript memory layer |
+| `memory.ts` | TypeScript memory layer (profile modeling, session search) |
+| `memory-reflection.ts` | Self-curating memory reflection (auto-extracts facts, discovers skills) |
 | `llm-router.ts` | 25-provider LLM routing with complexity scoring |
 | `model-catalog.ts` | 47 models with pricing and capability metadata |
 | `mcp-client.ts` | Model Context Protocol client |
@@ -154,7 +155,7 @@ Every component connects to the iii-engine over WebSocket and registers function
 | `vault.ts` | AES-256-GCM encrypted vault with PBKDF2 key derivation |
 | `browser.ts` | Headless browser automation with SSRF protection |
 | `context-manager.ts` | Context window budget management |
-| `context-monitor.ts` | Token usage monitoring |
+| `context-monitor.ts` | Structured context compression (5-phase with iterative summaries) |
 | `cost-tracker.ts` | Per-agent cost tracking |
 | `hooks.ts` | Lifecycle hook execution (8 hook types) |
 | `rate-limiter.ts` | GCRA rate limiting |
@@ -171,9 +172,13 @@ Every component connects to the iii-engine over WebSocket and registers function
 | `code-agent.ts` | Specialized coding agent |
 | `evolve.ts` | Dynamic function evolution (LLM code gen + vm sandbox + DAG branching) |
 | `eval.ts` | Production eval harness (pluggable scorers, suites, inline auto-scoring) |
-| `feedback.ts` | Feedback loop (auto-review, improve/kill, promote, leaderboard) |
+| `feedback.ts` | Feedback loop (auto-review, improve/kill, promote, signal injection) |
 | `artifact-dag.ts` | DAG-based content artifact exchange (push/fetch/diff/leaves/history) |
 | `coordination.ts` | Inter-agent coordination board (channels, threaded posts, pinning) |
+| `session-lifecycle.ts` | Session state machine with declarative reaction rules |
+| `task-decomposer.ts` | Recursive task decomposition with hierarchical IDs |
+| `recovery.ts` | Session health scanning and automated recovery |
+| `orchestrator.ts` | Multi-agent orchestrator (plan, decompose, spawn, monitor) |
 | `channels/*.ts` | 40 channel adapters |
 
 ### Python Workers (1)
@@ -329,11 +334,166 @@ await trigger("coord::pin", { channelId: "chan_abc123", postId: "post_xyz789" })
 - Auth enforced on post and reply (HTTP requests)
 - PubSub notifications on `coord:{channelId}` topic
 
+## Agent Intelligence
+
+Self-improving agent capabilities that run automatically during normal operation.
+
+### Memory Reflection
+
+Agents periodically curate their own memory. Every 5 turns, a background reflection extracts durable facts from the conversation and stores them as `[Curated]` entries for future recall.
+
+```typescript
+trigger("reflect::check_turn", { agentId: "agent-1", sessionId: "s1", iterations: 3 })
+trigger("reflect::curate_memory", { agentId: "agent-1", sessionId: "s1" })
+trigger("reflect::discover_skills", { agentId: "agent-1", sessionId: "s1", iterations: 8 })
+```
+
+- **3 functions**: `reflect::check_turn`, `reflect::curate_memory`, `reflect::discover_skills`
+- Auto-extracts preferences, decisions, learnings from conversation
+- Auto-discovers reusable skills from tool-heavy sessions (5+ iterations) via `evolve::generate`
+- Builds user profile automatically (`memory::user_profile::update`)
+- Fire-and-forget — never blocks the chat response
+
+### Structured Context Compression
+
+5-phase compression that preserves context quality:
+
+1. **Prune** — truncate old tool results (>200 chars)
+2. **Sanitize** — fix orphaned tool call/result pairs
+3. **Merge** — combine consecutive system messages
+4. **Protect** — reserve 40% of token budget for recent context
+5. **Summarize** — LLM generates structured summary (Goal / Progress / Decisions / Files / Next Steps / Critical Context)
+
+Iterative: detects existing summaries and updates them instead of re-summarizing from scratch.
+
+### User Profile Modeling
+
+Agents build a persistent understanding of who they're working with:
+
+```typescript
+trigger("memory::user_profile::update", { agentId: "agent-1", updates: { workStyle: "concise" } })
+trigger("memory::user_profile::get", { agentId: "agent-1" })
+trigger("memory::session_search", { agentId: "agent-1", query: "deployment pipeline" })
+```
+
+- Profile auto-injected as `[User Profile]` system message in every chat
+- Cross-session search with keyword + recency scoring
+- Deep-merge updates (objects merged, arrays concatenated)
+
+### Smart Model Routing
+
+Complexity-aware model selection with per-agent tier support:
+
+```typescript
+trigger("llm::route", { message: "Step 1: create DB. Then build API.", toolCount: 5, agentTier: "premium" })
+```
+
+- Detects multi-step instructions, multiple code blocks, reasoning keywords
+- `economy` tier: always routes to fastest model
+- `premium` tier: never below mid-tier
+- Default: automatic complexity scoring
+
+## Orchestration
+
+Multi-agent coordination and lifecycle management.
+
+### Session Lifecycle
+
+Formal state machine for agent sessions with declarative reaction rules:
+
+```text
+spawning → working → blocked → working (retry)
+working → pr_open → review → merged → done
+working → failed → recovering → working
+```
+
+```typescript
+trigger("lifecycle::transition", { agentId: "agent-1", newState: "working" })
+trigger("lifecycle::add_reaction", {
+  from: "working", to: "blocked",
+  action: "send_to_agent",
+  payload: { message: "You appear stuck. What's blocking you?" },
+  escalateAfter: 3,
+})
+```
+
+- **5 functions**: `lifecycle::transition`, `lifecycle::get_state`, `lifecycle::add_reaction`, `lifecycle::list_reactions`, `lifecycle::check_all`
+- Validates transitions, fires hooks on state changes
+- 4 reaction types: `send_to_agent`, `notify`, `escalate`, `auto_recover`
+- Auto-scans all agents every 2 minutes via cron
+
+### Task Decomposition
+
+Recursive task breakdown with hierarchical IDs and status propagation:
+
+```typescript
+const { rootId, tasks } = await trigger("task::decompose", {
+  description: "Build a user authentication system with OAuth and rate limiting"
+})
+
+await trigger("task::spawn_workers", { rootId })
+```
+
+- **5 functions**: `task::decompose`, `task::get`, `task::update_status`, `task::list`, `task::spawn_workers`
+- Hierarchical IDs: `1` → `1.1` → `1.1.2`
+- Status propagation: all siblings complete → parent complete, child fails → parent blocked
+- Each leaf task gets its own agent via `tool::agent_spawn`
+
+### Session Recovery
+
+Automated health scanning and recovery for agent sessions:
+
+```typescript
+trigger("recovery::scan", {})
+trigger("recovery::recover", { agentId: "agent-1" })
+```
+
+- **5 functions**: `recovery::scan`, `recovery::validate`, `recovery::classify`, `recovery::recover`, `recovery::report`
+- Classification: `healthy`, `degraded`, `dead`, `unrecoverable`
+- Degraded → wake-up message, Dead → circuit breaker reset + restart, Unrecoverable → escalate to human
+- Auto-scans every 10 minutes via cron
+
+### Orchestrator
+
+Meta-agent that plans and coordinates multi-agent work:
+
+```typescript
+const { planId, analysis } = await trigger("orchestrator::plan", {
+  description: "Build a real-time analytics dashboard",
+  autoExecute: true,
+})
+
+await trigger("orchestrator::status", { planId })
+await trigger("orchestrator::intervene", { planId, action: "pause" })
+```
+
+- **4 functions**: `orchestrator::plan`, `orchestrator::execute`, `orchestrator::status`, `orchestrator::intervene`
+- LLM analyzes feature complexity, estimates agents needed, generates decomposition prompt
+- Decomposes tasks, registers lifecycle reactions, spawns workers
+- Human intervention: pause, resume, cancel, redirect
+
+### Signal Injection
+
+Push external signals (CI failures, review comments) directly into agent sessions:
+
+```typescript
+trigger("feedback::inject_signal", {
+  agentId: "agent-1",
+  signalType: "ci_failure",
+  content: "Build failed: TypeError in auth.ts line 42",
+  metadata: { source: "github-actions" },
+})
+```
+
+- **3 functions**: `feedback::inject_signal`, `feedback::register_source`, `feedback::list_signals`
+- Signal types: `ci_failure`, `review_comment`, `merge_conflict`, `dependency_update`, `custom`
+- Auto-routes to agent via `tool::agent_send`
+
 ## Dynamic Function Evolution
 
 Agents can write, register, evaluate, and improve functions at runtime. The evolve-eval-feedback loop turns AgentOS from a static orchestrator into a self-evolving system.
 
-```
+```text
 Agent goal/spec
     ↓
 evolve::generate  →  LLM writes function code
@@ -505,14 +665,14 @@ agentos dashboard               Open web dashboard
 
 ## TUI Dashboard
 
-21 screens accessible via keyboard shortcuts:
+25 screens accessible via keyboard shortcuts:
 
 ```
 1 Dashboard    2 Agents      3 Chat       4 Channels    5 Skills
 6 Hands        7 Workflows   8 Sessions   9 Approvals   0 Logs
 m Memory       a Audit       s Security   p Peers       e Extensions
 t Triggers     T Templates   u Usage      S Settings    w Wizard
-W Wf Builder
+W Wf Builder   L Lifecycle   K Tasks      R Recovery    O Orchestrator
 
 Tab/Shift-Tab to cycle · r to refresh · q to quit
 ```
@@ -641,14 +801,19 @@ agentos/
 │   ├── wasm-sandbox/       WASM execution
 │   └── workflow/           Workflow engine
 │
-├── src/                    TypeScript workers (46)
+├── src/                    TypeScript workers (51)
 │   ├── api.ts              OpenAI-compatible API
-│   ├── agent-core.ts       TS agent loop
+│   ├── agent-core.ts       TS agent loop (profile injection, memory reflection)
 │   ├── tools.ts            22 built-in tools
 │   ├── tools-extended.ts   38 extended tools
+│   ├── memory-reflection.ts Self-curating memory reflection
+│   ├── session-lifecycle.ts Session state machine + reaction rules
+│   ├── task-decomposer.ts  Recursive task decomposition
+│   ├── recovery.ts         Session health + auto-recovery
+│   ├── orchestrator.ts     Multi-agent orchestrator
 │   ├── evolve.ts           Dynamic function evolution + DAG branching
 │   ├── eval.ts             Production eval harness
-│   ├── feedback.ts         Feedback loop
+│   ├── feedback.ts         Feedback loop + signal injection
 │   ├── artifact-dag.ts     DAG-based content artifact exchange
 │   ├── coordination.ts     Inter-agent coordination board
 │   ├── swarm.ts            Multi-agent swarms
@@ -659,7 +824,7 @@ agentos/
 │   ├── security-map.ts     Mutual Authentication Protocol
 │   ├── channels/           40 channel adapters
 │   ├── shared/             Shared utilities
-│   ├── __tests__/          1,660 TypeScript tests (65 files)
+│   ├── __tests__/          1,748 TypeScript tests (70 files)
 │   └── ...                 25 more workers
 │
 ├── workers/                Python workers
