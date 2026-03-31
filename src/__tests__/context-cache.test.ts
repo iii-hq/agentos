@@ -28,9 +28,6 @@ const mockTrigger = vi.fn(async (fnId: string, data?: any): Promise<any> => {
     }));
   }
   if (fnId === "memory::recall") {
-    return [{ role: "assistant", content: "remembered context" }];
-  }
-  if (fnId === "slow::fetch") {
     return { data: "fetched-value" };
   }
   return null;
@@ -51,6 +48,10 @@ vi.mock("../shared/config.js", () => ({
   ENGINE_URL: "ws://localhost:3111",
   OTEL_CONFIG: undefined,
   registerShutdown: vi.fn(),
+}));
+vi.mock("../shared/utils.js", () => ({
+  sanitizeId: (id: string) => id,
+  requireAuth: vi.fn(),
 }));
 
 beforeEach(() => {
@@ -73,21 +74,21 @@ describe("context_cache::get_or_fetch", () => {
     const result = await call("context_cache::get_or_fetch", {
       agentId: "agent-1",
       key: "test-key",
-      fetchFunctionId: "slow::fetch",
+      fetchFunctionId: "memory::recall",
       fetchPayload: { query: "test" },
       ttlMs: 60_000,
     });
 
     expect(result).toEqual({ data: "fetched-value" });
 
-    const cached = getScope("context_cache:agent-1").get("test-key") as any;
+    const cached = getScope("cache:agent-1").get("test-key") as any;
     expect(cached).toBeTruthy();
     expect(cached.value).toEqual({ data: "fetched-value" });
   });
 
   it("returns cached value on hit", async () => {
     const now = Date.now();
-    getScope("context_cache:agent-1").set("test-key", {
+    getScope("cache:agent-1").set("test-key", {
       value: { data: "cached-data" },
       cachedAt: now,
       ttlMs: 60_000,
@@ -96,20 +97,20 @@ describe("context_cache::get_or_fetch", () => {
     const result = await call("context_cache::get_or_fetch", {
       agentId: "agent-1",
       key: "test-key",
-      fetchFunctionId: "slow::fetch",
+      fetchFunctionId: "memory::recall",
       fetchPayload: { query: "test" },
       ttlMs: 60_000,
     });
 
     expect(result).toEqual({ data: "cached-data" });
     const fetchCalls = mockTrigger.mock.calls.filter(
-      ([id]: any) => id === "slow::fetch",
+      ([id]: any) => id === "memory::recall",
     );
     expect(fetchCalls.length).toBe(0);
   });
 
   it("re-fetches on expired cache", async () => {
-    getScope("context_cache:agent-1").set("test-key", {
+    getScope("cache:agent-1").set("test-key", {
       value: { data: "stale-data" },
       cachedAt: Date.now() - 120_000,
       ttlMs: 60_000,
@@ -118,7 +119,7 @@ describe("context_cache::get_or_fetch", () => {
     const result = await call("context_cache::get_or_fetch", {
       agentId: "agent-1",
       key: "test-key",
-      fetchFunctionId: "slow::fetch",
+      fetchFunctionId: "memory::recall",
       fetchPayload: { query: "test" },
       ttlMs: 60_000,
     });
@@ -129,12 +130,12 @@ describe("context_cache::get_or_fetch", () => {
 
 describe("context_cache::invalidate", () => {
   it("clears a single key", async () => {
-    getScope("context_cache:agent-1").set("k1", {
+    getScope("cache:agent-1").set("k1", {
       value: "v1",
       cachedAt: Date.now(),
       ttlMs: 60_000,
     });
-    getScope("context_cache:agent-1").set("k2", {
+    getScope("cache:agent-1").set("k2", {
       value: "v2",
       cachedAt: Date.now(),
       ttlMs: 60_000,
@@ -146,13 +147,13 @@ describe("context_cache::invalidate", () => {
     });
 
     expect(result).toEqual({ cleared: 1 });
-    expect(getScope("context_cache:agent-1").has("k1")).toBe(false);
-    expect(getScope("context_cache:agent-1").has("k2")).toBe(true);
+    expect(getScope("cache:agent-1").has("k1")).toBe(false);
+    expect(getScope("cache:agent-1").has("k2")).toBe(true);
   });
 
   it("clears all keys for an agent", async () => {
-    getScope("context_cache:agent-2").set("a", { value: 1, cachedAt: Date.now(), ttlMs: 1000 });
-    getScope("context_cache:agent-2").set("b", { value: 2, cachedAt: Date.now(), ttlMs: 1000 });
+    getScope("cache:agent-2").set("a", { value: 1, cachedAt: Date.now(), ttlMs: 1000 });
+    getScope("cache:agent-2").set("b", { value: 2, cachedAt: Date.now(), ttlMs: 1000 });
 
     const result = await call("context_cache::invalidate", {
       agentId: "agent-2",
@@ -167,7 +168,7 @@ describe("context_cache::stats", () => {
     await call("context_cache::get_or_fetch", {
       agentId: "stats-agent",
       key: "k1",
-      fetchFunctionId: "slow::fetch",
+      fetchFunctionId: "memory::recall",
       fetchPayload: {},
       ttlMs: 60_000,
     });
@@ -175,7 +176,7 @@ describe("context_cache::stats", () => {
     await call("context_cache::get_or_fetch", {
       agentId: "stats-agent",
       key: "k1",
-      fetchFunctionId: "slow::fetch",
+      fetchFunctionId: "memory::recall",
       fetchPayload: {},
       ttlMs: 60_000,
     });
@@ -192,7 +193,7 @@ describe("context_cache::stats", () => {
     await call("context_cache::get_or_fetch", {
       agentId: "agent-a",
       key: "x",
-      fetchFunctionId: "slow::fetch",
+      fetchFunctionId: "memory::recall",
       fetchPayload: {},
       ttlMs: 60_000,
     });

@@ -1,8 +1,9 @@
-import { registerWorker } from "iii-sdk";
+import { registerWorker, TriggerAction } from "iii-sdk";
 import { ENGINE_URL, OTEL_CONFIG, registerShutdown } from "./shared/config.js";
 import type { ContextHealthScore } from "./types.js";
 import type { Message } from "./shared/tokens.js";
 import { estimateTokens, estimateMessagesTokens } from "./shared/tokens.js";
+import { requireAuth } from "./shared/utils.js";
 
 const sdk = registerWorker(ENGINE_URL, {
   workerName: "context-monitor",
@@ -10,6 +11,8 @@ const sdk = registerWorker(ENGINE_URL, {
 });
 registerShutdown(sdk);
 const { registerFunction, registerTrigger, trigger } = sdk;
+const triggerVoid = (id: string, payload: unknown) =>
+  trigger({ function_id: id, payload, action: TriggerAction.Void() });
 
 function wordSet(text: string): Set<string> {
   return new Set(text.toLowerCase().split(/\s+/).filter(Boolean));
@@ -159,21 +162,19 @@ registerFunction(
   }> => {
     const originalTokens = estimateMessagesTokens(input.messages);
     if (originalTokens <= input.targetTokens) {
+      triggerVoid("hook::fire", { type: "AfterCompact", payload: { agentId: input.agentId, removedCount: 0, savedTokens: 0, finalMessageCount: input.messages.length } });
       return { compressed: input.messages, removedCount: 0, savedTokens: 0 };
     }
 
-    await trigger({
-      function_id: "hook::fire",
+    triggerVoid("hook::fire", {
+      type: "BeforeCompact",
       payload: {
-        type: "BeforeCompact",
-        payload: {
-          agentId: input.agentId,
-          messageCount: input.messages.length,
-          originalTokens,
-          targetTokens: input.targetTokens,
-        },
+        agentId: input.agentId,
+        messageCount: input.messages.length,
+        originalTokens,
+        targetTokens: input.targetTokens,
       },
-    }).catch(() => {});
+    });
 
     let messages = [...input.messages];
     let removedCount = 0;
@@ -212,11 +213,9 @@ registerFunction(
     messages = merged;
 
     if (estimateMessagesTokens(messages) <= input.targetTokens) {
-      return {
-        compressed: messages,
-        removedCount,
-        savedTokens: originalTokens - estimateMessagesTokens(messages),
-      };
+      const savedTokens = originalTokens - estimateMessagesTokens(messages);
+      triggerVoid("hook::fire", { type: "AfterCompact", payload: { agentId: input.agentId, removedCount, savedTokens, finalMessageCount: messages.length } });
+      return { compressed: messages, removedCount, savedTokens };
     }
 
     const recentBudget = Math.floor(input.targetTokens * 0.4);
@@ -237,11 +236,9 @@ registerFunction(
     const recentMessages = messages.slice(splitIdx);
 
     if (oldMessages.length === 0) {
-      return {
-        compressed: messages,
-        removedCount,
-        savedTokens: originalTokens - estimateMessagesTokens(messages),
-      };
+      const savedTokens = originalTokens - estimateMessagesTokens(messages);
+      triggerVoid("hook::fire", { type: "AfterCompact", payload: { agentId: input.agentId, removedCount, savedTokens, finalMessageCount: messages.length } });
+      return { compressed: messages, removedCount, savedTokens };
     }
 
     const summaryText = oldMessages
@@ -319,18 +316,7 @@ Critical Context: <must-preserve details>`;
 
     const savedTokens = originalTokens - estimateMessagesTokens(messages);
 
-    await trigger({
-      function_id: "hook::fire",
-      payload: {
-        type: "AfterCompact",
-        payload: {
-          agentId: input.agentId,
-          removedCount,
-          savedTokens,
-          finalMessageCount: messages.length,
-        },
-      },
-    }).catch(() => {});
+    triggerVoid("hook::fire", { type: "AfterCompact", payload: { agentId: input.agentId, removedCount, savedTokens, finalMessageCount: messages.length } });
 
     return {
       compressed: messages,
@@ -398,12 +384,12 @@ registerFunction(
     description: "Lightweight in-turn compression without LLM",
     metadata: { category: "context" },
   },
-  async (input: {
-    messages: Message[];
-  }): Promise<{
+  async (req: any): Promise<{
     compacted: Message[];
     removedTokens: number;
   }> => {
+    if (req.headers) requireAuth(req);
+    const input = req.body || req;
     const originalTokens = estimateMessagesTokens(input.messages);
     const messages = [...input.messages];
     const result: Message[] = [];
@@ -453,12 +439,12 @@ registerFunction(
     description: "Drop old turns entirely, keep structured summary placeholder",
     metadata: { category: "context" },
   },
-  async (input: {
-    messages: Message[];
-  }): Promise<{
+  async (req: any): Promise<{
     snipped: Message[];
     removedCount: number;
   }> => {
+    if (req.headers) requireAuth(req);
+    const input = req.body || req;
     const messages = [...input.messages];
     if (messages.length <= 10) {
       return { snipped: messages, removedCount: 0 };
@@ -494,14 +480,13 @@ registerFunction(
     description: "Pattern-detection-triggered compaction",
     metadata: { category: "context" },
   },
-  async (input: {
-    messages: Message[];
-    maxTokens?: number;
-  }): Promise<{
+  async (req: any): Promise<{
     compacted: Message[];
     strategy: string;
     savedTokens: number;
   }> => {
+    if (req.headers) requireAuth(req);
+    const input = req.body || req;
     const originalTokens = estimateMessagesTokens(input.messages);
     const health: ContextHealthScore = await trigger({
       function_id: "context::health",
@@ -544,7 +529,7 @@ registerFunction(
       });
     }
 
-    if (health.tokenUtilization > 20) {
+    if (health.tokenUtilization < 20) {
       strategy = strategy === "none" ? "aggressive" : strategy + "+aggressive";
       const microResult: any = await trigger({
         function_id: "context::trim",

@@ -1,3 +1,4 @@
+import { createHash } from "crypto";
 import { registerWorker, TriggerAction } from "iii-sdk";
 import { ENGINE_URL, OTEL_CONFIG, registerShutdown } from "./shared/config.js";
 import type {
@@ -111,9 +112,10 @@ async function prepareContext(
     return earlyResponse(`Agent ${agentId} not found.`);
   }
 
+  const recallHash = createHash("sha256").update(message).digest("hex").slice(0, 16);
   const memories: any = await triggerFn("context_cache::get_or_fetch", {
     agentId,
-    key: `recall:${message.slice(0, 64)}`,
+    key: `recall:${recallHash}`,
     fetchFunctionId: "memory::recall",
     fetchPayload: { agentId, query: message, limit: 20 },
     ttlMs: 30_000,
@@ -131,13 +133,7 @@ async function prepareContext(
     { agentId, operation: "get_user_profile" },
   );
 
-  const tools: any = await triggerFn("context_cache::get_or_fetch", {
-    agentId,
-    key: "list_tools",
-    fetchFunctionId: "agent::list_tools",
-    fetchPayload: { agentId },
-    ttlMs: 120_000,
-  }, 10_000);
+  const tools: any = await triggerFn("agent::list_tools", { agentId }, 10_000);
   const allowedToolIds = new Set<string>(
     tools.map((t: any) => t.function_id || t.id),
   );
@@ -621,6 +617,7 @@ async function toolLoop(
                   ? (model as any).maxTokens * 50
                   : 200_000) * 0.7,
               ),
+              agentId,
             }, 30_000),
           null,
           { agentId, operation: "context_compress" },

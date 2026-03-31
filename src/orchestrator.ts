@@ -3,8 +3,7 @@ import { ENGINE_URL, OTEL_CONFIG, registerShutdown } from "./shared/config.js";
 import { createLogger } from "./shared/logger.js";
 import { recordMetric } from "./shared/metrics.js";
 import { safeCall } from "./shared/errors.js";
-import { stripCodeFences } from "./shared/utils.js";
-import { requireAuth } from "./shared/utils.js";
+import { stripCodeFences, requireAuth, sanitizeId } from "./shared/utils.js";
 
 const log = createLogger("orchestrator");
 const sdk = registerWorker(ENGINE_URL, { workerName: "orchestrator", otel: OTEL_CONFIG });
@@ -179,19 +178,24 @@ registerFunction(
       payload: { scope: "orchestrator_plans", key: planId, value: plan },
     });
 
-    await trigger({
-      function_id: "state::set",
-      payload: {
-        scope: `workspace:${planId}`,
-        key: "_meta",
-        value: {
-          key: "_meta",
-          value: { planId, rootId, description: plan.description },
-          writtenBy: "orchestrator",
-          writtenAt: Date.now(),
-        },
-      },
-    });
+    await safeCall(
+      () =>
+        trigger({
+          function_id: "state::set",
+          payload: {
+            scope: `workspace:${planId}`,
+            key: "_meta",
+            value: {
+              key: "_meta",
+              value: { planId, rootId, description: plan.description },
+              writtenBy: "orchestrator",
+              writtenAt: Date.now(),
+            },
+          },
+        }),
+      undefined,
+      { operation: "seed_workspace_meta" },
+    );
 
     const spawnResult: any = await trigger({
       function_id: "task::spawn_workers",
@@ -405,21 +409,25 @@ registerFunction(
       throw Object.assign(new Error("planId and key are required"), { statusCode: 400 });
     }
 
+    const safePlanId = sanitizeId(planId);
+    const safeKey = sanitizeId(key);
+
+    const writtenBy = req.headers ? "authenticated" : (agentId || "system");
     const entry = {
-      key,
+      key: safeKey,
       value,
-      writtenBy: agentId || "unknown",
+      writtenBy,
       writtenAt: Date.now(),
     };
 
     await trigger({
       function_id: "state::set",
-      payload: { scope: `workspace:${planId}`, key, value: entry },
+      payload: { scope: `workspace:${safePlanId}`, key: safeKey, value: entry },
     });
 
-    log.info("Scratchpad write", { planId, key, agentId });
+    log.info("Scratchpad write", { planId: safePlanId, key: safeKey, agentId });
 
-    return { written: true, key, planId };
+    return { written: true, key: safeKey, planId: safePlanId };
   },
 );
 
@@ -437,10 +445,13 @@ registerFunction(
       throw Object.assign(new Error("planId is required"), { statusCode: 400 });
     }
 
+    const safePlanId = sanitizeId(planId);
+
     if (key) {
+      const safeKey = sanitizeId(key);
       const entry = await trigger({
         function_id: "state::get",
-        payload: { scope: `workspace:${planId}`, key },
+        payload: { scope: `workspace:${safePlanId}`, key: safeKey },
       });
       return entry;
     }
@@ -449,14 +460,14 @@ registerFunction(
       () =>
         trigger({
           function_id: "state::list",
-          payload: { scope: `workspace:${planId}` },
+          payload: { scope: `workspace:${safePlanId}` },
         }),
       [],
       { operation: "list_workspace" },
     );
 
     return {
-      planId,
+      planId: safePlanId,
       count: entries.length,
       entries: entries.map((e) => e.value || e),
     };

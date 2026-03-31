@@ -1,5 +1,12 @@
 import { registerWorker } from "iii-sdk";
 import { ENGINE_URL, OTEL_CONFIG, registerShutdown } from "./shared/config.js";
+import { sanitizeId, requireAuth } from "./shared/utils.js";
+
+const CACHEABLE_FUNCTIONS = new Set([
+  "memory::recall",
+  "memory::user_profile::get",
+  "agent::list_tools",
+]);
 
 const sdk = registerWorker(ENGINE_URL, {
   workerName: "context-cache",
@@ -34,15 +41,20 @@ registerFunction(
     description: "Memoized context fetch with TTL-based expiry",
     metadata: { category: "context_cache" },
   },
-  async (input: {
-    agentId: string;
-    key: string;
-    fetchFunctionId: string;
-    fetchPayload: unknown;
-    ttlMs: number;
-  }): Promise<unknown> => {
-    const scope = `context_cache:${input.agentId}`;
-    const stats = getStats(input.agentId);
+  async (req: any): Promise<unknown> => {
+    if (req.headers) requireAuth(req);
+    const input = req.body || req;
+
+    if (!CACHEABLE_FUNCTIONS.has(input.fetchFunctionId)) {
+      throw Object.assign(
+        new Error(`Function ${input.fetchFunctionId} is not cacheable`),
+        { statusCode: 400 },
+      );
+    }
+
+    const agentId = sanitizeId(input.agentId);
+    const scope = `cache:${agentId}`;
+    const stats = getStats(agentId);
 
     const cached: CacheEntry | null = await trigger({
       function_id: "state::get",
@@ -83,7 +95,7 @@ registerFunction(
     metadata: { category: "context_cache" },
   },
   async (input: { agentId: string; key?: string }): Promise<{ cleared: number }> => {
-    const scope = `context_cache:${input.agentId}`;
+    const scope = `cache:${sanitizeId(input.agentId)}`;
 
     if (input.key) {
       await trigger({
