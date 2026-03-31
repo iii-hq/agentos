@@ -249,7 +249,7 @@ async fn main() -> Result<()> {
 
     match cli.command {
         Commands::Init { quick } => {
-            let home = dirs::home_dir().unwrap();
+            let home = dirs::home_dir().ok_or_else(|| anyhow::anyhow!("Cannot determine home directory"))?;
             let config_dir = home.join(".agentos");
             std::fs::create_dir_all(&config_dir)?;
             std::fs::create_dir_all(config_dir.join("data"))?;
@@ -258,19 +258,153 @@ async fn main() -> Result<()> {
             std::fs::create_dir_all(config_dir.join("logs"))?;
             println!("{} Initialized ~/.agentos/", "✓".green());
 
-            if !quick {
-                println!("\nRun {} to start the engine", "agentos start".cyan());
+            if let Ok(key) = std::env::var("ANTHROPIC_API_KEY") {
+                let config_path = config_dir.join("config.toml");
+                let mut config = String::new();
+                if config_path.exists() {
+                    config = std::fs::read_to_string(&config_path).unwrap_or_default();
+                }
+                if !config.contains("anthropic") {
+                    config.push_str(&format!("\n[keys]\nanthropic = \"{}\"\n", key));
+                    std::fs::write(&config_path, config)?;
+                    println!("{} Auto-detected ANTHROPIC_API_KEY", "✓".green());
+                }
+            }
+
+            if quick {
+                println!("\n{} Ready. Run {} to start.", "✓".green(), "agentos start".cyan());
+            } else {
+                println!("\nSet your API key:");
+                println!("  {} agentos config set-key anthropic $ANTHROPIC_API_KEY", "▸".dimmed());
+                println!("\nThen start:");
+                println!("  {} agentos start", "▸".dimmed());
             }
         }
 
         Commands::Start => {
-            println!("{} Starting agentos engine...", "→".blue());
-            println!("  Engine:  ws://localhost:49134");
-            println!("  HTTP:    http://localhost:3111");
-            println!("  Stream:  ws://localhost:3112");
-            println!("  Metrics: http://localhost:9464");
-            println!("\n{} Engine running. Press Ctrl+C to stop.", "✓".green());
+            let home = dirs::home_dir().ok_or_else(|| anyhow::anyhow!("Cannot determine home directory"))?;
+            let config_dir = home.join(".agentos");
+
+            if !config_dir.exists() {
+                println!("{} First run detected. Initializing...", "→".blue());
+                std::fs::create_dir_all(&config_dir)?;
+                std::fs::create_dir_all(config_dir.join("data"))?;
+                std::fs::create_dir_all(config_dir.join("skills"))?;
+                std::fs::create_dir_all(config_dir.join("agents"))?;
+                std::fs::create_dir_all(config_dir.join("logs"))?;
+                println!("{} Created ~/.agentos/", "✓".green());
+            }
+
+            let iii_bin = home.join(".local/bin/iii");
+            if !iii_bin.exists() {
+                println!("{} iii-engine not found. Installing...", "→".yellow());
+                let install_status = std::process::Command::new("sh")
+                    .arg("-c")
+                    .arg("curl -fsSL https://install.iii.dev/iii/main/install.sh | sh")
+                    .status();
+                match install_status {
+                    Ok(s) if s.success() => println!("{} iii-engine installed", "✓".green()),
+                    _ => {
+                        println!("{} Failed to install iii-engine. Install manually:", "✗".red());
+                        println!("  curl -fsSL https://install.iii.dev/iii/main/install.sh | sh");
+                        return Ok(());
+                    }
+                }
+            }
+
+            let config_yaml = config_dir.join("config.yaml");
+            if !config_yaml.exists() {
+                let default_config = r#"modules:
+  websocket:
+    port: 49134
+  rest:
+    port: 3111
+  streams:
+    port: 3112
+  state:
+    adapter: file
+    path: data/state
+  queue:
+    adapter: memory
+  pubsub:
+    adapter: memory
+  cron:
+    adapter: memory
+  otel:
+    enabled: false
+"#;
+                std::fs::write(&config_yaml, default_config)?;
+                println!("{} Generated config.yaml", "✓".green());
+            }
+
+            let iii_path = if iii_bin.exists() {
+                iii_bin.to_string_lossy().to_string()
+            } else {
+                "iii".to_string()
+            };
+
+            println!("\n{}", "AgentOS".bold().cyan());
+            println!("{}", "─".repeat(40).dimmed());
+
+            println!("{} Starting iii-engine...", "→".blue());
+            let mut engine = std::process::Command::new(&iii_path)
+                .arg("--config")
+                .arg(&config_yaml)
+                .current_dir(&config_dir)
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::piped())
+                .spawn()
+                .map_err(|e| anyhow::anyhow!("Failed to start iii-engine: {}. Is it installed?", e))?;
+
+            tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+
+            if let Ok(Some(status)) = engine.try_wait() {
+                println!("{} iii-engine exited with: {}", "✗".red(), status);
+                return Ok(());
+            }
+            println!("{} iii-engine running (pid {})", "✓".green(), engine.id());
+
+            println!("{} Starting workers...", "→".blue());
+            let project_root = std::env::current_dir()?;
+            let tsx_candidates = ["npx", "tsx"];
+            let tsx_cmd = tsx_candidates.iter()
+                .find(|cmd| which::which(cmd).is_ok())
+                .unwrap_or(&"npx");
+
+            let mut workers = std::process::Command::new(tsx_cmd)
+                .args(if *tsx_cmd == "npx" { vec!["tsx", "src/index.ts"] } else { vec!["src/index.ts"] })
+                .current_dir(&project_root)
+                .stdout(std::process::Stdio::piped())
+                .stderr(std::process::Stdio::piped())
+                .spawn()
+                .map_err(|e| anyhow::anyhow!("Failed to start workers: {}. Is tsx installed?", e))?;
+
+            tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+
+            if let Ok(Some(status)) = workers.try_wait() {
+                println!("{} Workers exited with: {}", "✗".red(), status);
+                let _ = engine.kill();
+                return Ok(());
+            }
+            println!("{} Workers running (pid {})", "✓".green(), workers.id());
+
+            println!("{}", "─".repeat(40).dimmed());
+            println!("  Engine   {}  ws://localhost:49134", "●".green());
+            println!("  API      {}  http://localhost:3111", "●".green());
+            println!("  Workers  {}  51 TypeScript workers", "●".green());
+            println!("{}", "─".repeat(40).dimmed());
+            println!("\n  {} agentos chat          Interactive chat", "▸".dimmed());
+            println!("  {} agentos tui           Terminal dashboard", "▸".dimmed());
+            println!("  {} agentos status        System status", "▸".dimmed());
+            println!("\n{} Press Ctrl+C to stop\n", "⏎".dimmed());
+
             tokio::signal::ctrl_c().await?;
+            println!("\n{} Shutting down...", "→".blue());
+            let _ = workers.kill();
+            let _ = engine.kill();
+            let _ = workers.wait();
+            let _ = engine.wait();
+            println!("{} Stopped.", "✓".green());
         }
 
         Commands::Stop => {
