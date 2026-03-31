@@ -15,6 +15,10 @@ const triggerVoid = (id: string, payload: unknown) =>
 const MAX_DEPTH = 3;
 const MAX_SUBTASKS = 10;
 
+function generateTaskId(): string {
+  return `t_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+}
+
 type TaskStatus = "pending" | "in_progress" | "complete" | "failed" | "blocked";
 
 interface Task {
@@ -49,7 +53,7 @@ registerFunction(
       return { decomposed: false, reason: "Max depth reached" };
     }
 
-    const rootId = existingRootId || crypto.randomUUID();
+    const rootId = existingRootId || generateTaskId();
     const taskId = parentId ? parentId : rootId;
 
     const llmResult: any = await trigger({

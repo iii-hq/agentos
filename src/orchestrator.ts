@@ -179,6 +179,20 @@ registerFunction(
       payload: { scope: "orchestrator_plans", key: planId, value: plan },
     });
 
+    await trigger({
+      function_id: "state::set",
+      payload: {
+        scope: `workspace:${planId}`,
+        key: "_meta",
+        value: {
+          key: "_meta",
+          value: { planId, rootId, description: plan.description },
+          writtenBy: "orchestrator",
+          writtenAt: Date.now(),
+        },
+      },
+    });
+
     const spawnResult: any = await trigger({
       function_id: "task::spawn_workers",
       payload: { rootId },
@@ -187,7 +201,7 @@ registerFunction(
     log.info("Plan execution started", { planId, rootId, spawned: spawnResult?.spawned?.length });
     recordMetric("orchestrator_execute", 1, { planId }, "counter");
 
-    return { planId, rootId, spawned: spawnResult?.spawned || [] };
+    return { planId, rootId, workspaceScope: `workspace:${planId}`, spawned: spawnResult?.spawned || [] };
   },
 );
 
@@ -377,6 +391,78 @@ registerFunction(
   },
 );
 
+registerFunction(
+  {
+    id: "orchestrator::workspace_write",
+    description: "Write to shared plan workspace",
+    metadata: { category: "orchestrator" },
+  },
+  async (req: any) => {
+    if (req.headers) requireAuth(req);
+    const { planId, key, value, agentId } = req.body || req;
+
+    if (!planId || !key) {
+      throw Object.assign(new Error("planId and key are required"), { statusCode: 400 });
+    }
+
+    const entry = {
+      key,
+      value,
+      writtenBy: agentId || "unknown",
+      writtenAt: Date.now(),
+    };
+
+    await trigger({
+      function_id: "state::set",
+      payload: { scope: `workspace:${planId}`, key, value: entry },
+    });
+
+    log.info("Scratchpad write", { planId, key, agentId });
+
+    return { written: true, key, planId };
+  },
+);
+
+registerFunction(
+  {
+    id: "orchestrator::workspace_read",
+    description: "Read from shared plan workspace",
+    metadata: { category: "orchestrator" },
+  },
+  async (req: any) => {
+    if (req.headers) requireAuth(req);
+    const { planId, key } = req.body || req;
+
+    if (!planId) {
+      throw Object.assign(new Error("planId is required"), { statusCode: 400 });
+    }
+
+    if (key) {
+      const entry = await trigger({
+        function_id: "state::get",
+        payload: { scope: `workspace:${planId}`, key },
+      });
+      return entry;
+    }
+
+    const entries: any[] = await safeCall(
+      () =>
+        trigger({
+          function_id: "state::list",
+          payload: { scope: `workspace:${planId}` },
+        }),
+      [],
+      { operation: "list_workspace" },
+    );
+
+    return {
+      planId,
+      count: entries.length,
+      entries: entries.map((e) => e.value || e),
+    };
+  },
+);
+
 registerTrigger({
   type: "http",
   function_id: "orchestrator::plan",
@@ -396,4 +482,14 @@ registerTrigger({
   type: "http",
   function_id: "orchestrator::intervene",
   config: { api_path: "api/orchestrator/intervene", http_method: "POST" },
+});
+registerTrigger({
+  type: "http",
+  function_id: "orchestrator::workspace_write",
+  config: { api_path: "api/orchestrator/workspace", http_method: "POST" },
+});
+registerTrigger({
+  type: "http",
+  function_id: "orchestrator::workspace_read",
+  config: { api_path: "api/orchestrator/workspace", http_method: "GET" },
 });

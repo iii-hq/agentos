@@ -26,8 +26,12 @@ const mockTrigger = vi.fn(async (fnId: string, data?: any): Promise<any> => {
       value,
     }));
   if (fnId === "state::update") return { ok: true };
+  if (fnId === "context_cache::get_or_fetch") {
+    return mockTrigger(data.fetchFunctionId, data.fetchPayload);
+  }
   if (fnId === "memory::recall")
     return [{ role: "system", content: "context" }];
+  if (fnId === "memory::user_profile::get") return null;
   if (fnId === "memory::store") return { ok: true };
   if (fnId === "llm::route") return "claude-sonnet-4-6";
   if (fnId === "llm::complete")
@@ -152,6 +156,8 @@ beforeEach(() => {
   mockListFunctions.mockClear();
   mockTrigger.mockImplementation(
     async (fnId: string, data?: any): Promise<any> => {
+      if (fnId === "context_cache::get_or_fetch")
+        return mockTrigger(data.fetchFunctionId, data.fetchPayload);
       if (fnId === "state::get")
         return getScope(data.scope).get(data.key) ?? null;
       if (fnId === "state::set") {
@@ -170,6 +176,7 @@ beforeEach(() => {
       if (fnId === "state::update") return { ok: true };
       if (fnId === "memory::recall")
         return [{ role: "system", content: "context" }];
+      if (fnId === "memory::user_profile::get") return null;
       if (fnId === "memory::store") return { ok: true };
       if (fnId === "llm::route") return "claude-sonnet-4-6";
       if (fnId === "llm::complete")
@@ -299,9 +306,12 @@ describe("agent::chat", () => {
 
   it("rejects high-risk injection", async () => {
     mockTrigger.mockImplementation(async (fnId: string, data?: any) => {
+      if (fnId === "context_cache::get_or_fetch")
+        return mockTrigger(data.fetchFunctionId, data.fetchPayload);
       if (fnId === "state::get")
         return getScope(data.scope).get(data.key) ?? null;
       if (fnId === "memory::recall") return [];
+      if (fnId === "memory::user_profile::get") return null;
       if (fnId === "agent::list_tools") return [];
       if (fnId === "llm::route") return "test";
       if (fnId === "security::scan_injection") return { riskScore: 0.9 };
@@ -405,9 +415,12 @@ describe("agent::chat", () => {
   it("handles tool calls in response", async () => {
     let callCount = 0;
     mockTrigger.mockImplementation(async (fnId: string, data?: any) => {
+      if (fnId === "context_cache::get_or_fetch")
+        return mockTrigger(data.fetchFunctionId, data.fetchPayload);
       if (fnId === "state::get")
         return getScope(data.scope).get(data.key) ?? null;
       if (fnId === "memory::recall") return [];
+      if (fnId === "memory::user_profile::get") return null;
       if (fnId === "agent::list_tools")
         return [{ function_id: "tool::web_search", id: "tool::web_search" }];
       if (fnId === "llm::route") return "test";
@@ -457,9 +470,12 @@ describe("agent::chat", () => {
   it("blocks tool not in allowed list", async () => {
     let callCount = 0;
     mockTrigger.mockImplementation(async (fnId: string, data?: any) => {
+      if (fnId === "context_cache::get_or_fetch")
+        return mockTrigger(data.fetchFunctionId, data.fetchPayload);
       if (fnId === "state::get")
         return getScope(data.scope).get(data.key) ?? null;
       if (fnId === "memory::recall") return [];
+      if (fnId === "memory::user_profile::get") return null;
       if (fnId === "agent::list_tools")
         return [{ function_id: "tool::file_read", id: "tool::file_read" }];
       if (fnId === "llm::route") return "test";
@@ -498,9 +514,12 @@ describe("agent::chat", () => {
   it("blocks tool when guard says block", async () => {
     let callCount = 0;
     mockTrigger.mockImplementation(async (fnId: string, data?: any) => {
+      if (fnId === "context_cache::get_or_fetch")
+        return mockTrigger(data.fetchFunctionId, data.fetchPayload);
       if (fnId === "state::get")
         return getScope(data.scope).get(data.key) ?? null;
       if (fnId === "memory::recall") return [];
+      if (fnId === "memory::user_profile::get") return null;
       if (fnId === "agent::list_tools")
         return [{ function_id: "tool::web_search", id: "tool::web_search" }];
       if (fnId === "llm::route") return "test";
@@ -542,9 +561,12 @@ describe("agent::chat", () => {
   it("handles policy requiring approval", async () => {
     let callCount = 0;
     mockTrigger.mockImplementation(async (fnId: string, data?: any) => {
+      if (fnId === "context_cache::get_or_fetch")
+        return mockTrigger(data.fetchFunctionId, data.fetchPayload);
       if (fnId === "state::get")
         return getScope(data.scope).get(data.key) ?? null;
       if (fnId === "memory::recall") return [];
+      if (fnId === "memory::user_profile::get") return null;
       if (fnId === "agent::list_tools")
         return [{ function_id: "tool::web_search", id: "tool::web_search" }];
       if (fnId === "llm::route") return "test";

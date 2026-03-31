@@ -162,6 +162,19 @@ registerFunction(
       return { compressed: input.messages, removedCount: 0, savedTokens: 0 };
     }
 
+    await trigger({
+      function_id: "hook::fire",
+      payload: {
+        type: "BeforeCompact",
+        payload: {
+          agentId: input.agentId,
+          messageCount: input.messages.length,
+          originalTokens,
+          targetTokens: input.targetTokens,
+        },
+      },
+    }).catch(() => {});
+
     let messages = [...input.messages];
     let removedCount = 0;
 
@@ -304,10 +317,25 @@ Critical Context: <must-preserve details>`;
       messages = [condensed, ...filtered];
     }
 
+    const savedTokens = originalTokens - estimateMessagesTokens(messages);
+
+    await trigger({
+      function_id: "hook::fire",
+      payload: {
+        type: "AfterCompact",
+        payload: {
+          agentId: input.agentId,
+          removedCount,
+          savedTokens,
+          finalMessageCount: messages.length,
+        },
+      },
+    }).catch(() => {});
+
     return {
       compressed: messages,
       removedCount,
-      savedTokens: originalTokens - estimateMessagesTokens(messages),
+      savedTokens,
     };
   },
 );
@@ -364,6 +392,181 @@ registerFunction(
   },
 );
 
+registerFunction(
+  {
+    id: "context::trim",
+    description: "Lightweight in-turn compression without LLM",
+    metadata: { category: "context" },
+  },
+  async (input: {
+    messages: Message[];
+  }): Promise<{
+    compacted: Message[];
+    removedTokens: number;
+  }> => {
+    const originalTokens = estimateMessagesTokens(input.messages);
+    const messages = [...input.messages];
+    const result: Message[] = [];
+
+    const recentBoundary = Math.max(0, messages.length - 5);
+    for (let i = 0; i < messages.length; i++) {
+      const msg = messages[i];
+      if (
+        i < recentBoundary &&
+        (msg.role === "tool" || msg.toolResults) &&
+        (msg.content || "").length > 100
+      ) {
+        result.push({
+          ...msg,
+          content: (msg.content || "").slice(0, 100),
+          toolResults: undefined,
+        });
+        continue;
+      }
+
+      const prev = result[result.length - 1];
+      if (prev && prev.content === msg.content && prev.role === msg.role) {
+        continue;
+      }
+
+      if (prev && prev.role === "system" && msg.role === "system") {
+        result[result.length - 1] = {
+          ...prev,
+          content: prev.content + "\n" + msg.content,
+        };
+        continue;
+      }
+
+      result.push(msg);
+    }
+
+    return {
+      compacted: result,
+      removedTokens: originalTokens - estimateMessagesTokens(result),
+    };
+  },
+);
+
+registerFunction(
+  {
+    id: "context::prune",
+    description: "Drop old turns entirely, keep structured summary placeholder",
+    metadata: { category: "context" },
+  },
+  async (input: {
+    messages: Message[];
+  }): Promise<{
+    snipped: Message[];
+    removedCount: number;
+  }> => {
+    const messages = [...input.messages];
+    if (messages.length <= 10) {
+      return { snipped: messages, removedCount: 0 };
+    }
+
+    const keepStart = 3;
+    const keepEndCount = Math.ceil(messages.length * 0.4);
+    const keepEndStart = messages.length - keepEndCount;
+
+    if (keepEndStart <= keepStart) {
+      return { snipped: messages, removedCount: 0 };
+    }
+
+    const head = messages.slice(0, keepStart);
+    const tail = messages.slice(keepEndStart);
+    const removedCount = keepEndStart - keepStart;
+
+    const snipMessage: Message = {
+      role: "system",
+      content: `[Snipped ${removedCount} messages]`,
+    };
+
+    return {
+      snipped: [...head, snipMessage, ...tail],
+      removedCount,
+    };
+  },
+);
+
+registerFunction(
+  {
+    id: "context::auto_optimize",
+    description: "Pattern-detection-triggered compaction",
+    metadata: { category: "context" },
+  },
+  async (input: {
+    messages: Message[];
+    maxTokens?: number;
+  }): Promise<{
+    compacted: Message[];
+    strategy: string;
+    savedTokens: number;
+  }> => {
+    const originalTokens = estimateMessagesTokens(input.messages);
+    const health: ContextHealthScore = await trigger({
+      function_id: "context::health",
+      payload: {
+        messages: input.messages,
+        maxTokens: input.maxTokens || 200_000,
+      },
+    });
+
+    let messages = [...input.messages];
+    let strategy = "none";
+
+    if (health.repetitionPenalty < 10) {
+      strategy = "deduplicate";
+      const deduped: Message[] = [];
+      for (const msg of messages) {
+        const prev = deduped[deduped.length - 1];
+        if (prev && prev.content === msg.content && prev.role === msg.role) {
+          continue;
+        }
+        deduped.push(msg);
+      }
+      messages = deduped;
+    }
+
+    if (health.toolDensity < 10) {
+      strategy = strategy === "none" ? "summarize_tools" : strategy + "+summarize_tools";
+      messages = messages.map((m) => {
+        if (
+          (m.role === "tool" || m.toolResults) &&
+          (m.content || "").length > 200
+        ) {
+          return {
+            ...m,
+            content: `[Tool summary: ${(m.content || "").slice(0, 100)}...]`,
+            toolResults: undefined,
+          };
+        }
+        return m;
+      });
+    }
+
+    if (health.tokenUtilization > 20) {
+      strategy = strategy === "none" ? "aggressive" : strategy + "+aggressive";
+      const microResult: any = await trigger({
+        function_id: "context::trim",
+        payload: { messages },
+      });
+      messages = microResult.compacted;
+
+      const snipResult: any = await trigger({
+        function_id: "context::prune",
+        payload: { messages },
+      });
+      messages = snipResult.snipped;
+    }
+
+    return {
+      compacted: messages,
+      strategy,
+      savedTokens: originalTokens - estimateMessagesTokens(messages),
+    };
+  },
+);
+
 registerTrigger({
   type: "http",
   function_id: "context::health",
@@ -373,4 +576,19 @@ registerTrigger({
   type: "http",
   function_id: "context::compress",
   config: { api_path: "api/context/compress", http_method: "POST" },
+});
+registerTrigger({
+  type: "http",
+  function_id: "context::trim",
+  config: { api_path: "api/context/micro-compact", http_method: "POST" },
+});
+registerTrigger({
+  type: "http",
+  function_id: "context::prune",
+  config: { api_path: "api/context/snip-compact", http_method: "POST" },
+});
+registerTrigger({
+  type: "http",
+  function_id: "context::auto_optimize",
+  config: { api_path: "api/context/reactive-compact", http_method: "POST" },
 });

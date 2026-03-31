@@ -111,19 +111,33 @@ async function prepareContext(
     return earlyResponse(`Agent ${agentId} not found.`);
   }
 
-  const memories: any = await triggerFn("memory::recall", {
+  const memories: any = await triggerFn("context_cache::get_or_fetch", {
     agentId,
-    query: message,
-    limit: 20,
+    key: `recall:${message.slice(0, 64)}`,
+    fetchFunctionId: "memory::recall",
+    fetchPayload: { agentId, query: message, limit: 20 },
+    ttlMs: 30_000,
   }, 30_000);
 
   const userProfile: any = await safeCall(
-    () => triggerFn("memory::user_profile::get", { agentId }, 5_000),
+    () => triggerFn("context_cache::get_or_fetch", {
+      agentId,
+      key: "user_profile",
+      fetchFunctionId: "memory::user_profile::get",
+      fetchPayload: { agentId },
+      ttlMs: 60_000,
+    }, 5_000),
     null,
     { agentId, operation: "get_user_profile" },
   );
 
-  const tools: any = await triggerFn("agent::list_tools", { agentId }, 10_000);
+  const tools: any = await triggerFn("context_cache::get_or_fetch", {
+    agentId,
+    key: "list_tools",
+    fetchFunctionId: "agent::list_tools",
+    fetchPayload: { agentId },
+    ttlMs: 120_000,
+  }, 10_000);
   const allowedToolIds = new Set<string>(
     tools.map((t: any) => t.function_id || t.id),
   );
@@ -192,6 +206,12 @@ async function executeLlmCall(
   triggerVoidFn: TriggerVoidFn,
   iteration: number,
 ): Promise<any> {
+  triggerVoidFn("hook::fire", {
+    type: "RequestStart",
+    payload: { agentId, model, messageCount: messages.length, iteration },
+    agentId,
+  });
+
   const llmStart = Date.now();
   const response: any = await triggerFn("llm::complete", {
     model,
@@ -199,6 +219,12 @@ async function executeLlmCall(
     messages,
     tools,
   }, TOOL_TIMEOUT_MS);
+
+  triggerVoidFn("hook::fire", {
+    type: "RequestEnd",
+    payload: { agentId, model: response.model, usage: response.usage, durationMs: Date.now() - llmStart, iteration },
+    agentId,
+  });
 
   try {
     triggerVoidFn("replay::record", {

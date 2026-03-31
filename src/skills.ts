@@ -19,6 +19,10 @@ interface Skill {
   version: string;
   source: "bundled" | "installed" | "marketplace";
   installedAt?: number;
+  toolScope?: string[];
+  effort?: "normal" | "extended";
+  model?: string;
+  templateOnly?: boolean;
 }
 
 const BUNDLED_SKILLS: Omit<Skill, "installedAt">[] = [
@@ -460,6 +464,10 @@ registerFunction(
       tags,
       signature,
       publicKey,
+      toolScope,
+      effort,
+      model,
+      templateOnly,
     } = req.body || req;
     const skillId =
       id || name?.toLowerCase().replace(/\s+/g, "-") || crypto.randomUUID();
@@ -490,6 +498,10 @@ registerFunction(
       version: "1.0.0",
       source: "installed",
       installedAt: Date.now(),
+      toolScope: toolScope || undefined,
+      effort: effort || undefined,
+      model: model || undefined,
+      templateOnly: templateOnly || undefined,
     };
 
     await trigger({
@@ -588,6 +600,16 @@ registerFunction(
       }
     }
 
+    const parsedAllowedTools = meta.toolScope
+      ? meta.toolScope
+          .replace(/[\[\]]/g, "")
+          .split(",")
+          .map((t: string) => t.trim())
+          .filter(Boolean)
+      : undefined;
+
+    const effort = meta.effort === "extended" ? "extended" : meta.effort === "normal" ? "normal" : undefined;
+
     return {
       name: meta.name || "unknown",
       description: meta.description || "",
@@ -596,8 +618,12 @@ registerFunction(
         ? meta.tags
             .replace(/[\[\]]/g, "")
             .split(",")
-            .map((t) => t.trim())
+            .map((t: string) => t.trim())
         : [],
+      toolScope: parsedAllowedTools,
+      effort,
+      model: meta.model || undefined,
+      templateOnly: meta.templateOnly === "true" ? true : undefined,
       content: body.trim(),
     };
   },

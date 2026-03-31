@@ -12,7 +12,13 @@ type HookType =
   | "BeforeToolCall"
   | "AfterToolCall"
   | "BeforePromptBuild"
-  | "AgentLoopEnd";
+  | "AgentLoopEnd"
+  | "SessionStart"
+  | "SessionEnd"
+  | "RequestStart"
+  | "RequestEnd"
+  | "BeforeCompact"
+  | "AfterCompact";
 
 interface HookDefinition {
   id: string;
@@ -68,6 +74,12 @@ const VALID_HOOK_TYPES: readonly HookType[] = [
   "AfterToolCall",
   "BeforePromptBuild",
   "AgentLoopEnd",
+  "SessionStart",
+  "SessionEnd",
+  "RequestStart",
+  "RequestEnd",
+  "BeforeCompact",
+  "AfterCompact",
 ] as const;
 
 async function loadHooks(): Promise<HookDefinition[]> {
