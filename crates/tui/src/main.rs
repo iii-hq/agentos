@@ -428,29 +428,61 @@ impl App {
                 let agent_ids: Vec<String> = self.agents.iter()
                     .filter_map(|a| a["id"].as_str().or(a["name"].as_str()).map(String::from))
                     .collect();
-                let mut states = vec![];
-                for agent_id in &agent_ids {
-                    if let Ok(resp) = client.get(format!("{}/api/lifecycle/state/{}", API_BASE, agent_id)).send().await
-                        && let Ok(data) = resp.json::<Value>().await
-                    {
-                        let mut entry = data.clone();
-                        if entry.get("agentId").is_none() {
-                            entry.as_object_mut().map(|obj| obj.insert("agentId".into(), Value::String(agent_id.clone())));
+                let futures: Vec<_> = agent_ids.iter().map(|agent_id| {
+                    let c = client.clone();
+                    let id = agent_id.clone();
+                    async move {
+                        let resp = c.get(format!("{}/api/lifecycle/state/{}", API_BASE, id)).send().await.ok()?;
+                        let mut data: Value = resp.json().await.ok()?;
+                        let obj = data.as_object_mut()?;
+                        if !obj.contains_key("agentId") {
+                            obj.insert("agentId".into(), Value::String(id));
                         }
-                        states.push(entry);
+                        if !obj.contains_key("previous") {
+                            obj.insert("previous".into(), obj.get("previousState").cloned().unwrap_or(Value::String("-".into())));
+                        }
+                        if !obj.contains_key("reason") {
+                            obj.insert("reason".into(), Value::String("-".into()));
+                        }
+                        if !obj.contains_key("since") {
+                            let ts = obj.get("transitionedAt").and_then(|v| v.as_u64());
+                            let since_str = ts.map(|t| format!("{}s ago", (std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis() as u64 - t) / 1000)).unwrap_or_else(|| "-".into());
+                            obj.insert("since".into(), Value::String(since_str));
+                        }
+                        Some(data)
                     }
-                }
-                self.lifecycle_states = states;
+                }).collect();
+                self.lifecycle_states = futures_util::future::join_all(futures).await.into_iter().flatten().collect();
             }
             Screen::Tasks => {
-                if let Ok(resp) = client.get(format!("{}/api/tasks/list", API_BASE)).send().await
+                if let Ok(resp) = client.post(format!("{}/api/orchestrator/status", API_BASE))
+                    .json(&serde_json::json!({}))
+                    .send().await
                     && let Ok(data) = resp.json::<Value>().await
                 {
-                    self.task_tree = data.as_array().cloned().unwrap_or_default();
+                    if let Some(plans) = data["plans"].as_array() {
+                        let mut all_tasks = vec![];
+                        for plan in plans {
+                            if let Some(root_id) = plan["rootTaskId"].as_str().or(plan["rootId"].as_str()) {
+                                if let Ok(task_resp) = client.post(format!("{}/api/tasks/list", API_BASE))
+                                    .json(&serde_json::json!({ "rootId": root_id }))
+                                    .send().await
+                                    && let Ok(task_data) = task_resp.json::<Value>().await
+                                {
+                                    if let Some(tasks) = task_data["tasks"].as_array() {
+                                        all_tasks.extend(tasks.clone());
+                                    }
+                                }
+                            }
+                        }
+                        self.task_tree = all_tasks;
+                    }
                 }
             }
             Screen::Recovery => {
-                if let Ok(resp) = client.get(format!("{}/api/recovery/scan", API_BASE)).send().await
+                if let Ok(resp) = client.post(format!("{}/api/recovery/report", API_BASE))
+                    .json(&serde_json::json!({}))
+                    .send().await
                     && let Ok(data) = resp.json::<Value>().await
                 {
                     self.recovery_report = data;
@@ -1276,7 +1308,7 @@ fn draw_chat(f: &mut Frame, app: &App, area: Rect) {
             format!("~{} tokens ", app.streaming_tokens),
             Style::default().fg(Color::DarkGray),
         ));
-        let cost_est = app.streaming_tokens as f64 * 0.000015;
+        let cost_est = app.streaming_tokens as f64 * 0.000003;
         status_spans.push(Span::styled(
             format!("~${:.4}", cost_est),
             Style::default().fg(Color::DarkGray),

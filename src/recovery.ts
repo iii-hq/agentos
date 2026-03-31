@@ -410,6 +410,31 @@ registerFunction(
 );
 
 registerTrigger({
+  type: "http",
+  function_id: "recovery::scan",
+  config: { api_path: "api/recovery/scan", http_method: "POST" },
+});
+registerTrigger({
+  type: "http",
+  function_id: "recovery::validate",
+  config: { api_path: "api/recovery/validate", http_method: "POST" },
+});
+registerTrigger({
+  type: "http",
+  function_id: "recovery::classify",
+  config: { api_path: "api/recovery/classify", http_method: "POST" },
+});
+registerTrigger({
+  type: "http",
+  function_id: "recovery::recover",
+  config: { api_path: "api/recovery/recover", http_method: "POST" },
+});
+registerTrigger({
+  type: "http",
+  function_id: "recovery::report",
+  config: { api_path: "api/recovery/report", http_method: "POST" },
+});
+registerTrigger({
   type: "cron",
   function_id: "recovery::report",
   config: { expression: "*/10 * * * *" },
