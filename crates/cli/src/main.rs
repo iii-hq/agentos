@@ -314,25 +314,60 @@ async fn main() -> Result<()> {
 
             let config_yaml = config_dir.join("config.yaml");
             if !config_yaml.exists() {
-                let default_config = r#"modules:
-  websocket:
-    port: 49134
-  rest:
-    port: 3111
-  streams:
-    port: 3112
-  state:
-    adapter: file
-    path: data/state
-  queue:
-    adapter: memory
-  pubsub:
-    adapter: memory
-  cron:
-    adapter: memory
-  otel:
-    enabled: false
-"#;
+                let data_dir = config_dir.join("data");
+                std::fs::create_dir_all(data_dir.join("state"))?;
+                std::fs::create_dir_all(data_dir.join("streams"))?;
+
+                let default_config = format!(r#"port: 49134
+
+modules:
+  - class: modules::api::RestApiModule
+    config:
+      port: 3111
+      host: 0.0.0.0
+      default_timeout: 300000
+      cors:
+        allowed_origins: ['*']
+        allowed_methods: [GET, POST, PUT, DELETE, OPTIONS]
+        allowed_headers: ['*']
+
+  - class: modules::state::StateModule
+    config:
+      adapter:
+        class: modules::state::adapters::KvStore
+        config:
+          store_method: file_based
+          file_path: {data}/state
+
+  - class: modules::stream::StreamModule
+    config:
+      port: 3112
+      host: 0.0.0.0
+      adapter:
+        class: modules::stream::adapters::KvStore
+        config:
+          store_method: file_based
+          file_path: {data}/streams
+
+  - class: modules::queue::QueueModule
+    config:
+      adapter:
+        class: modules::queue::BuiltinQueueAdapter
+
+  - class: modules::pubsub::PubSubModule
+    config:
+      adapter:
+        class: modules::pubsub::LocalAdapter
+
+  - class: modules::cron::CronModule
+    config:
+      adapter:
+        class: modules::cron::KvCronAdapter
+
+  - class: modules::observability::OtelModule
+    config:
+      enabled: false
+"#, data = config_dir.join("data").display());
                 std::fs::write(&config_yaml, default_config)?;
                 println!("{} Generated config.yaml", "✓".green());
             }
@@ -347,12 +382,13 @@ async fn main() -> Result<()> {
             println!("{}", "─".repeat(40).dimmed());
 
             println!("{} Starting iii-engine...", "→".blue());
+            let log_file = std::fs::File::create(config_dir.join("logs/engine.log"))?;
+            let log_err = log_file.try_clone()?;
             let mut engine = std::process::Command::new(&iii_path)
                 .arg("--config")
                 .arg(&config_yaml)
-                .current_dir(&config_dir)
-                .stdout(std::process::Stdio::null())
-                .stderr(std::process::Stdio::piped())
+                .stdout(std::process::Stdio::from(log_file))
+                .stderr(std::process::Stdio::from(log_err))
                 .spawn()
                 .map_err(|e| anyhow::anyhow!("Failed to start iii-engine: {}. Is it installed?", e))?;
 
@@ -360,22 +396,25 @@ async fn main() -> Result<()> {
 
             if let Ok(Some(status)) = engine.try_wait() {
                 println!("{} iii-engine exited with: {}", "✗".red(), status);
+                println!("  Check logs: ~/.agentos/logs/engine.log");
                 return Ok(());
             }
             println!("{} iii-engine running (pid {})", "✓".green(), engine.id());
 
             println!("{} Starting workers...", "→".blue());
             let project_root = std::env::current_dir()?;
-            let tsx_candidates = ["npx", "tsx"];
+            let tsx_candidates = ["tsx", "npx"];
             let tsx_cmd = tsx_candidates.iter()
                 .find(|cmd| which::which(cmd).is_ok())
                 .unwrap_or(&"npx");
 
+            let worker_log = std::fs::File::create(config_dir.join("logs/workers.log"))?;
+            let worker_err = worker_log.try_clone()?;
             let mut workers = std::process::Command::new(tsx_cmd)
                 .args(if *tsx_cmd == "npx" { vec!["tsx", "src/index.ts"] } else { vec!["src/index.ts"] })
                 .current_dir(&project_root)
-                .stdout(std::process::Stdio::piped())
-                .stderr(std::process::Stdio::piped())
+                .stdout(std::process::Stdio::from(worker_log))
+                .stderr(std::process::Stdio::from(worker_err))
                 .spawn()
                 .map_err(|e| anyhow::anyhow!("Failed to start workers: {}. Is tsx installed?", e))?;
 
@@ -383,6 +422,7 @@ async fn main() -> Result<()> {
 
             if let Ok(Some(status)) = workers.try_wait() {
                 println!("{} Workers exited with: {}", "✗".red(), status);
+                println!("  Check logs: ~/.agentos/logs/workers.log");
                 let _ = engine.kill();
                 return Ok(());
             }

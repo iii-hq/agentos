@@ -6,25 +6,60 @@
   </picture>
 </p>
 
+<h3 align="center">The agent OS that evolves itself.</h3>
+
+<p align="center">
+  Three primitives. 51 workers. Agents that write, test, and improve their own functions at runtime.<br>
+  Built on <a href="https://iii.dev">iii-engine</a> — 18% overhead vs raw function calls.
+</p>
+
 <p align="center">
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-Apache_2.0-facc15?style=for-the-badge" alt="License"></a>
   <img src="https://img.shields.io/badge/Tests-2,754_passing-22c55e?style=for-the-badge" alt="Tests">
-  <img src="https://img.shields.io/badge/Tools-60+-facc15?style=for-the-badge" alt="Tools">
+  <img src="https://img.shields.io/badge/Workers-51-facc15?style=for-the-badge" alt="Workers">
   <img src="https://img.shields.io/badge/LLM_Providers-25-fde68a?style=for-the-badge" alt="LLM Providers">
-  <img src="https://img.shields.io/badge/Models-47-71717a?style=for-the-badge" alt="Models">
+  <img src="https://img.shields.io/badge/Security_Layers-18-71717a?style=for-the-badge" alt="Security Layers">
 </p>
 
 <p align="center">
   <a href="https://agentos.sh">Website</a> ·
   <a href="#quickstart">Quickstart</a> ·
+  <a href="#what-makes-this-different">Why AgentOS</a> ·
   <a href="#architecture">Architecture</a> ·
+  <a href="#agent-intelligence">Intelligence</a> ·
   <a href="https://github.com/iii-hq/agentos">GitHub</a>
 </p>
 
-Every capability — agents, memory, security, LLM routing, workflows, tools, swarms, knowledge graphs, session replay, vault, **self-evolving functions**, **DAG-based artifact exchange**, **inter-agent coordination**, **self-curating memory**, **session lifecycle**, **task decomposition**, **multi-agent orchestration** — is a plain function registered on an [iii-engine](https://iii.dev) bus. No frameworks, no vendor lock-in, no magic.
+```bash
+curl -fsSL https://raw.githubusercontent.com/iii-hq/agentos/main/scripts/install.sh | sh
+agentos start
+```
+
+Two commands. Zero config. Boots the engine, 51 workers, and a 25-screen TUI dashboard.
+
+## What Makes This Different
+
+Most agent frameworks give you chains, graphs, and prompt templates. AgentOS gives you three primitives:
+
+| Primitive | What It Does |
+|-----------|-------------|
+| **Worker** | A process that connects to the engine and registers functions |
+| **Function** | A callable unit of work — agents, tools, security, memory, everything |
+| **Trigger** | Binds a function to HTTP, cron, queue, or pub/sub |
+
+That's it. Every capability — from LLM routing to swarm coordination to self-evolving functions — is a plain function on the [iii-engine](https://iii.dev) bus. No frameworks, no vendor lock-in, no magic.
+
+**What you get out of the box:**
+- **Self-evolving functions** — agents write, test, and improve their own code at runtime
+- **Self-curating memory** — agents reflect on conversations and extract durable facts automatically
+- **Multi-agent orchestration** — plan features, decompose tasks, spawn workers, monitor progress
+- **Session recovery** — health scanning detects stale/dead agents and auto-recovers them
+- **18 security layers** — RBAC, WASM sandbox, Merkle audit, encrypted vault, timing-safe HMAC
+- **25 LLM providers** — swap between Anthropic, OpenAI, Google, Ollama, or 20 others. One config change.
+- **40 channel adapters** — Slack, Discord, WhatsApp, Telegram, and 36 more
 
 <p align="center">
-  <img src="assets/architecture.svg" alt="AgentOS architecture: Rust (18 crates), TypeScript (46 workers), Python (embeddings) on iii-engine" width="720">
+  <img src="assets/architecture.svg" alt="AgentOS architecture: Rust (18 crates), TypeScript (51 workers), Python (embeddings) on iii-engine" width="720">
 </p>
 
 ## Install
@@ -33,9 +68,8 @@ Every capability — agents, memory, security, LLM routing, workflows, tools, sw
 curl -fsSL https://raw.githubusercontent.com/iii-hq/agentos/main/scripts/install.sh | sh
 ```
 
-Installs both **iii-engine** (dependency) and **agentos** binary to `~/.local/bin`.
+Installs both **iii-engine** and **agentos** binary to `~/.local/bin`.
 
-Options:
 ```bash
 AGENTOS_VERSION=v0.1.0 curl -fsSL ... | sh   # specific version
 BIN_DIR=/usr/local/bin curl -fsSL ... | sh    # custom install dir
@@ -44,57 +78,34 @@ BIN_DIR=/usr/local/bin curl -fsSL ... | sh    # custom install dir
 ## Quickstart
 
 ```bash
-# 1. Initialize and start
-agentos init --quick
-agentos config set-key anthropic $ANTHROPIC_API_KEY
+# Install and start (zero config — auto-detects ANTHROPIC_API_KEY from env)
 agentos start
 
-# 2. Chat with an agent
-agentos chat default
+# Chat with an agent
+agentos chat
+
+# Open the 25-screen terminal dashboard
+agentos tui
 ```
 
-### Manual startup (development)
+`agentos start` handles everything: creates `~/.agentos/` on first run, downloads iii-engine if missing, generates config, boots the engine and all 51 workers. Ctrl+C to stop.
+
+### Set an API key (if not in environment)
 
 ```bash
-# 1. Start the engine
-iii --config config.yaml
-
-# 2. Start Rust workers (hot path)
-cargo run --release -p agentos-core &
-cargo run --release -p agentos-security &
-cargo run --release -p agentos-memory &
-cargo run --release -p agentos-llm-router &
-cargo run --release -p agentos-wasm-sandbox &
-
-# 3. Start control plane workers
-cargo run --release -p agentos-realm &
-cargo run --release -p agentos-hierarchy &
-cargo run --release -p agentos-directive &
-cargo run --release -p agentos-mission &
-cargo run --release -p agentos-ledger &
-cargo run --release -p agentos-council &
-cargo run --release -p agentos-pulse &
-cargo run --release -p agentos-bridge &
-
-# 4. Start TypeScript workers
-npx tsx src/api.ts &
-npx tsx src/agent-core.ts &
-npx tsx src/tools.ts &
-npx tsx src/workflow.ts &
-
-# 5. Start Python embedding worker
-python workers/embedding/main.py &
-
-# 6. Chat with an agent
-cargo run -p agentos-cli -- chat default
+agentos config set-key anthropic sk-ant-...
 ```
 
-Or use the CLI:
+### Development mode
 
 ```bash
-cargo run -p agentos-cli -- init --quick
-cargo run -p agentos-cli -- start
-cargo run -p agentos-cli -- message default "What can you do?"
+# Start with hot reload
+agentos init --quick
+npm run dev
+
+# Run tests
+npm test                    # 1,748 TypeScript tests
+cargo test --workspace      # Rust crate tests
 ```
 
 ## Architecture
