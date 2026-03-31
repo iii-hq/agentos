@@ -13,6 +13,7 @@ import "./a2a.js";
 import "./a2a-cards.js";
 import "./browser.js";
 import "./code-agent.js";
+import "./context-cache.js";
 import "./context-manager.js";
 import "./context-monitor.js";
 import "./cost-tracker.js";

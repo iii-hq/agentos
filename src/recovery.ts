@@ -36,7 +36,8 @@ registerFunction(
     description: "List all agents and validate each in parallel",
     metadata: { category: "recovery" },
   },
-  async () => {
+  async (req: any) => {
+    if (req?.headers) requireAuth(req);
     const agents: any[] = await safeCall(
       () => trigger({ function_id: "state::list", payload: { scope: "agents" } }),
       [],
@@ -343,7 +344,8 @@ registerFunction(
     description: "Scan all agents and auto-recover unhealthy ones in parallel",
     metadata: { category: "recovery" },
   },
-  async () => {
+  async (req: any) => {
+    if (req?.headers) requireAuth(req);
     const scanResult: any = await trigger({
       function_id: "recovery::scan",
       payload: {},
@@ -409,6 +411,31 @@ registerFunction(
   },
 );
 
+registerTrigger({
+  type: "http",
+  function_id: "recovery::scan",
+  config: { api_path: "api/recovery/scan", http_method: "POST" },
+});
+registerTrigger({
+  type: "http",
+  function_id: "recovery::validate",
+  config: { api_path: "api/recovery/validate", http_method: "POST" },
+});
+registerTrigger({
+  type: "http",
+  function_id: "recovery::classify",
+  config: { api_path: "api/recovery/classify", http_method: "POST" },
+});
+registerTrigger({
+  type: "http",
+  function_id: "recovery::recover",
+  config: { api_path: "api/recovery/recover", http_method: "POST" },
+});
+registerTrigger({
+  type: "http",
+  function_id: "recovery::report",
+  config: { api_path: "api/recovery/report", http_method: "POST" },
+});
 registerTrigger({
   type: "cron",
   function_id: "recovery::report",

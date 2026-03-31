@@ -12,6 +12,8 @@ use serde_json::Value;
 use std::io::stdout;
 
 const API_BASE: &str = "http://localhost:3111";
+const SPINNER_FRAMES: &[&str] = &["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+const SPINNER_INTERVAL_MS: u64 = 80;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum Screen {
@@ -121,6 +123,12 @@ impl Screen {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum VimMode {
+    Normal,
+    Insert,
+}
+
 struct App {
     screen: Screen,
     selected: usize,
@@ -153,6 +161,23 @@ struct App {
     running: bool,
     last_error: Option<String>,
     dashboard_stats: Value,
+    spinner_frame: usize,
+    spinner_active: bool,
+    spinner_verb: String,
+    streaming_tokens: usize,
+    streaming_start: Option<std::time::Instant>,
+    chat_streaming: bool,
+    vim_mode: VimMode,
+    vim_command_buffer: String,
+    task_tree: Vec<Value>,
+    task_expanded: std::collections::HashSet<String>,
+    lifecycle_states: Vec<Value>,
+    recovery_report: Value,
+    orchestrator_plans: Vec<Value>,
+    pending_approval: Option<Value>,
+    approval_mode: bool,
+    pending_chord: Option<char>,
+    chord_timeout: Option<std::time::Instant>,
 }
 
 impl App {
@@ -189,6 +214,23 @@ impl App {
             running: true,
             last_error: None,
             dashboard_stats: Value::Null,
+            spinner_frame: 0,
+            spinner_active: false,
+            spinner_verb: String::new(),
+            streaming_tokens: 0,
+            streaming_start: None,
+            chat_streaming: false,
+            vim_mode: VimMode::Insert,
+            vim_command_buffer: String::new(),
+            task_tree: vec![],
+            task_expanded: std::collections::HashSet::new(),
+            lifecycle_states: vec![],
+            recovery_report: Value::Null,
+            orchestrator_plans: vec![],
+            pending_approval: None,
+            approval_mode: false,
+            pending_chord: None,
+            chord_timeout: None,
         }
     }
 
@@ -382,6 +424,84 @@ impl App {
                         .collect();
                 }
             }
+            Screen::Lifecycle => {
+                let agent_ids: Vec<String> = self.agents.iter()
+                    .filter_map(|a| a["id"].as_str().or(a["name"].as_str()).map(String::from))
+                    .collect();
+                let futures: Vec<_> = agent_ids.iter().map(|agent_id| {
+                    let c = client.clone();
+                    let id = agent_id.clone();
+                    async move {
+                        let resp = c.get(format!("{}/api/lifecycle/state/{}", API_BASE, id)).send().await.ok()?;
+                        let mut data: Value = resp.json().await.ok()?;
+                        let obj = data.as_object_mut()?;
+                        if !obj.contains_key("agentId") {
+                            obj.insert("agentId".into(), Value::String(id));
+                        }
+                        if !obj.contains_key("previous") {
+                            obj.insert("previous".into(), obj.get("previousState").cloned().unwrap_or(Value::String("-".into())));
+                        }
+                        if !obj.contains_key("reason") {
+                            obj.insert("reason".into(), Value::String("-".into()));
+                        }
+                        if !obj.contains_key("since") {
+                            let ts = obj.get("transitionedAt").and_then(|v| v.as_u64());
+                            let since_str = ts.map(|t| {
+                                let now_ms = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis() as u64;
+                                format!("{}s ago", now_ms.saturating_sub(t) / 1000)
+                            }).unwrap_or_else(|| "-".into());
+                            obj.insert("since".into(), Value::String(since_str));
+                        }
+                        Some(data)
+                    }
+                }).collect();
+                self.lifecycle_states = futures_util::future::join_all(futures).await.into_iter().flatten().collect();
+            }
+            Screen::Tasks => {
+                if let Ok(resp) = client.post(format!("{}/api/orchestrator/status", API_BASE))
+                    .json(&serde_json::json!({}))
+                    .send().await
+                    && let Ok(data) = resp.json::<Value>().await
+                {
+                    if let Some(plans) = data["plans"].as_array() {
+                        let mut all_tasks = vec![];
+                        for plan in plans {
+                            if let Some(root_id) = plan["rootTaskId"].as_str().or(plan["rootId"].as_str()) {
+                                if let Ok(task_resp) = client.post(format!("{}/api/tasks/list", API_BASE))
+                                    .json(&serde_json::json!({ "rootId": root_id }))
+                                    .send().await
+                                    && let Ok(task_data) = task_resp.json::<Value>().await
+                                {
+                                    if let Some(tasks) = task_data["tasks"].as_array() {
+                                        all_tasks.extend(tasks.clone());
+                                    }
+                                }
+                            }
+                        }
+                        self.task_tree = all_tasks;
+                    }
+                }
+            }
+            Screen::Recovery => {
+                if let Ok(resp) = client.post(format!("{}/api/recovery/report", API_BASE))
+                    .json(&serde_json::json!({}))
+                    .send().await
+                    && let Ok(data) = resp.json::<Value>().await
+                {
+                    self.recovery_report = data;
+                }
+            }
+            Screen::Orchestrator => {
+                if let Ok(resp) = client.post(format!("{}/api/orchestrator/status", API_BASE))
+                    .json(&serde_json::json!({}))
+                    .send().await
+                    && let Ok(data) = resp.json::<Value>().await
+                {
+                    self.orchestrator_plans = data["plans"].as_array().cloned()
+                        .or_else(|| data.as_array().cloned())
+                        .unwrap_or_default();
+                }
+            }
             _ => {}
         }
     }
@@ -393,6 +513,14 @@ impl App {
         let msg = self.chat_input.clone();
         self.chat_input.clear();
         self.chat_messages.push(("user".into(), msg.clone()));
+
+        self.chat_streaming = true;
+        self.spinner_active = true;
+        self.spinner_verb = "thinking".into();
+        self.streaming_start = Some(std::time::Instant::now());
+        self.streaming_tokens = 0;
+
+        self.chat_messages.push(("assistant".into(), "(thinking...)".into()));
 
         let agent_id = if self.chat_agent.is_empty() {
             self.agents.first()
@@ -421,15 +549,25 @@ impl App {
                         .or(data["response"].as_str())
                         .or(data["message"].as_str())
                         .unwrap_or("(no response)");
-                    self.chat_messages.push(("assistant".into(), content.to_string()));
+                    self.streaming_tokens = content.len() / 4;
+                    if let Some(last) = self.chat_messages.last_mut() {
+                        *last = ("assistant".into(), content.to_string());
+                    }
                 } else {
-                    self.chat_messages.push(("system".into(), "Failed to parse response".into()));
+                    if let Some(last) = self.chat_messages.last_mut() {
+                        *last = ("system".into(), "Failed to parse response".into());
+                    }
                 }
             }
             Err(e) => {
-                self.chat_messages.push(("system".into(), format!("Error: {}", e)));
+                if let Some(last) = self.chat_messages.last_mut() {
+                    *last = ("system".into(), format!("Error: {}", e));
+                }
             }
         }
+
+        self.chat_streaming = false;
+        self.spinner_active = false;
     }
 
     async fn approve_selected(&mut self) {
@@ -448,6 +586,8 @@ impl App {
         let _ = client.post(format!("{}/api/approvals/decide", API_BASE))
             .json(&body)
             .send().await;
+        self.approval_mode = false;
+        self.pending_approval = None;
         self.refresh_screen().await;
     }
 
@@ -467,6 +607,8 @@ impl App {
         let _ = client.post(format!("{}/api/approvals/decide", API_BASE))
             .json(&body)
             .send().await;
+        self.approval_mode = false;
+        self.pending_approval = None;
         self.refresh_screen().await;
     }
 
@@ -487,6 +629,9 @@ impl App {
             Screen::Templates => self.templates.len(),
             Screen::Settings => self.settings.len(),
             Screen::WorkflowBuilder => self.wf_builder_steps.len(),
+            Screen::Tasks => self.task_tree.len(),
+            Screen::Lifecycle => self.lifecycle_states.len(),
+            Screen::Orchestrator => self.orchestrator_plans.len(),
             _ => 0,
         }
     }
@@ -496,6 +641,8 @@ fn navigate_to(app: &mut App, screen: Screen) {
     app.screen = screen;
     app.selected = 0;
     app.scroll_offset = 0;
+    app.approval_mode = false;
+    app.pending_approval = None;
 }
 
 #[tokio::main]
@@ -517,7 +664,14 @@ async fn main() -> Result<()> {
             last_health = std::time::Instant::now();
         }
 
-        if event::poll(std::time::Duration::from_millis(250))?
+        if let Some(timeout) = app.chord_timeout {
+            if timeout.elapsed() > std::time::Duration::from_secs(2) {
+                app.pending_chord = None;
+                app.chord_timeout = None;
+            }
+        }
+
+        if event::poll(std::time::Duration::from_millis(SPINNER_INTERVAL_MS))?
             && let Event::Key(key) = event::read()?
         {
             if key.kind != KeyEventKind::Press { continue; }
@@ -529,33 +683,141 @@ async fn main() -> Result<()> {
                 continue;
             }
 
-            if app.screen == Screen::Chat {
-                match key.code {
-                    KeyCode::Esc => app.screen = Screen::Dashboard,
-                    KeyCode::Enter => app.send_chat().await,
-                    KeyCode::Backspace => { app.chat_input.pop(); }
-                    KeyCode::Tab => {
-                        let screens = Screen::all();
-                        let idx = screens.iter().position(|s| *s == app.screen).unwrap_or(0);
-                        navigate_to(&mut app, screens[(idx + 1) % screens.len()]);
+            if app.pending_chord.is_some() {
+                let is_ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
+                if is_ctrl {
+                    match key.code {
+                        KeyCode::Char('k') => {
+                            app.status = "Kill all agents — not implemented (confirm first)".into();
+                        }
+                        KeyCode::Char('r') => {
+                            app.pending_chord = None;
+                            app.chord_timeout = None;
+                            navigate_to(&mut app, Screen::Recovery);
+                            app.refresh_screen().await;
+                            continue;
+                        }
+                        KeyCode::Char('e') => {
+                            let home = std::env::var("HOME").unwrap_or_else(|_| ".".into());
+                            let path = format!("{}/agentos-logs-export.json", home);
+                            let export = serde_json::to_string_pretty(&app.logs).unwrap_or_default();
+                            match std::fs::write(&path, &export) {
+                                Ok(_) => app.status = format!("Logs exported to {}", path),
+                                Err(e) => app.status = format!("Export failed: {}", e),
+                            }
+                        }
+                        _ => {}
                     }
-                    KeyCode::Char(c) if c.is_ascii_digit() || c == 'q' => {
-                        match c {
-                            'q' => app.running = false,
-                            '1' => navigate_to(&mut app, Screen::Dashboard),
-                            '2' => navigate_to(&mut app, Screen::Agents),
-                            '4' => navigate_to(&mut app, Screen::Channels),
-                            '5' => navigate_to(&mut app, Screen::Skills),
-                            '6' => navigate_to(&mut app, Screen::Hands),
-                            '7' => navigate_to(&mut app, Screen::Workflows),
-                            '8' => navigate_to(&mut app, Screen::Sessions),
-                            '9' => navigate_to(&mut app, Screen::Approvals),
-                            '0' => navigate_to(&mut app, Screen::Logs),
-                            _ => app.chat_input.push(c),
+                }
+                app.pending_chord = None;
+                app.chord_timeout = None;
+                continue;
+            }
+
+            if key.modifiers.contains(KeyModifiers::CONTROL) && matches!(key.code, KeyCode::Char('x')) {
+                app.pending_chord = Some('x');
+                app.chord_timeout = Some(std::time::Instant::now());
+                continue;
+            }
+
+            if app.screen == Screen::Approvals && app.approval_mode {
+                match key.code {
+                    KeyCode::Char('a') => {
+                        app.approve_selected().await;
+                    }
+                    KeyCode::Char('d') => {
+                        app.deny_selected().await;
+                    }
+                    KeyCode::Esc => {
+                        app.approval_mode = false;
+                        app.pending_approval = None;
+                    }
+                    _ => {}
+                }
+                continue;
+            }
+
+            if app.screen == Screen::Chat {
+                match app.vim_mode {
+                    VimMode::Normal => {
+                        match key.code {
+                            KeyCode::Char('i') => {
+                                app.vim_mode = VimMode::Insert;
+                            }
+                            KeyCode::Char('a') => {
+                                app.vim_mode = VimMode::Insert;
+                            }
+                            KeyCode::Char('A') => {
+                                app.vim_mode = VimMode::Insert;
+                            }
+                            KeyCode::Char('d') => {
+                                if app.vim_command_buffer == "d" {
+                                    app.chat_input.clear();
+                                    app.vim_command_buffer.clear();
+                                } else {
+                                    app.vim_command_buffer = "d".into();
+                                }
+                            }
+                            KeyCode::Char('0') => {
+                                app.vim_command_buffer.clear();
+                            }
+                            KeyCode::Char('$') => {
+                                app.vim_command_buffer.clear();
+                            }
+                            KeyCode::Char('h') | KeyCode::Char('l') => {
+                                app.vim_command_buffer.clear();
+                            }
+                            KeyCode::Char('q') => {
+                                app.running = false;
+                            }
+                            KeyCode::Esc => {
+                                app.vim_command_buffer.clear();
+                            }
+                            KeyCode::Char(c) if c.is_ascii_digit() && c != '0' => {
+                                match c {
+                                    '1' => navigate_to(&mut app, Screen::Dashboard),
+                                    '2' => navigate_to(&mut app, Screen::Agents),
+                                    '4' => navigate_to(&mut app, Screen::Channels),
+                                    '5' => navigate_to(&mut app, Screen::Skills),
+                                    '6' => navigate_to(&mut app, Screen::Hands),
+                                    '7' => navigate_to(&mut app, Screen::Workflows),
+                                    '8' => navigate_to(&mut app, Screen::Sessions),
+                                    '9' => navigate_to(&mut app, Screen::Approvals),
+                                    _ => {}
+                                }
+                            }
+                            KeyCode::Tab => {
+                                let screens = Screen::all();
+                                let idx = screens.iter().position(|s| *s == app.screen).unwrap_or(0);
+                                navigate_to(&mut app, screens[(idx + 1) % screens.len()]);
+                            }
+                            _ => {
+                                app.vim_command_buffer.clear();
+                            }
                         }
                     }
-                    KeyCode::Char(c) => app.chat_input.push(c),
-                    _ => {}
+                    VimMode::Insert => {
+                        match key.code {
+                            KeyCode::Esc => {
+                                app.vim_mode = VimMode::Normal;
+                            }
+                            KeyCode::Enter => {
+                                app.send_chat().await;
+                            }
+                            KeyCode::Backspace => {
+                                app.chat_input.pop();
+                            }
+                            KeyCode::Tab => {
+                                let screens = Screen::all();
+                                let idx = screens.iter().position(|s| *s == app.screen).unwrap_or(0);
+                                navigate_to(&mut app, screens[(idx + 1) % screens.len()]);
+                            }
+                            KeyCode::Char(c) => {
+                                app.chat_input.push(c);
+                            }
+                            _ => {}
+                        }
+                    }
                 }
                 continue;
             }
@@ -628,7 +890,11 @@ async fn main() -> Result<()> {
                 KeyCode::Char('w') => navigate_to(&mut app, Screen::Wizard),
                 KeyCode::Char('r') => app.refresh_screen().await,
                 KeyCode::Char('a') if app.screen == Screen::Approvals => {
-                    app.approve_selected().await;
+                    if app.approval_mode {
+                        app.approve_selected().await;
+                    } else {
+                        app.approve_selected().await;
+                    }
                 }
                 KeyCode::Char('a') => navigate_to(&mut app, Screen::Audit),
                 KeyCode::Char('s') => navigate_to(&mut app, Screen::Security),
@@ -640,7 +906,29 @@ async fn main() -> Result<()> {
                 KeyCode::Char('R') => navigate_to(&mut app, Screen::Recovery),
                 KeyCode::Char('O') => navigate_to(&mut app, Screen::Orchestrator),
                 KeyCode::Char('d') if app.screen == Screen::Approvals => {
-                    app.deny_selected().await;
+                    if app.approval_mode {
+                        app.deny_selected().await;
+                    } else {
+                        app.deny_selected().await;
+                    }
+                }
+                KeyCode::Enter if app.screen == Screen::Approvals => {
+                    if app.selected < app.approvals.len() {
+                        app.pending_approval = Some(app.approvals[app.selected].clone());
+                        app.approval_mode = true;
+                    }
+                }
+                KeyCode::Enter if app.screen == Screen::Tasks => {
+                    if app.selected < app.task_tree.len() {
+                        let task_id = app.task_tree[app.selected]["id"].as_str().unwrap_or("").to_string();
+                        if !task_id.is_empty() {
+                            if app.task_expanded.contains(&task_id) {
+                                app.task_expanded.remove(&task_id);
+                            } else {
+                                app.task_expanded.insert(task_id);
+                            }
+                        }
+                    }
                 }
                 KeyCode::Char('x') if app.screen == Screen::WorkflowBuilder => {
                     let home = std::env::var("HOME").unwrap_or_else(|_| ".".into());
@@ -695,6 +983,10 @@ async fn main() -> Result<()> {
                 _ => {}
             }
         }
+
+        if app.spinner_active {
+            app.spinner_frame = (app.spinner_frame + 1) % SPINNER_FRAMES.len();
+        }
     }
 
     disable_raw_mode()?;
@@ -719,10 +1011,19 @@ fn draw(f: &mut Frame, app: &App) {
         .border_style(Style::default().fg(Color::Cyan));
 
     let status_color = if app.healthy { Color::Green } else { Color::Red };
-    let header_text = Line::from(vec![
+    let mut header_spans = vec![
         Span::raw("  "),
         Span::styled(&app.status, Style::default().fg(status_color)),
-    ]);
+    ];
+    if app.spinner_active {
+        header_spans.push(Span::raw("  "));
+        header_spans.push(Span::styled(
+            SPINNER_FRAMES[app.spinner_frame],
+            Style::default().fg(Color::Cyan),
+        ));
+        header_spans.push(Span::raw(format!(" {}", app.spinner_verb)));
+    }
+    let header_text = Line::from(header_spans);
 
     f.render_widget(Paragraph::new(header_text).block(title), chunks[0]);
 
@@ -763,7 +1064,7 @@ fn draw(f: &mut Frame, app: &App) {
         Screen::Hands => draw_hands(f, app, content_block, body_chunks[1]),
         Screen::Workflows => draw_workflows(f, app, content_block, body_chunks[1]),
         Screen::Sessions => draw_sessions(f, app, content_block, body_chunks[1]),
-        Screen::Approvals => draw_approvals(f, app, content_block, body_chunks[1]),
+        Screen::Approvals => draw_approvals(f, app, body_chunks[1]),
         Screen::Logs => draw_logs(f, app, content_block, body_chunks[1]),
         Screen::Memory => draw_memory(f, app, content_block, body_chunks[1]),
         Screen::Audit => draw_audit(f, app, content_block, body_chunks[1]),
@@ -776,20 +1077,31 @@ fn draw(f: &mut Frame, app: &App) {
         Screen::Settings => draw_settings(f, app, content_block, body_chunks[1]),
         Screen::Wizard => draw_wizard(f, app, body_chunks[1]),
         Screen::WorkflowBuilder => draw_workflow_builder(f, app, content_block, body_chunks[1]),
-        Screen::Lifecycle => draw_placeholder(f, content_block, body_chunks[1], "Lifecycle", "Session state machine — spawning → working → blocked → done. Reactions fire on transitions."),
-        Screen::Tasks => draw_placeholder(f, content_block, body_chunks[1], "Tasks", "Recursive task decomposition with hierarchical IDs. Status propagates from children to parents."),
-        Screen::Recovery => draw_placeholder(f, content_block, body_chunks[1], "Recovery", "Session health scanning — healthy / degraded / dead / unrecoverable. Auto-recovery every 10m."),
-        Screen::Orchestrator => draw_placeholder(f, content_block, body_chunks[1], "Orchestrator", "Multi-agent coordination — plan features, decompose tasks, spawn workers, monitor progress."),
+        Screen::Lifecycle => draw_lifecycle(f, app, content_block, body_chunks[1]),
+        Screen::Tasks => draw_tasks(f, app, content_block, body_chunks[1]),
+        Screen::Recovery => draw_recovery(f, app, content_block, body_chunks[1]),
+        Screen::Orchestrator => draw_orchestrator(f, app, content_block, body_chunks[1]),
     }
 
     let footer = Block::default().borders(Borders::ALL);
     let help = match app.screen {
-        Screen::Chat => " Esc:Back  Enter:Send  1-9:Nav  Tab:Next  q:Quit ",
-        Screen::Approvals => " a:Approve  d:Deny  Up/Down:Select  r:Refresh  q:Quit ",
-        Screen::Logs => " Up/Down:Scroll  r:Refresh  q:Quit ",
+        Screen::Chat => {
+            if app.pending_chord.is_some() {
+                " Ctrl+X pressed — waiting for chord: k:Kill r:Recovery e:Export "
+            } else {
+                match app.vim_mode {
+                    VimMode::Normal => " [NORMAL] i:Insert a:Append dd:Clear 1-9:Nav q:Quit Ctrl+X:Chord ",
+                    VimMode::Insert => " [INSERT] Esc:Normal Enter:Send Tab:Next Ctrl+X:Chord ",
+                }
+            }
+        }
+        Screen::Approvals if app.approval_mode => " a:Approve  d:Deny  Esc:Cancel ",
+        Screen::Approvals => " Enter:Details  a:Approve  d:Deny  r:Refresh  q:Quit ",
+        Screen::Logs => " Up/Down:Scroll  r:Refresh  Ctrl+X:Chord  q:Quit ",
         Screen::WorkflowBuilder => " +:Add  -:Remove  x:Export  Up/Down:Select  q:Quit ",
         Screen::Wizard => " Enter:Next  Tab:Fwd  Shift-Tab:Back  1-9:Nav  Esc:Dashboard  q:Quit ",
-        _ => " q:Quit  Tab:Next  1-0:Screen  m/a/s/p/e/t/u:More  r:Refresh  Up/Down:Select ",
+        Screen::Lifecycle | Screen::Tasks | Screen::Recovery | Screen::Orchestrator => " r:Refresh  Enter:Select/Expand  Up/Down:Nav  Ctrl+X:Chord  q:Quit ",
+        _ => " q:Quit  Tab:Next  1-0:Screen  m/a/s/p/e/t/u:More  r:Refresh  Ctrl+X:Chord  Up/Down:Select ",
     };
     f.render_widget(
         Paragraph::new(help)
@@ -821,9 +1133,12 @@ fn draw_dashboard(f: &mut Frame, app: &App, block: Block, area: Rect) {
             Line::from(Span::styled("    e     Extensions      t  Triggers", Style::default().fg(Color::DarkGray))),
             Line::from(Span::styled("    u     Usage           T  Templates", Style::default().fg(Color::DarkGray))),
             Line::from(Span::styled("    S     Settings        w  Wizard", Style::default().fg(Color::DarkGray))),
-            Line::from(Span::styled("    W     Wf Builder", Style::default().fg(Color::DarkGray))),
+            Line::from(Span::styled("    W     Wf Builder      L  Lifecycle", Style::default().fg(Color::DarkGray))),
+            Line::from(Span::styled("    K     Tasks           R  Recovery", Style::default().fg(Color::DarkGray))),
+            Line::from(Span::styled("    O     Orchestrator", Style::default().fg(Color::DarkGray))),
             Line::from(""),
             Line::from(Span::styled("    Tab / Shift-Tab to cycle screens", Style::default().fg(Color::DarkGray))),
+            Line::from(Span::styled("    Ctrl+X then k/r/e for chords", Style::default().fg(Color::DarkGray))),
             Line::from(Span::styled("    r to refresh, q to quit", Style::default().fg(Color::DarkGray))),
         ];
         f.render_widget(Paragraph::new(logo).block(block), area);
@@ -921,20 +1236,42 @@ fn draw_agents(f: &mut Frame, app: &App, block: Block, area: Rect) {
 fn draw_chat(f: &mut Frame, app: &App, area: Rect) {
     let chat_chunks = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([Constraint::Min(0), Constraint::Length(3)])
+        .constraints([Constraint::Min(0), Constraint::Length(3), Constraint::Length(1)])
         .split(area);
 
-    let messages: Vec<Line> = app.chat_messages.iter().map(|(role, msg)| {
+    let mut messages: Vec<Line> = vec![];
+    for (idx, (role, msg)) in app.chat_messages.iter().enumerate() {
         let (prefix, color) = match role.as_str() {
-            "user" => ("You: ", Color::Green),
-            "assistant" => ("Agent: ", Color::Cyan),
+            "user" => ("You: ", Color::Cyan),
+            "assistant" => ("Agent: ", Color::Green),
             _ => ("System: ", Color::Yellow),
         };
-        Line::from(vec![
-            Span::styled(prefix, Style::default().fg(color).add_modifier(Modifier::BOLD)),
-            Span::raw(msg.as_str()),
-        ])
-    }).collect();
+
+        let is_last = idx == app.chat_messages.len() - 1;
+        let is_streaming_msg = is_last && app.chat_streaming && msg == "(thinking...)";
+
+        if is_streaming_msg {
+            messages.push(Line::from(vec![
+                Span::styled(prefix, Style::default().fg(color).add_modifier(Modifier::BOLD)),
+                Span::styled(
+                    format!("{} thinking...", SPINNER_FRAMES[app.spinner_frame]),
+                    Style::default().fg(Color::Cyan),
+                ),
+            ]));
+        } else {
+            messages.push(Line::from(vec![
+                Span::styled(prefix, Style::default().fg(color).add_modifier(Modifier::BOLD)),
+                Span::raw(msg.as_str()),
+            ]));
+        }
+    }
+
+    if messages.is_empty() {
+        messages.push(Line::from(Span::styled(
+            "  No messages yet. Type a message and press Enter.",
+            Style::default().fg(Color::DarkGray),
+        )));
+    }
 
     let agent_label = if app.chat_agent.is_empty() {
         app.agents.first()
@@ -946,15 +1283,48 @@ fn draw_chat(f: &mut Frame, app: &App, area: Rect) {
 
     let msg_block = Block::default()
         .borders(Borders::ALL)
-        .title(format!(" Chat → {} ", agent_label));
+        .title(format!(" Chat -> {} ", agent_label));
     f.render_widget(Paragraph::new(messages).block(msg_block).wrap(Wrap { trim: false }), chat_chunks[0]);
+
+    let mode_label = match app.vim_mode {
+        VimMode::Normal => Span::styled(" [NORMAL] ", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+        VimMode::Insert => Span::styled(" [INSERT] ", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
+    };
 
     let input_block = Block::default()
         .borders(Borders::ALL)
-        .title(" Message (digits navigate, letters type) ")
-        .border_style(Style::default().fg(Color::Cyan));
-    let cursor_text = format!("{}_", app.chat_input);
+        .title(mode_label)
+        .border_style(Style::default().fg(if app.vim_mode == VimMode::Insert { Color::Cyan } else { Color::Yellow }));
+    let cursor_char = if app.vim_mode == VimMode::Insert { "_" } else { "\u{2588}" };
+    let cursor_text = format!("{}{}", app.chat_input, cursor_char);
     f.render_widget(Paragraph::new(cursor_text).block(input_block), chat_chunks[1]);
+
+    let mut status_spans = vec![];
+    if app.chat_streaming {
+        let elapsed = app.streaming_start
+            .map(|s| s.elapsed().as_secs())
+            .unwrap_or(0);
+        status_spans.push(Span::styled(
+            format!(" {} ", SPINNER_FRAMES[app.spinner_frame]),
+            Style::default().fg(Color::Cyan),
+        ));
+        status_spans.push(Span::raw(format!("{}s ", elapsed)));
+        status_spans.push(Span::styled(
+            format!("~{} tokens ", app.streaming_tokens),
+            Style::default().fg(Color::DarkGray),
+        ));
+        let cost_est = app.streaming_tokens as f64 * 0.000003;
+        status_spans.push(Span::styled(
+            format!("~${:.4}", cost_est),
+            Style::default().fg(Color::DarkGray),
+        ));
+    } else {
+        status_spans.push(Span::styled(
+            format!(" {} tokens total", app.streaming_tokens),
+            Style::default().fg(Color::DarkGray),
+        ));
+    }
+    f.render_widget(Paragraph::new(Line::from(status_spans)), chat_chunks[2]);
 }
 
 fn draw_channels(f: &mut Frame, app: &App, block: Block, area: Rect) {
@@ -1078,7 +1448,88 @@ fn draw_sessions(f: &mut Frame, app: &App, block: Block, area: Rect) {
     f.render_widget(table, area);
 }
 
-fn draw_approvals(f: &mut Frame, app: &App, block: Block, area: Rect) {
+fn draw_approvals(f: &mut Frame, app: &App, area: Rect) {
+    if app.approval_mode {
+        let split = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Percentage(60), Constraint::Percentage(40)])
+            .split(area);
+
+        let detail_block = Block::default()
+            .borders(Borders::ALL)
+            .title(" Approval Details ")
+            .border_style(Style::default().fg(Color::Yellow));
+
+        let mut lines = vec![];
+        if let Some(ref approval) = app.pending_approval {
+            lines.push(Line::from(vec![
+                Span::styled("  ID:      ", Style::default().add_modifier(Modifier::BOLD)),
+                Span::raw(approval["id"].as_str().unwrap_or("-")),
+            ]));
+            lines.push(Line::from(vec![
+                Span::styled("  Tool:    ", Style::default().add_modifier(Modifier::BOLD)),
+                Span::raw(approval["toolName"].as_str().or(approval["tool"].as_str()).unwrap_or("-")),
+            ]));
+            lines.push(Line::from(vec![
+                Span::styled("  Agent:   ", Style::default().add_modifier(Modifier::BOLD)),
+                Span::raw(approval["agentId"].as_str().or(approval["agent"].as_str()).unwrap_or("-")),
+            ]));
+            lines.push(Line::from(vec![
+                Span::styled("  Status:  ", Style::default().add_modifier(Modifier::BOLD)),
+                Span::raw(approval["status"].as_str().unwrap_or("pending")),
+            ]));
+            lines.push(Line::from(""));
+            let args_str = approval["args"].to_string();
+            if args_str != "null" {
+                lines.push(Line::from(vec![
+                    Span::styled("  Args:    ", Style::default().add_modifier(Modifier::BOLD)),
+                    Span::raw(truncate(&args_str, 60)),
+                ]));
+            }
+            let reason = approval["reason"].as_str().unwrap_or("");
+            if !reason.is_empty() {
+                lines.push(Line::from(vec![
+                    Span::styled("  Reason:  ", Style::default().add_modifier(Modifier::BOLD)),
+                    Span::raw(reason),
+                ]));
+            }
+        } else {
+            lines.push(Line::from(Span::styled("  No approval selected", Style::default().fg(Color::DarkGray))));
+        }
+
+        f.render_widget(Paragraph::new(lines).block(detail_block).wrap(Wrap { trim: false }), split[0]);
+
+        let action_block = Block::default()
+            .borders(Borders::ALL)
+            .title(" Action ")
+            .border_style(Style::default().fg(Color::Cyan));
+
+        let action_lines = vec![
+            Line::from(""),
+            Line::from(Span::styled("  Choose an action:", Style::default().add_modifier(Modifier::BOLD))),
+            Line::from(""),
+            Line::from(vec![
+                Span::styled("  [a] ", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
+                Span::raw("Approve"),
+            ]),
+            Line::from(vec![
+                Span::styled("  [d] ", Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)),
+                Span::raw("Deny"),
+            ]),
+            Line::from(vec![
+                Span::styled("  [Esc] ", Style::default().fg(Color::DarkGray).add_modifier(Modifier::BOLD)),
+                Span::raw("Cancel"),
+            ]),
+        ];
+
+        f.render_widget(Paragraph::new(action_lines).block(action_block), split[1]);
+        return;
+    }
+
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .title(" Approvals ");
+
     let rows: Vec<Row> = app.approvals.iter().enumerate().map(|(i, a)| {
         let style = if i == app.selected { Style::default().bg(Color::DarkGray) } else { Style::default() };
         let status_str = a["status"].as_str().unwrap_or("pending");
@@ -1505,25 +1956,316 @@ fn draw_workflow_builder(f: &mut Frame, app: &App, block: Block, area: Rect) {
     f.render_widget(table, chunks[1]);
 }
 
-fn draw_placeholder(f: &mut Frame, block: Block, area: Rect, title: &str, desc: &str) {
+fn draw_lifecycle(f: &mut Frame, app: &App, block: Block, area: Rect) {
+    if app.lifecycle_states.is_empty() {
+        let inner = block.inner(area);
+        f.render_widget(block, area);
+        f.render_widget(
+            Paragraph::new("  No lifecycle data. Press 'r' to refresh.")
+                .style(Style::default().fg(Color::DarkGray)),
+            inner,
+        );
+        return;
+    }
+
+    let rows: Vec<Row> = app.lifecycle_states.iter().enumerate().map(|(i, s)| {
+        let style = if i == app.selected { Style::default().bg(Color::DarkGray) } else { Style::default() };
+        let agent = s["agentId"].as_str().or(s["agent"].as_str()).unwrap_or("-");
+        let state = s["state"].as_str().or(s["status"].as_str()).unwrap_or("-");
+        let previous = s["previous"].as_str().or(s["previousState"].as_str()).unwrap_or("-");
+        let reason = s["reason"].as_str().unwrap_or("-");
+        let since = s["since"].as_str().or(s["timestamp"].as_str()).or(s["updatedAt"].as_str()).unwrap_or("-");
+
+        let state_color = match state {
+            "working" => Color::Green,
+            "blocked" => Color::Yellow,
+            "failed" => Color::Red,
+            "done" => Color::DarkGray,
+            "spawning" => Color::Blue,
+            "recovering" => Color::Magenta,
+            _ => Color::White,
+        };
+
+        Row::new(vec![
+            Cell::from(agent.to_string()),
+            Cell::from(Span::styled(state.to_string(), Style::default().fg(state_color))),
+            Cell::from(previous.to_string()),
+            Cell::from(truncate(reason, 25)),
+            Cell::from(since.to_string()),
+        ]).style(style)
+    }).collect();
+
+    let table = Table::new(rows, [
+        Constraint::Percentage(20),
+        Constraint::Percentage(15),
+        Constraint::Percentage(15),
+        Constraint::Percentage(25),
+        Constraint::Percentage(25),
+    ])
+    .header(Row::new(["Agent", "State", "Previous", "Reason", "Since"]).style(Style::default().add_modifier(Modifier::BOLD)))
+    .block(block);
+
+    f.render_widget(table, area);
+}
+
+fn draw_tasks(f: &mut Frame, app: &App, block: Block, area: Rect) {
+    if app.task_tree.is_empty() {
+        let inner = block.inner(area);
+        f.render_widget(block, area);
+        f.render_widget(
+            Paragraph::new("  No tasks. Press 'r' to refresh.")
+                .style(Style::default().fg(Color::DarkGray)),
+            inner,
+        );
+        return;
+    }
+
     let inner = block.inner(area);
     f.render_widget(block, area);
 
-    let chunks = Layout::default()
+    let mut lines: Vec<Line> = vec![];
+    for (i, task) in app.task_tree.iter().enumerate() {
+        let task_id = task["id"].as_str().unwrap_or("");
+        let task_name = task["name"].as_str().or(task["description"].as_str()).unwrap_or("-");
+        let task_status = task["status"].as_str().unwrap_or("pending");
+
+        let depth = task_id.matches('.').count();
+
+        if depth > 0 {
+            let mut hidden = false;
+            let mut ancestor = task_id.to_string();
+            while let Some(pos) = ancestor.rfind('.') {
+                ancestor.truncate(pos);
+                if !app.task_expanded.contains(ancestor.as_str()) {
+                    hidden = true;
+                    break;
+                }
+            }
+            if hidden { continue; }
+        }
+        let indent = "  ".repeat(depth);
+
+        let status_icon = match task_status {
+            "complete" | "completed" | "done" => "\u{2713}",
+            "in_progress" | "running" | "active" => "\u{27f3}",
+            "pending" | "waiting" => "\u{25cb}",
+            "failed" | "error" => "\u{2717}",
+            "blocked" => "\u{25aa}",
+            _ => "\u{25cb}",
+        };
+
+        let status_color = match task_status {
+            "complete" | "completed" | "done" => Color::Green,
+            "in_progress" | "running" | "active" => Color::Cyan,
+            "pending" | "waiting" => Color::White,
+            "failed" | "error" => Color::Red,
+            "blocked" => Color::Yellow,
+            _ => Color::White,
+        };
+
+        let is_selected = i == app.selected;
+        let row_style = if is_selected { Style::default().bg(Color::DarkGray) } else { Style::default() };
+
+        let is_expanded = app.task_expanded.contains(task_id);
+        let expand_marker = if depth == 0 && app.task_tree.iter().any(|t| {
+            t["id"].as_str().unwrap_or("").starts_with(&format!("{}.", task_id))
+        }) {
+            if is_expanded { "\u{25bc} " } else { "\u{25b6} " }
+        } else {
+            "  "
+        };
+
+        lines.push(Line::from(vec![
+            Span::raw(format!("{}{}", indent, expand_marker)),
+            Span::styled(format!("{} ", status_icon), Style::default().fg(status_color)),
+            Span::styled(format!("{}", task_id), Style::default().fg(Color::DarkGray)),
+            Span::raw(format!(" \u{2014} {}", task_name)),
+        ]).style(row_style));
+    }
+
+    f.render_widget(Paragraph::new(lines).wrap(Wrap { trim: false }), inner);
+}
+
+fn draw_recovery(f: &mut Frame, app: &App, block: Block, area: Rect) {
+    if app.recovery_report.is_null() {
+        let inner = block.inner(area);
+        f.render_widget(block, area);
+        f.render_widget(
+            Paragraph::new("  No recovery data. Press 'r' to refresh.")
+                .style(Style::default().fg(Color::DarkGray)),
+            inner,
+        );
+        return;
+    }
+
+    let inner = block.inner(area);
+    f.render_widget(block, area);
+
+    let agents_data = app.recovery_report["agents"].as_array()
+        .or_else(|| app.recovery_report["results"].as_array())
+        .cloned()
+        .unwrap_or_default();
+
+    let mut healthy_count = 0u64;
+    let mut degraded_count = 0u64;
+    let mut dead_count = 0u64;
+    let mut unrecoverable_count = 0u64;
+
+    for agent in &agents_data {
+        match agent["classification"].as_str().or(agent["status"].as_str()).unwrap_or("") {
+            "healthy" => healthy_count += 1,
+            "degraded" => degraded_count += 1,
+            "dead" => dead_count += 1,
+            "unrecoverable" => unrecoverable_count += 1,
+            _ => {}
+        }
+    }
+
+    let summary_chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([Constraint::Length(3), Constraint::Min(0)])
         .split(inner);
 
-    let header = Paragraph::new(vec![
-        Line::from(Span::styled(title, Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD))),
-        Line::from(""),
-        Line::from(Span::styled(desc, Style::default().fg(Color::DarkGray))),
+    let summary = Line::from(vec![
+        Span::styled(format!("  {} healthy", healthy_count), Style::default().fg(Color::Green)),
+        Span::raw(" | "),
+        Span::styled(format!("{} degraded", degraded_count), Style::default().fg(Color::Yellow)),
+        Span::raw(" | "),
+        Span::styled(format!("{} dead", dead_count), Style::default().fg(Color::Red)),
+        Span::raw(" | "),
+        Span::styled(format!("{} unrecoverable", unrecoverable_count), Style::default().fg(Color::DarkGray)),
     ]);
-    f.render_widget(header, chunks[0]);
+    f.render_widget(Paragraph::new(vec![summary, Line::from("")]), summary_chunks[0]);
 
-    let info = Paragraph::new("  Data loads from API endpoints. Press 'r' to refresh.")
-        .style(Style::default().fg(Color::DarkGray));
-    f.render_widget(info, chunks[1]);
+    let rows: Vec<Row> = agents_data.iter().map(|agent| {
+        let name = agent["agent"].as_str().or(agent["agentId"].as_str()).or(agent["name"].as_str()).unwrap_or("-");
+        let classification = agent["classification"].as_str().or(agent["status"].as_str()).unwrap_or("-");
+        let last_activity = agent["lastActivity"].as_str().or(agent["lastSeen"].as_str()).unwrap_or("-");
+        let circuit = agent["circuitBreaker"].as_str()
+            .unwrap_or(if agent["circuitBreaker"].is_object() { "configured" } else { "-" });
+        let memory = agent["memory"].as_str()
+            .unwrap_or(if agent["memory"].is_object() { "active" } else { "-" });
+
+        let class_color = match classification {
+            "healthy" => Color::Green,
+            "degraded" => Color::Yellow,
+            "dead" => Color::Red,
+            "unrecoverable" => Color::DarkGray,
+            _ => Color::White,
+        };
+
+        Row::new(vec![
+            Cell::from(name.to_string()),
+            Cell::from(Span::styled(classification.to_string(), Style::default().fg(class_color))),
+            Cell::from(last_activity.to_string()),
+            Cell::from(circuit.to_string()),
+            Cell::from(memory.to_string()),
+        ])
+    }).collect();
+
+    let table = Table::new(rows, [
+        Constraint::Percentage(20),
+        Constraint::Percentage(18),
+        Constraint::Percentage(22),
+        Constraint::Percentage(20),
+        Constraint::Percentage(20),
+    ])
+    .header(Row::new(["Agent", "Classification", "Last Activity", "Circuit Breaker", "Memory"]).style(Style::default().add_modifier(Modifier::BOLD)));
+
+    f.render_widget(table, summary_chunks[1]);
+}
+
+fn draw_orchestrator(f: &mut Frame, app: &App, block: Block, area: Rect) {
+    if app.orchestrator_plans.is_empty() {
+        let inner = block.inner(area);
+        f.render_widget(block, area);
+        f.render_widget(
+            Paragraph::new("  No orchestrator plans. Press 'r' to refresh.")
+                .style(Style::default().fg(Color::DarkGray)),
+            inner,
+        );
+        return;
+    }
+
+    let inner = block.inner(area);
+    f.render_widget(block, area);
+
+    let has_selected = app.selected < app.orchestrator_plans.len();
+
+    let orch_chunks = if has_selected {
+        Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Min(0), Constraint::Length(4)])
+            .split(inner)
+    } else {
+        Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Min(0)])
+            .split(inner)
+    };
+
+    let rows: Vec<Row> = app.orchestrator_plans.iter().enumerate().map(|(i, plan)| {
+        let style = if i == app.selected { Style::default().bg(Color::DarkGray) } else { Style::default() };
+        let id = plan["id"].as_str().unwrap_or("-");
+        let desc = plan["description"].as_str().or(plan["name"].as_str()).unwrap_or("-");
+        let status = plan["status"].as_str().unwrap_or("-");
+        let workers = plan["workers"].as_u64()
+            .or_else(|| plan["workers"].as_array().map(|a| a.len() as u64))
+            .unwrap_or(0);
+        let created = plan["created"].as_str().or(plan["createdAt"].as_str()).unwrap_or("-");
+
+        let status_color = match status {
+            "planned" => Color::Blue,
+            "executing" | "running" => Color::Yellow,
+            "completed" | "done" => Color::Green,
+            "failed" => Color::Red,
+            "paused" => Color::DarkGray,
+            _ => Color::White,
+        };
+
+        Row::new(vec![
+            Cell::from(truncate(id, 15)),
+            Cell::from(truncate(desc, 25)),
+            Cell::from(Span::styled(status.to_string(), Style::default().fg(status_color))),
+            Cell::from(format!("{}", workers)),
+            Cell::from(created.to_string()),
+        ]).style(style)
+    }).collect();
+
+    let table = Table::new(rows, [
+        Constraint::Percentage(15),
+        Constraint::Percentage(30),
+        Constraint::Percentage(15),
+        Constraint::Percentage(10),
+        Constraint::Percentage(30),
+    ])
+    .header(Row::new(["ID", "Description", "Status", "Workers", "Created"]).style(Style::default().add_modifier(Modifier::BOLD)));
+
+    f.render_widget(table, orch_chunks[0]);
+
+    if has_selected && orch_chunks.len() > 1 {
+        let plan = &app.orchestrator_plans[app.selected];
+        let total = plan["totalTasks"].as_u64()
+            .or_else(|| plan["tasks"].as_array().map(|a| a.len() as u64))
+            .unwrap_or(0);
+        let completed = plan["completedTasks"].as_u64().unwrap_or(0);
+        let pct = if total > 0 { (completed as f64 / total as f64 * 100.0) as u16 } else { 0 };
+
+        let progress_bar = format!(
+            "  Progress: {}/{} tasks ({}%)",
+            completed, total, pct
+        );
+        let bar_width = orch_chunks[1].width.saturating_sub(4) as usize;
+        let filled = if total > 0 { (completed as usize * bar_width) / total as usize } else { 0 };
+        let empty = bar_width.saturating_sub(filled);
+        let bar_line = format!("  {}{}", "\u{2588}".repeat(filled), "\u{2591}".repeat(empty));
+
+        let progress_lines = vec![
+            Line::from(progress_bar),
+            Line::from(Span::styled(bar_line, Style::default().fg(Color::Cyan))),
+        ];
+        f.render_widget(Paragraph::new(progress_lines), orch_chunks[1]);
+    }
 }
 
 fn default_templates() -> Vec<Value> {
@@ -1572,7 +2314,7 @@ mod tests {
 
     #[test]
     fn test_screen_all_count() {
-        assert_eq!(Screen::all().len(), 21);
+        assert_eq!(Screen::all().len(), 25);
     }
 
     #[test]
@@ -1671,6 +2413,14 @@ mod tests {
         assert!(!app.healthy);
         assert!(app.agents.is_empty());
         assert!(app.running);
+        assert_eq!(app.vim_mode, VimMode::Insert);
+        assert!(!app.spinner_active);
+        assert!(!app.chat_streaming);
+        assert!(app.task_tree.is_empty());
+        assert!(app.lifecycle_states.is_empty());
+        assert!(app.orchestrator_plans.is_empty());
+        assert!(!app.approval_mode);
+        assert!(app.pending_chord.is_none());
     }
 
     #[test]
@@ -1688,5 +2438,22 @@ mod tests {
         assert!(Screen::Chat.is_text_input());
         assert!(Screen::Wizard.is_text_input());
         assert!(!Screen::Dashboard.is_text_input());
+    }
+
+    #[test]
+    fn test_vim_mode_default() {
+        let app = App::new();
+        assert_eq!(app.vim_mode, VimMode::Insert);
+    }
+
+    #[test]
+    fn test_spinner_frames_not_empty() {
+        assert!(!SPINNER_FRAMES.is_empty());
+        assert_eq!(SPINNER_FRAMES.len(), 10);
+    }
+
+    #[test]
+    fn test_spinner_interval() {
+        assert_eq!(SPINNER_INTERVAL_MS, 80);
     }
 }

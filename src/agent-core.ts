@@ -1,3 +1,4 @@
+import { createHash } from "crypto";
 import { registerWorker, TriggerAction } from "iii-sdk";
 import { ENGINE_URL, OTEL_CONFIG, registerShutdown } from "./shared/config.js";
 import type {
@@ -111,14 +112,23 @@ async function prepareContext(
     return earlyResponse(`Agent ${agentId} not found.`);
   }
 
-  const memories: any = await triggerFn("memory::recall", {
+  const recallHash = createHash("sha256").update(message).digest("hex").slice(0, 16);
+  const memories: any = await triggerFn("context_cache::get_or_fetch", {
     agentId,
-    query: message,
-    limit: 20,
+    key: `recall:${recallHash}`,
+    fetchFunctionId: "memory::recall",
+    fetchPayload: { agentId, query: message, limit: 20 },
+    ttlMs: 30_000,
   }, 30_000);
 
   const userProfile: any = await safeCall(
-    () => triggerFn("memory::user_profile::get", { agentId }, 5_000),
+    () => triggerFn("context_cache::get_or_fetch", {
+      agentId,
+      key: "user_profile",
+      fetchFunctionId: "memory::user_profile::get",
+      fetchPayload: { agentId },
+      ttlMs: 60_000,
+    }, 5_000),
     null,
     { agentId, operation: "get_user_profile" },
   );
@@ -192,6 +202,12 @@ async function executeLlmCall(
   triggerVoidFn: TriggerVoidFn,
   iteration: number,
 ): Promise<any> {
+  triggerVoidFn("hook::fire", {
+    type: "RequestStart",
+    payload: { agentId, model, messageCount: messages.length, iteration },
+    agentId,
+  });
+
   const llmStart = Date.now();
   const response: any = await triggerFn("llm::complete", {
     model,
@@ -199,6 +215,12 @@ async function executeLlmCall(
     messages,
     tools,
   }, TOOL_TIMEOUT_MS);
+
+  triggerVoidFn("hook::fire", {
+    type: "RequestEnd",
+    payload: { agentId, model: response.model, usage: response.usage, durationMs: Date.now() - llmStart, iteration },
+    agentId,
+  });
 
   try {
     triggerVoidFn("replay::record", {
@@ -595,6 +617,7 @@ async function toolLoop(
                   ? (model as any).maxTokens * 50
                   : 200_000) * 0.7,
               ),
+              agentId,
             }, 30_000),
           null,
           { agentId, operation: "context_compress" },

@@ -3,8 +3,7 @@ import { ENGINE_URL, OTEL_CONFIG, registerShutdown } from "./shared/config.js";
 import { createLogger } from "./shared/logger.js";
 import { recordMetric } from "./shared/metrics.js";
 import { safeCall } from "./shared/errors.js";
-import { stripCodeFences } from "./shared/utils.js";
-import { requireAuth } from "./shared/utils.js";
+import { stripCodeFences, requireAuth, sanitizeId } from "./shared/utils.js";
 
 const log = createLogger("orchestrator");
 const sdk = registerWorker(ENGINE_URL, { workerName: "orchestrator", otel: OTEL_CONFIG });
@@ -179,6 +178,25 @@ registerFunction(
       payload: { scope: "orchestrator_plans", key: planId, value: plan },
     });
 
+    await safeCall(
+      () =>
+        trigger({
+          function_id: "state::set",
+          payload: {
+            scope: `workspace:${planId}`,
+            key: "_meta",
+            value: {
+              key: "_meta",
+              value: { planId, rootId, description: plan.description },
+              writtenBy: "orchestrator",
+              writtenAt: Date.now(),
+            },
+          },
+        }),
+      undefined,
+      { operation: "seed_workspace_meta" },
+    );
+
     const spawnResult: any = await trigger({
       function_id: "task::spawn_workers",
       payload: { rootId },
@@ -187,7 +205,7 @@ registerFunction(
     log.info("Plan execution started", { planId, rootId, spawned: spawnResult?.spawned?.length });
     recordMetric("orchestrator_execute", 1, { planId }, "counter");
 
-    return { planId, rootId, spawned: spawnResult?.spawned || [] };
+    return { planId, rootId, workspaceScope: `workspace:${planId}`, spawned: spawnResult?.spawned || [] };
   },
 );
 
@@ -377,6 +395,90 @@ registerFunction(
   },
 );
 
+registerFunction(
+  {
+    id: "orchestrator::workspace_write",
+    description: "Write to shared plan workspace",
+    metadata: { category: "orchestrator" },
+  },
+  async (req: any) => {
+    if (req.headers) requireAuth(req);
+    const { planId, key, value, agentId } = req.body || req;
+
+    if (!planId || !key) {
+      throw Object.assign(new Error("planId and key are required"), { statusCode: 400 });
+    }
+
+    const safePlanId = sanitizeId(planId);
+    const safeKey = sanitizeId(key);
+    const safeAgentId = agentId ? sanitizeId(agentId) : undefined;
+
+    if (req.headers && safeKey === "_meta") {
+      throw Object.assign(new Error("_meta is reserved"), { statusCode: 403 });
+    }
+
+    const writtenBy = req.headers ? "authenticated" : (safeAgentId || "system");
+    const entry = {
+      key: safeKey,
+      value,
+      writtenBy,
+      writtenAt: Date.now(),
+    };
+
+    await trigger({
+      function_id: "state::set",
+      payload: { scope: `workspace:${safePlanId}`, key: safeKey, value: entry },
+    });
+
+    log.info("Workspace write", { planId: safePlanId, key: safeKey, writtenBy });
+
+    return { written: true, key: safeKey, planId: safePlanId };
+  },
+);
+
+registerFunction(
+  {
+    id: "orchestrator::workspace_read",
+    description: "Read from shared plan workspace",
+    metadata: { category: "orchestrator" },
+  },
+  async (req: any) => {
+    if (req.headers) requireAuth(req);
+    const { planId, key } = req.body || req;
+
+    if (!planId) {
+      throw Object.assign(new Error("planId is required"), { statusCode: 400 });
+    }
+
+    const safePlanId = sanitizeId(planId);
+
+    if (key) {
+      const safeKey = sanitizeId(key);
+      const entry = await trigger({
+        function_id: "state::get",
+        payload: { scope: `workspace:${safePlanId}`, key: safeKey },
+      });
+      return entry;
+    }
+
+    const entries: any[] = await safeCall(
+      () =>
+        trigger({
+          function_id: "state::list",
+          payload: { scope: `workspace:${safePlanId}` },
+        }),
+      [],
+      { operation: "list_workspace" },
+    );
+
+    return {
+      planId: safePlanId,
+      count: entries.length,
+      entries: entries.map((e) => e.value || e),
+    };
+  },
+);
+
 registerTrigger({
   type: "http",
   function_id: "orchestrator::plan",
@@ -396,4 +498,14 @@ registerTrigger({
   type: "http",
   function_id: "orchestrator::intervene",
   config: { api_path: "api/orchestrator/intervene", http_method: "POST" },
+});
+registerTrigger({
+  type: "http",
+  function_id: "orchestrator::workspace_write",
+  config: { api_path: "api/orchestrator/workspace", http_method: "POST" },
+});
+registerTrigger({
+  type: "http",
+  function_id: "orchestrator::workspace_read",
+  config: { api_path: "api/orchestrator/workspace", http_method: "GET" },
 });

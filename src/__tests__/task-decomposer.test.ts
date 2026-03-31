@@ -100,6 +100,7 @@ vi.mock("../shared/errors.js", () => ({
 }));
 vi.mock("../shared/utils.js", () => ({
   requireAuth: vi.fn(),
+  sanitizeId: (id: string) => id,
   stripCodeFences: (s: string) => s.replace(/^```[a-z]*\n?/, "").replace(/\n?```$/, ""),
 }));
 

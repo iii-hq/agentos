@@ -3,7 +3,7 @@ import { ENGINE_URL, OTEL_CONFIG, registerShutdown } from "./shared/config.js";
 import { createLogger } from "./shared/logger.js";
 import { recordMetric } from "./shared/metrics.js";
 import { safeCall } from "./shared/errors.js";
-import { stripCodeFences, requireAuth } from "./shared/utils.js";
+import { stripCodeFences, requireAuth, sanitizeId } from "./shared/utils.js";
 
 const log = createLogger("task-decomposer");
 const sdk = registerWorker(ENGINE_URL, { workerName: "task-decomposer", otel: OTEL_CONFIG });
@@ -14,6 +14,10 @@ const triggerVoid = (id: string, payload: unknown) =>
 
 const MAX_DEPTH = 3;
 const MAX_SUBTASKS = 10;
+
+function generateTaskId(): string {
+  return `t_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+}
 
 type TaskStatus = "pending" | "in_progress" | "complete" | "failed" | "blocked";
 
@@ -49,7 +53,7 @@ registerFunction(
       return { decomposed: false, reason: "Max depth reached" };
     }
 
-    const rootId = existingRootId || crypto.randomUUID();
+    const rootId = existingRootId ? sanitizeId(existingRootId) : generateTaskId();
     const taskId = parentId ? parentId : rootId;
 
     const llmResult: any = await trigger({
@@ -155,15 +159,18 @@ registerFunction(
   },
   async (req: any) => {
     if (req.headers) requireAuth(req);
-    const { rootId, taskId } = req.body || req;
+    const { rootId: rawRootId, taskId } = req.body || req;
 
-    if (!rootId || !taskId) {
+    if (!rawRootId || !taskId) {
       throw Object.assign(new Error("rootId and taskId are required"), { statusCode: 400 });
     }
 
+    const rootId = sanitizeId(rawRootId);
+    const safeTaskId = sanitizeId(taskId);
+
     const task = await trigger({
       function_id: "state::get",
-      payload: { scope: `tasks:${rootId}`, key: taskId },
+      payload: { scope: `tasks:${rootId}`, key: safeTaskId },
     });
 
     if (!task) {
@@ -182,14 +189,17 @@ registerFunction(
   },
   async (req: any) => {
     if (req.headers) requireAuth(req);
-    const { rootId, taskId, status } = req.body || req;
+    const { rootId: rawRootId, taskId, status } = req.body || req;
 
-    if (!rootId || !taskId || !status) {
+    if (!rawRootId || !taskId || !status) {
       throw Object.assign(
         new Error("rootId, taskId, and status are required"),
         { statusCode: 400 },
       );
     }
+
+    const rootId = sanitizeId(rawRootId);
+    const safeTaskId = sanitizeId(taskId);
 
     const validStatuses: TaskStatus[] = [
       "pending",
@@ -273,11 +283,13 @@ registerFunction(
   },
   async (req: any) => {
     if (req.headers) requireAuth(req);
-    const { rootId, status } = req.body || req;
+    const { rootId: rawRootId, status } = req.body || req;
 
-    if (!rootId) {
+    if (!rawRootId) {
       throw Object.assign(new Error("rootId is required"), { statusCode: 400 });
     }
+
+    const rootId = sanitizeId(rawRootId);
 
     const entries: any[] = await safeCall(
       () =>
@@ -306,11 +318,13 @@ registerFunction(
   },
   async (req: any) => {
     if (req.headers) requireAuth(req);
-    const { rootId } = req.body || req;
+    const { rootId: rawRootId } = req.body || req;
 
-    if (!rootId) {
+    if (!rawRootId) {
       throw Object.assign(new Error("rootId is required"), { statusCode: 400 });
     }
+
+    const rootId = sanitizeId(rawRootId);
 
     const entries: any[] = await safeCall(
       () =>
