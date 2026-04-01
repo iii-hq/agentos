@@ -1,3 +1,4 @@
+import { httpOk } from "./shared/utils.js";
 import { registerWorker, TriggerAction } from "iii-sdk";
 import {
   ENGINE_URL,
@@ -165,9 +166,6 @@ const DEFINITION_PATTERNS = [
   { regex: /enum\s+{SYMBOL}\b/, kind: "enum" },
 ];
 
-function httpOk(req: any, data: any) {
-  return req?.headers ? { status_code: 200, body: data } : data;
-}
 
 registerFunction(
   {
@@ -352,24 +350,24 @@ registerFunction(
     );
 
     const files = grepResult.stdout.split("\n").filter(Boolean);
-    let totalOccurrences = 0;
-
     const wordBoundary = new RegExp(`\\b${oldName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "g");
 
-    for (const filePath of files) {
-      assertPathContained(filePath);
-      const content = await readFile(filePath, "utf-8");
-      const matches = content.match(wordBoundary);
-      if (matches) {
-        totalOccurrences += matches.length;
+    const renameResults = await Promise.all(
+      files.map(async (filePath) => {
+        assertPathContained(filePath);
+        const content = await readFile(filePath, "utf-8");
+        const matches = content.match(wordBoundary);
+        if (!matches) return 0;
         const updated = content.replace(wordBoundary, newName);
         await safeCall(
           async () => writeFile(filePath, updated, "utf-8"),
           undefined,
           { operation: "write_renamed", functionId: "tool::lsp_rename" },
         );
-      }
-    }
+        return matches.length;
+      }),
+    );
+    const totalOccurrences = renameResults.reduce((a, b) => a + b, 0);
 
     recordMetric("tool_execution_total", 1, {
       toolId: "tool::lsp_rename",
@@ -399,41 +397,32 @@ registerFunction(
       });
     }
 
-    for (const { regex, kind } of DEFINITION_PATTERNS) {
-      const pattern = regex.source.replace("{SYMBOL}", symbol.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
+    const escapedSymbol = symbol.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const results = await Promise.all(
+      DEFINITION_PATTERNS.map(async ({ regex, kind }) => {
+        const pattern = regex.source.replace("{SYMBOL}", escapedSymbol);
+        const result = await safeCall(
+          async () =>
+            execFileAsync(
+              "grep",
+              ["-rn", ...GREP_INCLUDE_FLAGS, "-E", pattern, WORKSPACE_ROOT],
+              { cwd: WORKSPACE_ROOT, timeout: 5_000, maxBuffer: 2 * 1024 * 1024 },
+            ),
+          { stdout: "", stderr: "" },
+          { operation: "grep_definition", functionId: "tool::lsp_goto_definition" },
+        );
+        const firstLine = result.stdout.split("\n").find(Boolean);
+        if (!firstLine) return null;
+        const match = firstLine.match(/^(.+?):(\d+):(.+)$/);
+        if (!match) return null;
+        return { symbol, file: relative(WORKSPACE_ROOT, match[1]), line: parseInt(match[2], 10), kind };
+      }),
+    );
 
-      const result = await safeCall(
-        async () =>
-          execFileAsync(
-            "grep",
-            ["-rn", ...GREP_INCLUDE_FLAGS, "-E", pattern, WORKSPACE_ROOT],
-            {
-              cwd: WORKSPACE_ROOT,
-              timeout: 10_000,
-              maxBuffer: 2 * 1024 * 1024,
-            },
-          ),
-        { stdout: "", stderr: "" },
-        { operation: "grep_definition", functionId: "tool::lsp_goto_definition" },
-      );
-
-      const lines = result.stdout.split("\n").filter(Boolean);
-      if (lines.length > 0) {
-        const match = lines[0].match(/^(.+?):(\d+):(.+)$/);
-        if (match) {
-          recordMetric("tool_execution_total", 1, {
-            toolId: "tool::lsp_goto_definition",
-            status: "success",
-          });
-
-          return httpOk(req, {
-            symbol,
-            file: relative(WORKSPACE_ROOT, match[1]),
-            line: parseInt(match[2], 10),
-            kind,
-          });
-        }
-      }
+    const found = results.find(Boolean);
+    if (found) {
+      recordMetric("tool_execution_total", 1, { toolId: "tool::lsp_goto_definition", status: "success" });
+      return httpOk(req, found);
     }
 
     return httpOk(req, { symbol, file: null, line: null, kind: null, notFound: true });

@@ -25,6 +25,7 @@ vi.mock("iii-sdk", () => ({
 }));
 
 vi.mock("../shared/utils.js", () => ({
+  httpOk: (req: any, data: any) => data,
   requireAuth: vi.fn(),
   validateMcpCommand: vi.fn(),
   stripSecretsFromEnv: vi.fn(() => ({ PATH: "/usr/bin" })),

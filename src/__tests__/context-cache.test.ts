@@ -50,6 +50,7 @@ vi.mock("../shared/config.js", () => ({
   registerShutdown: vi.fn(),
 }));
 vi.mock("../shared/utils.js", () => ({
+  httpOk: (req: any, data: any) => data,
   sanitizeId: (id: string) => id,
   requireAuth: vi.fn(),
 }));

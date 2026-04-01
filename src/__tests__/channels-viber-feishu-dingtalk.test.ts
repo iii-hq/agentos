@@ -23,6 +23,7 @@ vi.mock("iii-sdk", () => ({
 }));
 
 vi.mock("../shared/utils.js", () => ({
+  httpOk: (req: any, data: any) => data,
   splitMessage: vi.fn((text: string, limit: number) => {
     const chunks: string[] = [];
     for (let i = 0; i < text.length; i += limit)

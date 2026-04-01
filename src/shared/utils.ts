@@ -180,6 +180,10 @@ export function sanitizeId(id: string): string {
   return id;
 }
 
+export function httpOk(req: any, data: any) {
+  return req?.headers ? { status_code: 200, body: data } : data;
+}
+
 export function stripCodeFences(text: string): string {
   return text
     .replace(/^```\w*\s*\n?/gm, "")

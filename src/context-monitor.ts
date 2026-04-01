@@ -3,11 +3,8 @@ import { ENGINE_URL, OTEL_CONFIG, registerShutdown } from "./shared/config.js";
 import type { ContextHealthScore } from "./types.js";
 import type { Message } from "./shared/tokens.js";
 import { estimateTokens, estimateMessagesTokens } from "./shared/tokens.js";
-import { requireAuth } from "./shared/utils.js";
+import { requireAuth , httpOk } from "./shared/utils.js";
 
-function httpOk(req: any, data: any) {
-  return req?.headers ? { status_code: 200, body: data } : data;
-}
 
 const sdk = registerWorker(ENGINE_URL, {
   workerName: "context-monitor",

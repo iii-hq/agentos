@@ -87,6 +87,7 @@ vi.mock("../shared/metrics.js", () => ({
   recordMetric: vi.fn(),
 }));
 vi.mock("../shared/utils.js", () => ({
+  httpOk: (req: any, data: any) => data,
   requireAuth: vi.fn(),
   stripCodeFences: (s: string) => s.replace(/^```[a-z]*\n?/, "").replace(/\n?```$/, ""),
 }));

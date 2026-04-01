@@ -89,6 +89,7 @@ vi.mock("../shared/shutdown.js", () => ({
 }));
 
 vi.mock("../shared/utils.js", () => ({
+  httpOk: (req: any, data: any) => data,
   requireAuth: vi.fn(),
   sanitizeId: vi.fn((id: string) => id?.replace(/[^a-zA-Z0-9_-]/g, "")),
 }));

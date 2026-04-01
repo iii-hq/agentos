@@ -1,11 +1,8 @@
 import { registerWorker, TriggerAction, Logger } from "iii-sdk";
 import { ENGINE_URL, OTEL_CONFIG, registerShutdown } from "./shared/config.js";
 import { recordMetric } from "./shared/metrics.js";
-import { stripCodeFences, requireAuth } from "./shared/utils.js";
+import { stripCodeFences, requireAuth , httpOk } from "./shared/utils.js";
 
-function httpOk(req: any, data: any) {
-  return req?.headers ? { status_code: 200, body: data } : data;
-}
 
 const log = new Logger();
 

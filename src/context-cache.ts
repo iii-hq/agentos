@@ -1,10 +1,7 @@
 import { registerWorker } from "iii-sdk";
 import { ENGINE_URL, OTEL_CONFIG, registerShutdown } from "./shared/config.js";
-import { sanitizeId, requireAuth } from "./shared/utils.js";
+import { sanitizeId, requireAuth , httpOk } from "./shared/utils.js";
 
-function httpOk(req: any, data: any) {
-  return req?.headers ? { status_code: 200, body: data } : data;
-}
 
 const CACHEABLE_FUNCTIONS = new Set([
   "memory::recall",

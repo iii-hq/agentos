@@ -1,3 +1,4 @@
+import { httpOk } from "./shared/utils.js";
 import { registerWorker, TriggerAction } from "iii-sdk";
 import {
   ENGINE_URL,
@@ -188,9 +189,6 @@ function formatRegion(
   return output;
 }
 
-function httpOk(req: any, data: any) {
-  return req?.headers ? { status_code: 200, body: data } : data;
-}
 
 registerFunction(
   {

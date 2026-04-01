@@ -42,6 +42,7 @@ const PRIVATE_PATTERNS = [
   /^169\.254\./,
 ];
 vi.mock("../shared/utils.js", () => ({
+  httpOk: (req: any, data: any) => data,
   requireAuth: vi.fn(),
   assertNoSsrf: vi.fn(async (urlStr: string) => {
     const parsed = new URL(urlStr);

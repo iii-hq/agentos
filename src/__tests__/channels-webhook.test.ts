@@ -37,6 +37,7 @@ vi.mock("iii-sdk", () => ({
 }));
 
 vi.mock("../shared/utils.js", () => ({
+  httpOk: (req: any, data: any) => data,
   splitMessage: vi.fn((text: string, limit: number) => [text]),
   resolveAgent: vi.fn(async () => "default-agent"),
   assertNoSsrf: vi.fn(async (url: string) => {

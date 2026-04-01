@@ -55,6 +55,7 @@ vi.mock("iii-sdk", () => ({
 }));
 
 vi.mock("../shared/utils.js", () => ({
+  httpOk: (req: any, data: any) => data,
   requireAuth: vi.fn(),
   sanitizeId: vi.fn((id: string) => {
     if (!id || !/^[a-zA-Z0-9_\-:.]{1,256}$/.test(id)) {

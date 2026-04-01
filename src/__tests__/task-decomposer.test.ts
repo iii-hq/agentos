@@ -92,6 +92,7 @@ vi.mock("../shared/errors.js", () => ({
   },
 }));
 vi.mock("../shared/utils.js", () => ({
+  httpOk: (req: any, data: any) => data,
   requireAuth: vi.fn(),
   sanitizeId: (id: string) => id,
   stripCodeFences: (s: string) => s.replace(/^```[a-z]*\n?/, "").replace(/\n?```$/, ""),
