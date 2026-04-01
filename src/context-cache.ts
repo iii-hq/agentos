@@ -2,6 +2,10 @@ import { registerWorker } from "iii-sdk";
 import { ENGINE_URL, OTEL_CONFIG, registerShutdown } from "./shared/config.js";
 import { sanitizeId, requireAuth } from "./shared/utils.js";
 
+function httpOk(req: any, data: any) {
+  return req?.headers ? { status_code: 200, body: data } : data;
+}
+
 const CACHEABLE_FUNCTIONS = new Set([
   "memory::recall",
   "memory::user_profile::get",
@@ -63,7 +67,7 @@ registerFunction(
 
     if (cached && Date.now() - cached.cachedAt < cached.ttlMs) {
       stats.hits++;
-      return cached.value;
+      return httpOk(req, cached.value);
     }
 
     stats.misses++;
@@ -84,7 +88,7 @@ registerFunction(
       payload: { scope, key: input.key, value: entry },
     });
 
-    return value;
+    return httpOk(req, value);
   },
 );
 
@@ -94,7 +98,8 @@ registerFunction(
     description: "Clear cache entry or all entries for an agent",
     metadata: { category: "context_cache" },
   },
-  async (input: { agentId: string; key?: string }): Promise<{ cleared: number }> => {
+  async (req: any) => {
+    const input = req.body || req;
     const scope = `cache:${sanitizeId(input.agentId)}`;
 
     if (input.key) {
@@ -102,7 +107,7 @@ registerFunction(
         function_id: "state::delete",
         payload: { scope, key: input.key },
       });
-      return { cleared: 1 };
+      return httpOk(req, { cleared: 1 });
     }
 
     const entries: any[] = await trigger({
@@ -119,7 +124,7 @@ registerFunction(
       cleared++;
     }
 
-    return { cleared };
+    return httpOk(req, { cleared });
   },
 );
 
@@ -129,19 +134,17 @@ registerFunction(
     description: "Cache hit/miss stats per agent",
     metadata: { category: "context_cache" },
   },
-  async (input: { agentId?: string }): Promise<
-    | CacheStats
-    | Record<string, CacheStats>
-  > => {
+  async (req: any) => {
+    const input = req.body || req;
     if (input.agentId) {
-      return getStats(input.agentId);
+      return httpOk(req, getStats(input.agentId));
     }
 
     const result: Record<string, CacheStats> = {};
     for (const [agentId, stats] of statsMap) {
       result[agentId] = stats;
     }
-    return result;
+    return httpOk(req, result);
   },
 );
 

@@ -5,6 +5,10 @@ import type { Message } from "./shared/tokens.js";
 import { estimateTokens, estimateMessagesTokens } from "./shared/tokens.js";
 import { requireAuth } from "./shared/utils.js";
 
+function httpOk(req: any, data: any) {
+  return req?.headers ? { status_code: 200, body: data } : data;
+}
+
 const sdk = registerWorker(ENGINE_URL, {
   workerName: "context-monitor",
   otel: OTEL_CONFIG,
@@ -88,17 +92,15 @@ registerFunction(
     description: "Compute context health score (0-100)",
     metadata: { category: "context" },
   },
-  async (input: {
-    messages: Message[];
-    maxTokens: number;
-  }): Promise<ContextHealthScore> => {
+  async (req: any) => {
+    const input = req.body || req;
     const usedTokens = estimateMessagesTokens(input.messages);
     const tokenUtilization = scoreTokenUtilization(usedTokens, input.maxTokens);
     const relevanceDecay = scoreRelevanceDecay(input.messages);
     const repetitionPenalty = scoreRepetition(input.messages);
     const toolDensity = scoreToolDensity(input.messages);
 
-    return {
+    const result = {
       overall: Math.round(
         tokenUtilization + relevanceDecay + repetitionPenalty + toolDensity,
       ),
@@ -107,6 +109,7 @@ registerFunction(
       repetitionPenalty: Math.round(repetitionPenalty),
       toolDensity: Math.round(toolDensity),
     };
+    return httpOk(req, result);
   },
 );
 
@@ -151,19 +154,12 @@ registerFunction(
     description: "Proactive 5-phase context compression",
     metadata: { category: "context" },
   },
-  async (input: {
-    messages: Message[];
-    targetTokens: number;
-    agentId?: string;
-  }): Promise<{
-    compressed: Message[];
-    removedCount: number;
-    savedTokens: number;
-  }> => {
+  async (req: any) => {
+    const input = req.body || req;
     const originalTokens = estimateMessagesTokens(input.messages);
     if (originalTokens <= input.targetTokens) {
       triggerVoid("hook::fire", { type: "AfterCompact", payload: { agentId: input.agentId, removedCount: 0, savedTokens: 0, finalMessageCount: input.messages.length } });
-      return { compressed: input.messages, removedCount: 0, savedTokens: 0 };
+      return httpOk(req, { compressed: input.messages, removedCount: 0, savedTokens: 0 });
     }
 
     triggerVoid("hook::fire", {
@@ -215,7 +211,7 @@ registerFunction(
     if (estimateMessagesTokens(messages) <= input.targetTokens) {
       const savedTokens = originalTokens - estimateMessagesTokens(messages);
       triggerVoid("hook::fire", { type: "AfterCompact", payload: { agentId: input.agentId, removedCount, savedTokens, finalMessageCount: messages.length } });
-      return { compressed: messages, removedCount, savedTokens };
+      return httpOk(req, { compressed: messages, removedCount, savedTokens });
     }
 
     const recentBudget = Math.floor(input.targetTokens * 0.4);
@@ -238,7 +234,7 @@ registerFunction(
     if (oldMessages.length === 0) {
       const savedTokens = originalTokens - estimateMessagesTokens(messages);
       triggerVoid("hook::fire", { type: "AfterCompact", payload: { agentId: input.agentId, removedCount, savedTokens, finalMessageCount: messages.length } });
-      return { compressed: messages, removedCount, savedTokens };
+      return httpOk(req, { compressed: messages, removedCount, savedTokens });
     }
 
     const summaryText = oldMessages
@@ -318,11 +314,11 @@ Critical Context: <must-preserve details>`;
 
     triggerVoid("hook::fire", { type: "AfterCompact", payload: { agentId: input.agentId, removedCount, savedTokens, finalMessageCount: messages.length } });
 
-    return {
+    return httpOk(req, {
       compressed: messages,
       removedCount,
       savedTokens,
-    };
+    });
   },
 );
 
@@ -426,10 +422,10 @@ registerFunction(
       result.push(msg);
     }
 
-    return {
+    return httpOk(req, {
       compacted: result,
       removedTokens: originalTokens - estimateMessagesTokens(result),
-    };
+    });
   },
 );
 
@@ -447,7 +443,7 @@ registerFunction(
     const input = req.body || req;
     const messages = [...input.messages];
     if (messages.length <= 10) {
-      return { snipped: messages, removedCount: 0 };
+      return httpOk(req, { snipped: messages, removedCount: 0 });
     }
 
     const keepStart = 3;
@@ -455,7 +451,7 @@ registerFunction(
     const keepEndStart = messages.length - keepEndCount;
 
     if (keepEndStart <= keepStart) {
-      return { snipped: messages, removedCount: 0 };
+      return httpOk(req, { snipped: messages, removedCount: 0 });
     }
 
     const head = messages.slice(0, keepStart);
@@ -467,10 +463,10 @@ registerFunction(
       content: `[Snipped ${removedCount} messages]`,
     };
 
-    return {
+    return httpOk(req, {
       snipped: [...head, snipMessage, ...tail],
       removedCount,
-    };
+    });
   },
 );
 
@@ -544,11 +540,11 @@ registerFunction(
       messages = snipResult.snipped;
     }
 
-    return {
+    return httpOk(req, {
       compacted: messages,
       strategy,
       savedTokens: originalTokens - estimateMessagesTokens(messages),
-    };
+    });
   },
 );
 

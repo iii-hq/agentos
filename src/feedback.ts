@@ -5,6 +5,10 @@ import { requireAuth, sanitizeId } from "./shared/utils.js";
 import { safeCall } from "./shared/errors.js";
 import type { FeedbackPolicy, ReviewResult } from "./types.js";
 
+function httpOk(req: any, data: any) {
+  return req?.headers ? { status_code: 200, body: data } : data;
+}
+
 const sdk = registerWorker(ENGINE_URL, {
   workerName: "feedback",
   otel: OTEL_CONFIG,
@@ -692,7 +696,7 @@ registerFunction(
     recordMetric("feedback_signal_injected", 1, { signalType }, "counter");
     log.info("Signal injected", { agentId: sanitizedId, signalType, signalId });
 
-    return { signalId, injected: true };
+    return httpOk(req, { signalId, injected: true });
   },
 );
 
@@ -727,7 +731,7 @@ registerFunction(
       value: source,
     } });
 
-    return { sourceId, registered: true };
+    return httpOk(req, { sourceId, registered: true });
   },
 );
 
@@ -759,7 +763,7 @@ registerFunction(
       .sort((a: any, b: any) => b.createdAt - a.createdAt)
       .slice(0, limit);
 
-    return { agentId, count: signals.length, signals };
+    return httpOk(req, { agentId, count: signals.length, signals });
   },
 );
 

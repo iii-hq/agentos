@@ -165,13 +165,18 @@ const DEFINITION_PATTERNS = [
   { regex: /enum\s+{SYMBOL}\b/, kind: "enum" },
 ];
 
+function httpOk(req: any, data: any) {
+  return req?.headers ? { status_code: 200, body: data } : data;
+}
+
 registerFunction(
   {
     id: "tool::lsp_diagnostics",
     description: "Get compiler/linter errors for a file",
     metadata: { category: "lsp" },
   },
-  async ({ path }: { path: string }) => {
+  async (req: any) => {
+    const { path } = req.body || req;
     const resolved = resolve(WORKSPACE_ROOT, path);
     assertPathContained(resolved);
 
@@ -219,7 +224,7 @@ registerFunction(
         (d) => d.file === relPath || d.file === resolved,
       );
     } else {
-      return { path: resolved, language: lang, diagnostics: [], unsupported: true };
+      return httpOk(req, { path: resolved, language: lang, diagnostics: [], unsupported: true });
     }
 
     recordMetric("tool_execution_total", 1, {
@@ -227,7 +232,7 @@ registerFunction(
       status: "success",
     });
 
-    return { path: resolved, language: lang, diagnostics };
+    return httpOk(req, { path: resolved, language: lang, diagnostics });
   },
 );
 
@@ -237,7 +242,8 @@ registerFunction(
     description: "List all symbols in a file",
     metadata: { category: "lsp" },
   },
-  async ({ path }: { path: string }) => {
+  async (req: any) => {
+    const { path } = req.body || req;
     const resolved = resolve(WORKSPACE_ROOT, path);
     assertPathContained(resolved);
 
@@ -249,7 +255,7 @@ registerFunction(
       status: "success",
     });
 
-    return { path: resolved, symbols };
+    return httpOk(req, { path: resolved, symbols });
   },
 );
 
@@ -259,7 +265,8 @@ registerFunction(
     description: "Find all references to a symbol",
     metadata: { category: "lsp" },
   },
-  async ({ symbol, path }: { symbol: string; path?: string }) => {
+  async (req: any) => {
+    const { symbol, path } = req.body || req;
     if (!symbol || typeof symbol !== "string") {
       throw Object.assign(new Error("symbol is required"), {
         statusCode: 400,
@@ -305,7 +312,7 @@ registerFunction(
       status: "success",
     });
 
-    return { symbol, references: references.slice(0, 200) };
+    return httpOk(req, { symbol, references: references.slice(0, 200) });
   },
 );
 
@@ -315,15 +322,8 @@ registerFunction(
     description: "Rename a symbol across the project",
     metadata: { category: "lsp" },
   },
-  async ({
-    oldName,
-    newName,
-    path,
-  }: {
-    oldName: string;
-    newName: string;
-    path?: string;
-  }) => {
+  async (req: any) => {
+    const { oldName, newName, path } = req.body || req;
     if (!oldName || !newName) {
       throw Object.assign(
         new Error("oldName and newName are required"),
@@ -376,12 +376,12 @@ registerFunction(
       status: "success",
     });
 
-    return {
+    return httpOk(req, {
       oldName,
       newName,
       filesModified: files.length,
       occurrences: totalOccurrences,
-    };
+    });
   },
 );
 
@@ -391,7 +391,8 @@ registerFunction(
     description: "Find where a symbol is defined",
     metadata: { category: "lsp" },
   },
-  async ({ symbol }: { symbol: string }) => {
+  async (req: any) => {
+    const { symbol } = req.body || req;
     if (!symbol || typeof symbol !== "string") {
       throw Object.assign(new Error("symbol is required"), {
         statusCode: 400,
@@ -425,17 +426,17 @@ registerFunction(
             status: "success",
           });
 
-          return {
+          return httpOk(req, {
             symbol,
             file: relative(WORKSPACE_ROOT, match[1]),
             line: parseInt(match[2], 10),
             kind,
-          };
+          });
         }
       }
     }
 
-    return { symbol, file: null, line: null, kind: null, notFound: true };
+    return httpOk(req, { symbol, file: null, line: null, kind: null, notFound: true });
   },
 );
 

@@ -188,21 +188,18 @@ function formatRegion(
   return output;
 }
 
+function httpOk(req: any, data: any) {
+  return req?.headers ? { status_code: 200, body: data } : data;
+}
+
 registerFunction(
   {
     id: "tool::hashline_read",
     description: "Read a file with hash-anchored line numbers",
     metadata: { category: "hashline" },
   },
-  async ({
-    path,
-    startLine,
-    endLine,
-  }: {
-    path: string;
-    startLine?: number;
-    endLine?: number;
-  }) => {
+  async (req: any) => {
+    const { path, startLine, endLine } = req.body || req;
     const resolved = resolve(WORKSPACE_ROOT, path);
     assertPathContained(resolved);
 
@@ -219,13 +216,13 @@ registerFunction(
       status: "success",
     });
 
-    return {
+    return httpOk(req, {
       path: resolved,
       totalLines: lines.length,
       startLine: start,
       endLine: end,
       lines: output,
-    };
+    });
   },
 );
 
@@ -235,7 +232,8 @@ registerFunction(
     description: "Apply hash-validated edits to a file",
     metadata: { category: "hashline" },
   },
-  async ({ path, edits }: { path: string; edits: HashlineEdit[] }) => {
+  async (req: any) => {
+    const { path, edits } = req.body || req;
     const resolved = resolve(WORKSPACE_ROOT, path);
     assertPathContained(resolved);
 
@@ -268,12 +266,12 @@ registerFunction(
       status: "success",
     });
 
-    return {
+    return httpOk(req, {
       path: resolved,
       totalLines: result.length,
       editsApplied: edits.length,
       affectedRegion: affected,
-    };
+    });
   },
 );
 
@@ -283,7 +281,8 @@ registerFunction(
     description: "Show diff between original and edited content (dry run)",
     metadata: { category: "hashline" },
   },
-  async ({ path, edits }: { path: string; edits: HashlineEdit[] }) => {
+  async (req: any) => {
+    const { path, edits } = req.body || req;
     const resolved = resolve(WORKSPACE_ROOT, path);
     assertPathContained(resolved);
 
@@ -329,12 +328,12 @@ registerFunction(
       status: "success",
     });
 
-    return {
+    return httpOk(req, {
       path: resolved,
       originalLines: originalLines.length,
       editedLines: editedLines.length,
       diff: diff.join("\n"),
-    };
+    });
   },
 );
 
