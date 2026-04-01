@@ -3,17 +3,24 @@
 @theme {
   --font-mono: "IBM Plex Mono", ui-monospace, "Courier New", monospace;
   --color-surface: #0a0a0a;
-  --color-card: #111111;
   --color-primary: #facc15;
-  --color-primary-hover: #eab308;
-  --color-secondary: #fde68a;
   --color-muted: #71717a;
   --color-border: rgba(255, 255, 255, 0.06);
-  --color-border-hover: rgba(250, 204, 21, 0.4);
 }
 
 html {
   scroll-behavior: smooth;
+}
+
+body {
+  font-family: var(--font-mono);
+  background: #0a0a0a;
+}
+
+@keyframes blink {
+  50% {
+    opacity: 0;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -21,46 +28,29 @@ html {
     scroll-behavior: auto;
   }
 
-  .card-hover {
-    transition: none;
-  }
-
-  .card-hover:hover {
-    transform: none;
-  }
-
-  .typing-cursor {
-    animation: none;
+  * {
+    animation-duration: 0s !important;
   }
 }
 
-body {
-  font-family: var(--font-mono);
+::-webkit-scrollbar {
+  width: 6px;
 }
 
-.grid-pattern {
-  background-image: radial-gradient(circle, rgba(250, 204, 21, 0.04) 1px, transparent 1px);
-  background-size: 24px 24px;
+::-webkit-scrollbar-track {
+  background: #0a0a0a;
 }
 
-.glow-yellow {
-  background: radial-gradient(600px circle at 50% 30%, rgba(250, 204, 21, 0.08), transparent 70%);
+::-webkit-scrollbar-thumb {
+  background: #333;
+  border-radius: 3px;
 }
 
-.card-hover {
-  transition: border-color 0.2s, transform 0.2s;
+::-webkit-scrollbar-thumb:hover {
+  background: #555;
 }
 
-.card-hover:hover {
-  border-color: rgba(250, 204, 21, 0.3);
-  transform: translateY(-2px);
-}
-
-@keyframes blink {
-  50% { border-color: transparent; }
-}
-
-.typing-cursor {
-  border-right: 2px solid #facc15;
-  animation: blink 1s step-end infinite;
+::selection {
+  background: rgba(250, 204, 21, 0.25);
+  color: #fff;
 }
