@@ -1,0 +1,56 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#0a0a0a"/>
+      <stop offset="100%" stop-color="#111111"/>
+    </linearGradient>
+    <linearGradient id="glow" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#facc15" stop-opacity="0.15"/>
+      <stop offset="100%" stop-color="#facc15" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="1200" height="630" fill="url(#bg)"/>
+
+  <rect x="0" y="0" width="1200" height="200" fill="url(#glow)"/>
+
+  <rect x="1" y="1" width="1198" height="628" rx="0" fill="none" stroke="#facc15" stroke-width="2" stroke-opacity="0.3"/>
+
+  <rect x="40" y="30" width="1120" height="40" rx="6" fill="#1a1a1a"/>
+  <circle cx="65" cy="50" r="7" fill="#ff5f57"/>
+  <circle cx="90" cy="50" r="7" fill="#febc2e"/>
+  <circle cx="115" cy="50" r="7" fill="#28c840"/>
+  <text x="600" y="55" font-family="monospace" font-size="14" fill="#666" text-anchor="middle">agentsos.sh</text>
+
+  <text x="600" y="160" font-family="monospace" font-weight="700" font-size="72" fill="#facc15" text-anchor="middle" letter-spacing="-2">AgentOS</text>
+
+  <text x="600" y="210" font-family="monospace" font-size="24" fill="#888" text-anchor="middle">The agent OS that evolves itself</text>
+
+  <g transform="translate(100, 270)">
+    <text font-family="monospace" font-size="17" fill="#facc15" opacity="0.7">$</text>
+    <text x="20" font-family="monospace" font-size="17" fill="#ccc"> agentos status</text>
+  </g>
+
+  <g transform="translate(100, 310)" font-family="monospace" font-size="16" fill="#666">
+    <text><tspan fill="#facc15">Workers</tspan>       57 connected</text>
+    <text y="28"><tspan fill="#facc15">Functions</tspan>  1,947 registered</text>
+    <text y="56"><tspan fill="#facc15">Rust Crates</tspan>    18 compiled</text>
+    <text y="84"><tspan fill="#facc15">LLM Providers</tspan> 25 available</text>
+    <text y="112"><tspan fill="#facc15">Channels</tspan>      40 active</text>
+    <text y="140"><tspan fill="#facc15">Tests</tspan>      2,727 passing</text>
+  </g>
+
+  <g transform="translate(580, 310)" font-family="monospace" font-size="16" fill="#666">
+    <text fill="#555">Three primitives. Everything else emerges.</text>
+    <text y="40"><tspan fill="#facc15">Worker</tspan>    <tspan fill="#444">runtime that connects</tspan></text>
+    <text y="68"><tspan fill="#facc15">Function</tspan>  <tspan fill="#444">logic that executes</tspan></text>
+    <text y="96"><tspan fill="#facc15">Trigger</tspan>   <tspan fill="#444">events that activate</tspan></text>
+    <text y="144" fill="#555">18 Rust crates + 51 TS workers + 1 Python</text>
+  </g>
+
+  <line x1="40" y1="540" x2="1160" y2="540" stroke="#facc15" stroke-opacity="0.15" stroke-width="1"/>
+
+  <text x="100" y="575" font-family="monospace" font-size="16" fill="#facc15" opacity="0.6">curl -fsSL https://agentsos.sh/install | sh</text>
+
+  <text x="1100" y="575" font-family="monospace" font-size="14" fill="#444" text-anchor="end">Built on iii-engine</text>
+</svg>
