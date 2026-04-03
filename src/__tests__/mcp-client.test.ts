@@ -1,7 +1,11 @@
 import { describe, it, expect, vi, beforeEach, beforeAll } from "vitest";
 
-const mockTrigger = vi.fn(async () => null);
-const mockTriggerVoid = vi.fn();
+const mockTrigger = vi.fn(
+  async (_fnId?: string, _payload?: unknown): Promise<null> => null,
+);
+const mockTriggerVoid = vi.fn(
+  (_fnId?: string, _payload?: unknown): void => undefined,
+);
 
 const handlers: Record<string, Function> = {};
 const triggerRefs: any[] = [];

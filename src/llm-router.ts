@@ -20,7 +20,7 @@ interface CompleteRequest {
   model: ModelSelection;
   systemPrompt?: string;
   messages: Array<{ role: string; content: string }>;
-  tools?: Array<{ id: string; description?: string }>;
+  tools?: Array<{ id?: string; function_id?: string; description?: string }>;
   toolResults?: Array<{ toolCallId: string; output: unknown }>;
 }
 
@@ -218,11 +218,14 @@ registerFunction(
 async function callAnthropic(req: CompleteRequest) {
   const client = new Anthropic();
 
-  const tools = req.tools?.map((t) => ({
-    name: t.id.replace(/::/g, "_"),
-    description: t.description || t.id,
-    input_schema: { type: "object" as const, properties: {} },
-  }));
+  const tools = req.tools?.map((t) => {
+    const toolId = t.id || t.function_id || "unknown";
+    return {
+      name: toolId.replace(/::/g, "_"),
+      description: t.description || toolId,
+      input_schema: { type: "object" as const, properties: {} },
+    };
+  });
 
   const messages = req.messages
     .filter((m) => m.role !== "system")

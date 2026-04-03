@@ -73,60 +73,68 @@ registerFunction(
     id: "api::chat_completions",
     description: "OpenAI-compatible chat completions",
     metadata: { category: "api" },
-    request_format: [
-      { name: "model", type: "string", required: true, description: "Model identifier" },
-      {
-        name: "messages",
-        type: "array",
-        required: true,
-        description: "Array of chat messages",
-        items: {
-          name: "message",
+    request_format: {
+      name: "chat_completions_request",
+      type: "object",
+      body: [
+        { name: "model", type: "string", required: true, description: "Model identifier" },
+        {
+          name: "messages",
+          type: "array",
+          required: true,
+          description: "Array of chat messages",
+          items: {
+            name: "message",
+            type: "object",
+            body: [
+              { name: "role", type: "string", required: true },
+              { name: "content", type: "string", required: true },
+            ],
+          },
+        },
+      ],
+    },
+    response_format: {
+      name: "chat_completions_response",
+      type: "object",
+      body: [
+        { name: "id", type: "string", description: "Completion ID" },
+        { name: "object", type: "string", description: "Object type" },
+        { name: "created", type: "number", description: "Unix timestamp" },
+        { name: "model", type: "string", description: "Model used" },
+        {
+          name: "choices",
+          type: "array",
+          description: "Completion choices",
+          items: {
+            name: "choice",
+            type: "object",
+            body: [
+              { name: "index", type: "number" },
+              {
+                name: "message",
+                type: "object",
+                body: [
+                  { name: "role", type: "string" },
+                  { name: "content", type: "string" },
+                ],
+              },
+              { name: "finish_reason", type: "string" },
+            ],
+          },
+        },
+        {
+          name: "usage",
           type: "object",
+          description: "Token usage",
           body: [
-            { name: "role", type: "string", required: true },
-            { name: "content", type: "string", required: true },
+            { name: "prompt_tokens", type: "number" },
+            { name: "completion_tokens", type: "number" },
+            { name: "total_tokens", type: "number" },
           ],
         },
-      },
-    ],
-    response_format: [
-      { name: "id", type: "string", description: "Completion ID" },
-      { name: "object", type: "string", description: "Object type" },
-      { name: "created", type: "number", description: "Unix timestamp" },
-      { name: "model", type: "string", description: "Model used" },
-      {
-        name: "choices",
-        type: "array",
-        description: "Completion choices",
-        items: {
-          name: "choice",
-          type: "object",
-          body: [
-            { name: "index", type: "number" },
-            {
-              name: "message",
-              type: "object",
-              body: [
-                { name: "role", type: "string" },
-                { name: "content", type: "string" },
-              ],
-            },
-            { name: "finish_reason", type: "string" },
-          ],
-        },
-      },
-      {
-        name: "usage",
-        type: "object",
-        description: "Token usage",
-        body: [
-          { name: "prompt_tokens", type: "number" },
-          { name: "completion_tokens", type: "number" },
-          { name: "total_tokens", type: "number" },
-        ],
-      },
-    ],
+      ],
+    },
   },
   async (req) => {
     const authErr = authGuard(req);
@@ -175,24 +183,32 @@ registerFunction(
     id: "api::agent_message",
     description: "Send message to a specific agent",
     metadata: { category: "api" },
-    request_format: [
-      { name: "message", type: "string", required: true, description: "Message to send" },
-      { name: "sessionId", type: "string", required: false, description: "Optional session ID" },
-    ],
-    response_format: [
-      { name: "content", type: "string", description: "Agent response content" },
-      { name: "model", type: "string", description: "Model used" },
-      {
-        name: "usage",
-        type: "object",
-        description: "Token usage",
-        body: [
-          { name: "input", type: "number" },
-          { name: "output", type: "number" },
-          { name: "total", type: "number" },
-        ],
-      },
-    ],
+    request_format: {
+      name: "agent_message_request",
+      type: "object",
+      body: [
+        { name: "message", type: "string", required: true, description: "Message to send" },
+        { name: "sessionId", type: "string", required: false, description: "Optional session ID" },
+      ],
+    },
+    response_format: {
+      name: "agent_message_response",
+      type: "object",
+      body: [
+        { name: "content", type: "string", description: "Agent response content" },
+        { name: "model", type: "string", description: "Model used" },
+        {
+          name: "usage",
+          type: "object",
+          description: "Token usage",
+          body: [
+            { name: "input", type: "number" },
+            { name: "output", type: "number" },
+            { name: "total", type: "number" },
+          ],
+        },
+      ],
+    },
   },
   async (req) => {
     const authErr = authGuard(req);
@@ -234,16 +250,24 @@ registerFunction(
     id: "api::create_agent",
     description: "Create a new agent",
     metadata: { category: "api" },
-    request_format: [
-      { name: "name", type: "string", required: true, description: "Agent name" },
-      { name: "systemPrompt", type: "string", required: true, description: "System prompt for the agent" },
-      { name: "model", type: "string", required: true, description: "LLM model identifier" },
-    ],
-    response_format: [
-      { name: "id", type: "string", description: "Created agent ID" },
-      { name: "name", type: "string", description: "Agent name" },
-      { name: "createdAt", type: "number", description: "Creation timestamp" },
-    ],
+    request_format: {
+      name: "create_agent_request",
+      type: "object",
+      body: [
+        { name: "name", type: "string", required: true, description: "Agent name" },
+        { name: "systemPrompt", type: "string", required: true, description: "System prompt for the agent" },
+        { name: "model", type: "string", required: true, description: "LLM model identifier" },
+      ],
+    },
+    response_format: {
+      name: "create_agent_response",
+      type: "object",
+      body: [
+        { name: "id", type: "string", description: "Created agent ID" },
+        { name: "name", type: "string", description: "Agent name" },
+        { name: "createdAt", type: "number", description: "Creation timestamp" },
+      ],
+    },
   },
   async (req) => {
     const authErr = authGuard(req);
@@ -332,12 +356,16 @@ registerFunction(
     id: "api::health",
     description: "Health check endpoint",
     metadata: { category: "api" },
-    response_format: [
-      { name: "status", type: "string", description: "Health status" },
-      { name: "version", type: "string", description: "Application version" },
-      { name: "workers", type: "number", description: "Active worker count" },
-      { name: "uptime", type: "number", description: "Process uptime in seconds" },
-    ],
+    response_format: {
+      name: "health_response",
+      type: "object",
+      body: [
+        { name: "status", type: "string", description: "Health status" },
+        { name: "version", type: "string", description: "Application version" },
+        { name: "workers", type: "number", description: "Active worker count" },
+        { name: "uptime", type: "number", description: "Process uptime in seconds" },
+      ],
+    },
   },
   async (req: any) => {
     if (shutdownManager.isShuttingDown()) {

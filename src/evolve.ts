@@ -774,7 +774,9 @@ async function reloadEvolvedFunctions() {
   }
 }
 
-if (process.env.NODE_ENV !== "test" && typeof globalThis.vitest === "undefined") {
+const testGlobals = globalThis as typeof globalThis & { vitest?: unknown };
+
+if (process.env.NODE_ENV !== "test" && typeof testGlobals.vitest === "undefined") {
   setTimeout(() => {
     reloadEvolvedFunctions().catch(() => {});
   }, 2000);

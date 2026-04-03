@@ -53,6 +53,11 @@ interface Reaction {
   attempts: number;
 }
 
+type StoredReaction = {
+  key?: string;
+  value: Reaction;
+};
+
 registerFunction(
   {
     id: "lifecycle::transition",
@@ -119,7 +124,7 @@ registerFunction(
     });
 
     const [agentReactions, globalReactions] = await Promise.all([
-      safeCall(
+      safeCall<StoredReaction[]>(
         () =>
           trigger({
             function_id: "state::list",
@@ -128,7 +133,7 @@ registerFunction(
         [],
         { operation: "list_agent_reactions" },
       ),
-      safeCall(
+      safeCall<StoredReaction[]>(
         () =>
           trigger({
             function_id: "state::list",

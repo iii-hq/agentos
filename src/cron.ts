@@ -16,10 +16,10 @@ registerFunction(
     metadata: { category: "cron" },
   },
   async () => {
-    const agents: any[] = await trigger({
+    const agents = (await trigger({
       function_id: "state::list",
       payload: { scope: "agents" },
-    }).catch(() => []);
+    }).catch(() => [])) as any[];
     const cutoff = Date.now() - 24 * 60 * 60 * 1000;
     let cleaned = 0;
 
@@ -27,10 +27,10 @@ registerFunction(
       const agentId = agent.key || agent.id;
       if (!agentId) continue;
 
-      const sessions: any[] = await trigger({
+      const sessions = (await trigger({
         function_id: "state::list",
         payload: { scope: `sessions:${agentId}` },
-      }).catch(() => []);
+      }).catch(() => [])) as any[];
 
       for (const session of sessions) {
         const lastActive = session.value?.lastActiveAt || session.value?.createdAt || 0;
@@ -62,10 +62,10 @@ registerFunction(
     }).catch(() => null);
 
     if (costs) {
-      const metering: any[] = await trigger({
+      const metering = (await trigger({
         function_id: "state::list",
         payload: { scope: "metering" },
-      }).catch(() => []);
+      }).catch(() => [])) as any[];
 
       let totalTokens = 0;
       for (const entry of metering) {
@@ -96,10 +96,10 @@ registerFunction(
     metadata: { category: "cron" },
   },
   async () => {
-    const rates: any[] = await trigger({
+    const rates = (await trigger({
       function_id: "state::list",
       payload: { scope: "rates" },
-    }).catch(() => []);
+    }).catch(() => [])) as any[];
     let reset = 0;
 
     for (const rate of rates) {

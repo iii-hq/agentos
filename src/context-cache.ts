@@ -105,10 +105,10 @@ registerFunction(
       return { cleared: 1 };
     }
 
-    const entries: any[] = await trigger({
+    const entries = (await trigger({
       function_id: "state::list",
       payload: { scope },
-    }).catch(() => []);
+    }).catch(() => [])) as any[];
 
     let cleared = 0;
     for (const entry of entries || []) {
