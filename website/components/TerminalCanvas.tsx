@@ -57,7 +57,7 @@ feedback::promote \u2192 doubler_v2 \u2192 production \u2713`,
 \u2502 Hashline edits   \u2502    \u2713     \u2502    \u2717     \u2502    \u2717     \u2502
 \u2502 LSP tools        \u2502    \u2713     \u2502    \u2717     \u2502    \u2717     \u2502
 \u2514\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2534\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2534\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2534\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2518`,
-  install: `curl -fsSL https://raw.githubusercontent.com/iii-hq/agentos/main/scripts/install.sh | sh
+  install: `curl -fsSL .../install.sh | sh
 agentos start
 Two commands. Zero config. 1,947 functions.`,
   mcp: `Claude Code integration:
@@ -102,9 +102,7 @@ Try: status, stats, evolve, compare, install, features`,
 };
 
 const CMD_NAMES = Object.keys(SHELL_COMMANDS);
-const FONT_SIZE = window.innerWidth < 480 ? 10 : window.innerWidth < 768 ? 11 : 13;
-const FONT = `${FONT_SIZE}px "IBM Plex Mono", ui-monospace, "Courier New", monospace`;
-const LH = Math.round(FONT_SIZE * 1.55);
+
 const BASE_PL = 24;
 const PT = 48;
 const MAX_CONTENT_W = 900;
@@ -116,10 +114,94 @@ type Seg = { t: string; c: string };
 type CLine = Seg[];
 type Glyph = { char: string; bx: number; by: number; color: string; dx: number; dy: number; vx: number; vy: number };
 
+function getFontSize(): number {
+  if (typeof window === "undefined") return 13;
+  const w = window.innerWidth;
+  if (w < 380) return 9;
+  if (w < 480) return 10;
+  if (w < 768) return 11;
+  return 13;
+}
+
+function getFont(size: number): string {
+  return `${size}px "IBM Plex Mono", ui-monospace, "Courier New", monospace`;
+}
+
+function getLineHeight(size: number): number {
+  return Math.round(size * 1.55);
+}
+
 function L(t: string, c = C.fg): CLine { return [{ t, c }]; }
 function M(segs: Seg[]): CLine { return segs; }
 function S(t: string, c: string): Seg { return { t, c }; }
 function textLines(text: string, c: string): CLine[] { return text.split("\n").map(l => L(l, c)); }
+
+function buildMobileContent(): CLine[] {
+  const r: CLine[] = [];
+  const push = (...ls: CLine[]) => r.push(...ls);
+  const blank = () => r.push(L(""));
+
+  push(L("  AgentOS", C.yellow));
+  push(L("  The agent OS that evolves itself.", C.white));
+  push(M([S("  agentsos.sh \u00b7 Apache-2.0", C.dim)]));
+  blank();
+
+  const stats: [string, string][] = [
+    ["Functions", "1,947"], ["Tests", "1,789"],
+    ["Workers", "57"], ["Rust Crates", "18"],
+    ["LLM Providers", "25"], ["Channels", "40"],
+    ["Security", "18"], ["Agents", "45"],
+  ];
+  for (const [label, val] of stats) {
+    push(M([S(`  ${label.padEnd(14)}`, C.dim), S(val, C.yellow)]));
+  }
+  blank();
+
+  push(L("  Three primitives:", C.white));
+  blank();
+  push(M([S("  Worker   ", C.yellow), S("connects", C.dim)]));
+  push(M([S("  Function ", C.yellow), S("executes", C.dim)]));
+  push(M([S("  Trigger  ", C.yellow), S("activates", C.dim)]));
+  blank();
+
+  push(L("\u2500\u2500 What makes this different \u2500\u2500", C.dim));
+  blank();
+  const feats: [string, string][] = [
+    ["Self-Evolving", "Agents write and improve their own code"],
+    ["Forge Engine", "Trajectory learning, anti-forgetting"],
+    ["Accord", "Raft, Byzantine, Gossip consensus"],
+    ["Recall Mesh", "Vector memory with MMR diversity"],
+    ["Sentinel", "26 lifecycle hooks with abort gates"],
+    ["25 LLMs", "Anthropic, OpenAI, Google, Ollama"],
+    ["40 Channels", "Slack, Discord, WhatsApp + more"],
+  ];
+  for (const [title, desc] of feats) {
+    push(M([S("  \u25ba ", C.yellow), S(title, C.white)]));
+    push(L("    " + desc, C.dim));
+  }
+  blank();
+
+  push(L("\u2500\u2500 Architecture \u2500\u2500", C.dim));
+  blank();
+  push(M([S("  Rust ", C.yellow), S("18 crates", C.dim)]));
+  push(M([S("  TypeScript ", C.cyan), S("57 workers", C.dim)]));
+  push(M([S("  Python ", C.green), S("1 worker", C.dim)]));
+  blank();
+
+  push(L("\u2500\u2500 Install \u2500\u2500", C.dim));
+  blank();
+  push(M([S("  $ ", C.green), S("curl -fsSL .../install.sh | sh", C.fg)]));
+  push(M([S("  $ ", C.green), S("agentos start", C.fg)]));
+  blank();
+  push(L("  Claude Code:", C.dim));
+  push(M([S("  $ ", C.green), S("claude mcp add agentos \\", C.fg)]));
+  push(L("      -- npx agentos mcp", C.fg));
+  blank();
+  push(L("  Type 'help' for commands.", C.dim));
+  blank();
+
+  return r;
+}
 
 function buildContent(): CLine[] {
   const r: CLine[] = [];
@@ -207,17 +289,18 @@ function buildContent(): CLine[] {
   return r;
 }
 
-function measureCW(): number {
+function measureCW(font: string): number {
   try {
     const cv = document.createElement("canvas");
     const cx = cv.getContext("2d");
     if (!cx) return 7.8;
-    cx.font = FONT;
+    cx.font = font;
     return cx.measureText("M").width;
   } catch { return 7.8; }
 }
 
 function getPL(canvasW: number): number {
+  if (canvasW < 380) return 4;
   if (canvasW < 480) return 8;
   if (canvasW < 768) return 12;
   if (canvasW > MAX_CONTENT_W + BASE_PL * 2) {
@@ -226,13 +309,13 @@ function getPL(canvasW: number): number {
   return BASE_PL;
 }
 
-function makeGlyphs(content: CLine[], cw: number, pl: number): Glyph[] {
+function makeGlyphs(content: CLine[], cw: number, pl: number, lh: number): Glyph[] {
   const gs: Glyph[] = [];
   for (let r = 0; r < content.length; r++) {
     let col = 0;
     for (const seg of content[r]) {
       for (let i = 0; i < seg.t.length; i++) {
-        gs.push({ char: seg.t[i], bx: pl + col * cw, by: PT + r * LH, color: seg.c, dx: 0, dy: 0, vx: 0, vy: 0 });
+        gs.push({ char: seg.t[i], bx: pl + col * cw, by: PT + r * lh, color: seg.c, dx: 0, dy: 0, vx: 0, vy: 0 });
         col++;
       }
     }
@@ -254,30 +337,53 @@ export default function TerminalCanvas() {
   const content = useRef<CLine[]>([]);
   const rows = useRef(0);
   const anim = useRef(0);
-
   const pl = useRef(BASE_PL);
+  const fontSize = useRef(13);
+  const lineHeight = useRef(20);
+  const font = useRef(getFont(13));
+  const touch = useRef({ startY: 0, lastY: 0, active: false });
+
+  const recalcSizing = useCallback(() => {
+    fontSize.current = getFontSize();
+    lineHeight.current = getLineHeight(fontSize.current);
+    font.current = getFont(fontSize.current);
+    cw.current = measureCW(font.current);
+  }, []);
 
   const rebuild = useCallback(() => {
     const cv = canvasRef.current;
     const w = cv ? cv.width / (window.devicePixelRatio || 1) : window.innerWidth;
     pl.current = getPL(w);
-    glyphs.current = makeGlyphs(content.current, cw.current, pl.current);
+    const isMobile = w < 480;
+    if (content.current.length === 0 || isMobile !== content.current._mobile) {
+      content.current = isMobile ? buildMobileContent() : buildContent();
+      (content.current as any)._mobile = isMobile;
+    }
+    glyphs.current = makeGlyphs(content.current, cw.current, pl.current, lineHeight.current);
     rows.current = content.current.length;
   }, []);
 
   const autoScroll = useCallback(() => {
     const cv = canvasRef.current;
     if (!cv) return;
-    const totalH = PT + rows.current * LH + FOOT_H + 40;
+    const totalH = PT + rows.current * lineHeight.current + FOOT_H + 40;
     const viewH = cv.height / (window.devicePixelRatio || 1);
     if (totalH > viewH) scrollY.current = totalH - viewH;
+  }, []);
+
+  const clampScroll = useCallback((viewH: number) => {
+    const totalH = PT + rows.current * lineHeight.current + FOOT_H + 40;
+    const max = Math.max(0, totalH - viewH);
+    scrollY.current = Math.min(max, Math.max(0, scrollY.current));
   }, []);
 
   const runCmd = useCallback((cmd: string) => {
     const t = cmd.trim().toLowerCase();
     if (!t) return;
     if (t === "clear") {
-      content.current = buildContent();
+      const isMobile = window.innerWidth < 480;
+      content.current = isMobile ? buildMobileContent() : buildContent();
+      (content.current as any)._mobile = isMobile;
       rebuild();
       scrollY.current = 0;
       setCmdHist(p => [t, ...p]);
@@ -291,6 +397,7 @@ export default function TerminalCanvas() {
       L(""),
     ];
     content.current = [...content.current, ...newLines];
+    (content.current as any)._mobile = window.innerWidth < 480;
     rebuild();
     autoScroll();
     setCmdHist(p => [t, ...p]);
@@ -301,13 +408,15 @@ export default function TerminalCanvas() {
   runCmdRef.current = runCmd;
 
   useEffect(() => {
-    cw.current = measureCW();
-    content.current = buildContent();
+    recalcSizing();
+    const isMobile = window.innerWidth < 480;
+    content.current = isMobile ? buildMobileContent() : buildContent();
+    (content.current as any)._mobile = isMobile;
     pl.current = getPL(window.innerWidth);
-    glyphs.current = makeGlyphs(content.current, cw.current, pl.current);
+    glyphs.current = makeGlyphs(content.current, cw.current, pl.current, lineHeight.current);
     rows.current = content.current.length;
     setTimeout(() => runCmdRef.current("hello"), 100);
-  }, []);
+  }, [recalcSizing]);
 
   useEffect(() => {
     const cv = canvasRef.current;
@@ -321,6 +430,13 @@ export default function TerminalCanvas() {
       cv.width = w * dpr; cv.height = h * dpr;
       cv.style.width = w + "px"; cv.style.height = h + "px";
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      recalcSizing();
+      const isMobile = w < 480;
+      const wasMobile = (content.current as any)._mobile;
+      if (isMobile !== wasMobile) {
+        content.current = isMobile ? buildMobileContent() : buildContent();
+        (content.current as any)._mobile = isMobile;
+      }
       rebuild();
     };
     resize();
@@ -331,24 +447,46 @@ export default function TerminalCanvas() {
 
     const onWheel = (e: WheelEvent) => {
       e.preventDefault();
-      const totalH = PT + rows.current * LH + FOOT_H + 40;
       const viewH = cv.height / (window.devicePixelRatio || 1);
-      const max = Math.max(0, totalH - viewH);
-      scrollY.current = Math.min(max, Math.max(0, scrollY.current + e.deltaY));
+      scrollY.current += e.deltaY;
+      clampScroll(viewH);
     };
     cv.addEventListener("wheel", onWheel, { passive: false });
 
+    const onTouchStart = (e: TouchEvent) => {
+      if (e.touches.length === 1) {
+        touch.current = { startY: e.touches[0].clientY, lastY: e.touches[0].clientY, active: true };
+      }
+    };
+    const onTouchMove = (e: TouchEvent) => {
+      if (!touch.current.active || e.touches.length !== 1) return;
+      e.preventDefault();
+      const y = e.touches[0].clientY;
+      const delta = touch.current.lastY - y;
+      touch.current.lastY = y;
+      const viewH = cv.height / (window.devicePixelRatio || 1);
+      scrollY.current += delta;
+      clampScroll(viewH);
+    };
+    const onTouchEnd = () => { touch.current.active = false; };
+
+    cv.addEventListener("touchstart", onTouchStart, { passive: true });
+    cv.addEventListener("touchmove", onTouchMove, { passive: false });
+    cv.addEventListener("touchend", onTouchEnd, { passive: true });
+
     const R_RAD = 80, R_FORCE = 12;
-    const isMobile = () => window.innerWidth < 768;
+    const checkMobile = () => window.innerWidth < 768;
 
     const frame = () => {
       const w = cv.width / (window.devicePixelRatio || 1);
       const h = cv.height / (window.devicePixelRatio || 1);
       const time = performance.now() / 1000;
       const sy = scrollY.current;
-      const mobile = isMobile();
+      const mobile = checkMobile();
       const mx = mobile ? -9999 : mouse.current.x;
       const my = mobile ? -9999 : mouse.current.y + sy;
+      const lh = lineHeight.current;
+      const currentFont = font.current;
 
       ctx.clearRect(0, 0, w, h);
 
@@ -358,22 +496,27 @@ export default function TerminalCanvas() {
       ctx.beginPath(); ctx.moveTo(0, TITLE_H); ctx.lineTo(w, TITLE_H); ctx.stroke();
 
       const dots = [C.red, C.yellow, C.green];
+      const dotR = mobile ? 4 : 5;
+      const dotX = mobile ? 12 : 16;
+      const dotGap = mobile ? 14 : 18;
       for (let i = 0; i < 3; i++) {
-        ctx.beginPath(); ctx.arc(16 + i * 18, TITLE_H / 2, 5, 0, Math.PI * 2);
+        ctx.beginPath(); ctx.arc(dotX + i * dotGap, TITLE_H / 2, dotR, 0, Math.PI * 2);
         ctx.fillStyle = dots[i]; ctx.fill();
       }
-      ctx.font = '12px "IBM Plex Mono", monospace';
+      const titleFontSize = mobile ? 10 : 12;
+      ctx.font = `${titleFontSize}px "IBM Plex Mono", monospace`;
       ctx.fillStyle = C.dim;
-      ctx.fillText("AgentOS v0.1.0 \u2014 agentsos.sh", 80, TITLE_H / 2 + 4);
+      const titleText = mobile ? "agentsos.sh" : "AgentOS v0.1.0 \u2014 agentsos.sh";
+      ctx.fillText(titleText, dotX + 3 * dotGap + 8, TITLE_H / 2 + 4);
 
       ctx.save();
       ctx.beginPath(); ctx.rect(0, TITLE_H, w, h - TITLE_H - FOOT_H); ctx.clip();
 
       const gs = glyphs.current;
-      ctx.font = FONT;
+      ctx.font = currentFont;
       for (let i = 0; i < gs.length; i++) {
         const g = gs[i];
-        const wAmp = mobile ? 0.3 : 1.0;
+        const wAmp = mobile ? 0.15 : 1.0;
         const wvx = Math.sin(time * 0.5 + g.by * 0.02) * 1.2 * wAmp;
         const wvy = Math.cos(time * 0.7 + g.bx * 0.015) * 0.8 * wAmp;
 
@@ -392,7 +535,7 @@ export default function TerminalCanvas() {
 
         if (g.char === " ") continue;
         const sx = g.bx + g.dx, sy2 = g.by + g.dy - sy;
-        if (sy2 < TITLE_H - LH || sy2 > h - FOOT_H + LH) continue;
+        if (sy2 < TITLE_H - lh || sy2 > h - FOOT_H + lh) continue;
         ctx.fillStyle = g.color;
         ctx.fillText(g.char, sx, sy2);
       }
@@ -402,9 +545,10 @@ export default function TerminalCanvas() {
       ctx.fillRect(0, h - FOOT_H, w, FOOT_H);
       ctx.strokeStyle = C.border;
       ctx.beginPath(); ctx.moveTo(0, h - FOOT_H); ctx.lineTo(w, h - FOOT_H); ctx.stroke();
-      ctx.font = '11px "IBM Plex Mono", monospace';
+      const footFontSize = mobile ? 9 : 11;
+      ctx.font = `${footFontSize}px "IBM Plex Mono", monospace`;
       ctx.fillStyle = C.dim;
-      const ft = "Apache-2.0  \u00b7  github.com/iii-hq/agentos  \u00b7  agentsos.sh";
+      const ft = mobile ? "github.com/iii-hq/agentos" : "Apache-2.0  \u00b7  github.com/iii-hq/agentos  \u00b7  agentsos.sh";
       ctx.fillText(ft, (w - ctx.measureText(ft).width) / 2, h - FOOT_H / 2 + 4);
 
       anim.current = requestAnimationFrame(frame);
@@ -416,8 +560,11 @@ export default function TerminalCanvas() {
       window.removeEventListener("resize", resize);
       cv.removeEventListener("mousemove", onMouse);
       cv.removeEventListener("wheel", onWheel);
+      cv.removeEventListener("touchstart", onTouchStart);
+      cv.removeEventListener("touchmove", onTouchMove);
+      cv.removeEventListener("touchend", onTouchEnd);
     };
-  }, []);
+  }, [rebuild, recalcSizing, clampScroll]);
 
   const handleKey = (e: React.KeyboardEvent) => {
     if (e.key === "Enter") { runCmd(input); setInput(""); setGhost(""); }
@@ -432,18 +579,21 @@ export default function TerminalCanvas() {
     else setGhost("");
   };
 
+  const inputFontSize = typeof window !== "undefined" && window.innerWidth < 480 ? 11 : 13;
+  const inputPl = typeof window !== "undefined" && window.innerWidth < 480 ? "8px" : `max(${BASE_PL}px, calc((100vw - ${MAX_CONTENT_W}px) / 2))`;
+
   return (
-    <div style={{ position: "relative", width: "100vw", height: "100vh", background: C.bg, overflow: "hidden" }}>
-      <canvas ref={canvasRef} style={{ position: "absolute", inset: 0, cursor: "default" }} onClick={() => inputRef.current?.focus()} />
-      <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, height: FOOT_H + 36, display: "flex", alignItems: "flex-start", paddingTop: 4, paddingLeft: `max(${BASE_PL}px, calc((100vw - ${MAX_CONTENT_W}px) / 2))`, paddingRight: `max(${BASE_PL}px, calc((100vw - ${MAX_CONTENT_W}px) / 2))`, pointerEvents: "none" }}>
-        <span style={{ color: C.green, fontFamily: '"IBM Plex Mono", monospace', fontSize: 13, fontWeight: 700, marginRight: 8, pointerEvents: "none", userSelect: "none" }}>$</span>
+    <div style={{ position: "relative", width: "100vw", height: "100dvh", background: C.bg, overflow: "hidden" }}>
+      <canvas ref={canvasRef} style={{ position: "absolute", inset: 0, cursor: "default", touchAction: "none" }} onClick={() => inputRef.current?.focus()} />
+      <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, height: FOOT_H + 36, display: "flex", alignItems: "flex-start", paddingTop: 4, paddingLeft: inputPl, paddingRight: inputPl, pointerEvents: "none", zIndex: 10 }}>
+        <span style={{ color: C.green, fontFamily: '"IBM Plex Mono", monospace', fontSize: inputFontSize, fontWeight: 700, marginRight: 8, pointerEvents: "none", userSelect: "none" }}>$</span>
         <div style={{ position: "relative", flex: 1 }}>
           {ghost && input && (
-            <span style={{ position: "absolute", left: 0, top: 0, color: C.dim, pointerEvents: "none", whiteSpace: "pre", fontFamily: '"IBM Plex Mono", monospace', fontSize: 13 }}>
+            <span style={{ position: "absolute", left: 0, top: 0, color: C.dim, pointerEvents: "none", whiteSpace: "pre", fontFamily: '"IBM Plex Mono", monospace', fontSize: inputFontSize }}>
               <span style={{ visibility: "hidden" }}>{input}</span>{ghost.slice(input.length)}
             </span>
           )}
-          <input ref={inputRef} type="text" style={{ background: "transparent", border: "none", color: C.fg, fontFamily: '"IBM Plex Mono", monospace', fontSize: 13, outline: "none", width: "100%", caretColor: C.green, padding: 0, pointerEvents: "auto" }} value={input} onChange={e => handleInput(e.target.value)} onKeyDown={handleKey} spellCheck={false} autoComplete="off" autoCapitalize="off" autoFocus />
+          <input ref={inputRef} type="text" style={{ background: "transparent", border: "none", color: C.fg, fontFamily: '"IBM Plex Mono", monospace', fontSize: inputFontSize, outline: "none", width: "100%", caretColor: C.green, padding: 0, pointerEvents: "auto" }} value={input} onChange={e => handleInput(e.target.value)} onKeyDown={handleKey} spellCheck={false} autoComplete="off" autoCapitalize="off" autoFocus />
         </div>
       </div>
     </div>
