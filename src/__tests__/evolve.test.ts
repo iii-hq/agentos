@@ -158,6 +158,32 @@ describe("evolve::generate", () => {
       call("evolve::generate", authReq({ goal: "test" })),
     ).rejects.toThrow("goal, name, and agentId are required");
   });
+
+  it("preserves candidate class and rollout metadata on generated records", async () => {
+    const result = await call(
+      "evolve::generate",
+      authReq({
+        goal: "Improve routing",
+        name: "router_candidate",
+        agentId: "agent-1",
+        metadata: {
+          candidateClass: "routing",
+          riskLabel: "medium",
+          rolloutState: "draft",
+          rolloutHint: "shadow",
+          sourceObservationId: "obs-1",
+        },
+      }),
+    );
+
+    expect(result.metadata).toMatchObject({
+      candidateClass: "routing",
+      riskLabel: "medium",
+      rolloutState: "draft",
+      rolloutHint: "shadow",
+      sourceObservationId: "obs-1",
+    });
+  });
 });
 
 describe("evolve::register", () => {
@@ -217,6 +243,14 @@ describe("evolve::register", () => {
     );
     expect(result.registered).toBe(false);
     expect(result.reason).toContain("Security scan failed");
+    expect(getScope("evolved_functions").get("evolved::bad_v1")).toEqual(
+      expect.objectContaining({
+        status: "killed",
+        metadata: expect.objectContaining({
+          rolloutState: "killed",
+        }),
+      }),
+    );
 
     mockTrigger.mockImplementation(originalImpl);
   });
@@ -240,6 +274,71 @@ describe("evolve::register", () => {
       call("evolve::register", authReq({})),
     ).rejects.toThrow("functionId is required");
   });
+
+  it("preserves BeeOS candidate metadata through registration while advancing rollout state", async () => {
+    seedKv("evolved_functions", "evolved::router_v1", {
+      functionId: "evolved::router_v1",
+      code: "async (input) => { return input; }",
+      description: "routing candidate",
+      authorAgentId: "agent-1",
+      version: 1,
+      status: "draft",
+      securityReport: { scanSafe: false, sandboxPassed: false, findingCount: 0 },
+      metadata: {
+        candidateClass: "routing",
+        riskLabel: "medium",
+        rolloutState: "draft",
+        rolloutHint: "shadow",
+      },
+    });
+
+    await call(
+      "evolve::register",
+      authReq({ functionId: "evolved::router_v1" }),
+    );
+
+    expect(getScope("evolved_functions").get("evolved::router_v1")).toEqual(
+      expect.objectContaining({
+        status: "staging",
+        metadata: expect.objectContaining({
+          candidateClass: "routing",
+          riskLabel: "medium",
+          rolloutState: "staging",
+          rolloutHint: "shadow",
+        }),
+      }),
+    );
+  });
+
+  it("marks rollout metadata killed when sandbox validation fails", async () => {
+    seedKv("evolved_functions", "evolved::sandbox_bad_v1", {
+      functionId: "evolved::sandbox_bad_v1",
+      code: "async () => { throw new Error('boom'); }",
+      description: "sandbox fail",
+      authorAgentId: "agent-1",
+      version: 1,
+      status: "draft",
+      securityReport: { scanSafe: false, sandboxPassed: false, findingCount: 0 },
+      metadata: {
+        rolloutState: "draft",
+      },
+    });
+
+    const result = await call(
+      "evolve::register",
+      authReq({ functionId: "evolved::sandbox_bad_v1" }),
+    );
+
+    expect(result.registered).toBe(false);
+    expect(getScope("evolved_functions").get("evolved::sandbox_bad_v1")).toEqual(
+      expect.objectContaining({
+        status: "killed",
+        metadata: expect.objectContaining({
+          rolloutState: "killed",
+        }),
+      }),
+    );
+  });
 });
 
 describe("evolve::unregister", () => {
@@ -259,6 +358,7 @@ describe("evolve::unregister", () => {
 
     const stored: any = getScope("evolved_functions").get("evolved::rm_v1");
     expect(stored.status).toBe("killed");
+    expect(stored.metadata.rolloutState).toBe("killed");
   });
 
   it("rejects non-author agents", async () => {

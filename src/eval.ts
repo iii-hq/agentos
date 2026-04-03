@@ -60,6 +60,91 @@ function computeOverall(scores: EvalScores): number {
   );
 }
 
+async function runSuiteAggregate(functionId: string, testCases: EvalSuite["testCases"]) {
+  let totalCorrectness = 0;
+  let totalWeight = 0;
+  let totalLatency = 0;
+  let totalCost = 0;
+  let minSafety = 1.0;
+  let passCount = 0;
+
+  for (const tc of testCases) {
+    const weight = tc.weight ?? 1;
+    const start = performance.now();
+    let output: unknown;
+    try {
+      output = await trigger({ function_id: functionId, payload: tc.input });
+    } catch (err: any) {
+      output = { error: err.message };
+    }
+    const latency_ms = Math.round(performance.now() - start);
+
+    const scorerType = tc.scorer || "exact_match";
+    const correctness =
+      tc.expected !== undefined
+        ? await scoreOutput(output, tc.expected, tc.input, scorerType, tc.scorerFunctionId)
+        : null;
+    const safety = await checkSafety(output);
+    const scores: EvalScores = {
+      correctness,
+      latency_ms,
+      cost_tokens: 0,
+      safety,
+      overall: 0,
+    };
+    scores.overall = computeOverall(scores);
+
+    if (correctness !== null) {
+      totalCorrectness += correctness * weight;
+      totalWeight += weight;
+      if (correctness >= 0.5) passCount++;
+    }
+    totalLatency += latency_ms;
+    totalCost += scores.cost_tokens;
+    if (safety < minSafety) minSafety = safety;
+  }
+
+  return {
+    correctness: totalWeight > 0 ? totalCorrectness / totalWeight : null,
+    latency_ms: testCases.length > 0 ? Math.round(totalLatency / testCases.length) : 0,
+    cost_tokens: totalCost,
+    safety: minSafety,
+    passRate: testCases.length > 0 ? passCount / testCases.length : 0,
+    testCount: testCases.length,
+  };
+}
+
+function aggregateFromResults(results: EvalResult[], testCases: EvalSuite["testCases"]) {
+  let totalCorrectness = 0;
+  let totalWeight = 0;
+  let totalLatency = 0;
+  let totalCost = 0;
+  let minSafety = 1.0;
+  let passCount = 0;
+
+  for (const [index, result] of results.entries()) {
+    const weight = testCases[index]?.weight ?? 1;
+    totalLatency += result.scores.latency_ms;
+    totalCost += result.scores.cost_tokens;
+    minSafety = Math.min(minSafety, result.scores.safety);
+
+    if (result.scores.correctness !== null) {
+      totalCorrectness += result.scores.correctness * weight;
+      totalWeight += weight;
+      if (result.scores.correctness >= 0.5) passCount++;
+    }
+  }
+
+  return {
+    correctness: totalWeight > 0 ? totalCorrectness / totalWeight : null,
+    latency_ms: results.length > 0 ? Math.round(totalLatency / results.length) : 0,
+    cost_tokens: totalCost,
+    safety: results.length > 0 ? minSafety : 1.0,
+    passRate: testCases.length > 0 ? passCount / testCases.length : 0,
+    testCount: testCases.length,
+  };
+}
+
 async function scoreExactMatch(
   output: unknown,
   expected: unknown,
@@ -325,12 +410,6 @@ registerFunction(
     }
 
     const results: EvalResult[] = [];
-    let totalCorrectness = 0;
-    let totalWeight = 0;
-    let totalLatency = 0;
-    let totalCost = 0;
-    let minSafety = 1.0;
-    let passCount = 0;
 
     for (const tc of suite.testCases) {
       const weight = tc.weight ?? 1;
@@ -365,15 +444,6 @@ registerFunction(
       };
       scores.overall = computeOverall(scores);
 
-      if (correctness !== null) {
-        totalCorrectness += correctness * weight;
-        totalWeight += weight;
-        if (correctness >= 0.5) passCount++;
-      }
-      totalLatency += latency_ms;
-      totalCost += scores.cost_tokens;
-      if (safety < minSafety) minSafety = safety;
-
       const evalId = generateId();
       const result: EvalResult = {
         evalId,
@@ -394,23 +464,11 @@ registerFunction(
       } });
     }
 
-    const avgCorrectness =
-      totalWeight > 0 ? totalCorrectness / totalWeight : null;
-    const avgLatency =
-      results.length > 0 ? Math.round(totalLatency / results.length) : 0;
-    const passRate =
-      suite.testCases.length > 0
-        ? passCount / suite.testCases.length
-        : 0;
-
-    const aggregate = {
-      correctness: avgCorrectness,
-      latency_ms: avgLatency,
-      cost_tokens: totalCost,
-      safety: minSafety,
-      passRate,
-      testCount: suite.testCases.length,
-    };
+    const aggregate = aggregateFromResults(results, suite.testCases);
+    const suiteMeta = suite.metadata ?? {};
+    const baselineAggregate = suiteMeta.baselineFunctionId
+      ? await runSuiteAggregate(suiteMeta.baselineFunctionId, suite.testCases)
+      : null;
 
     recordMetric(
       "eval_suite_run",
@@ -423,7 +481,17 @@ registerFunction(
       functionId: suite.functionId,
     });
 
-    return { suiteId, functionId: suite.functionId, aggregate, results };
+    return {
+      suiteId,
+      functionId: suite.functionId,
+      aggregate,
+      metadata: {
+        candidateClass: suiteMeta.candidateClass ?? null,
+        baselineFunctionId: suiteMeta.baselineFunctionId ?? null,
+        baselineAggregate,
+      },
+      results,
+    };
   },
 );
 
@@ -525,7 +593,7 @@ registerFunction(
   },
   async (req: any) => {
     requireAuth(req);
-    const { name, functionId, testCases, suiteId: customId } =
+    const { name, functionId, testCases, suiteId: customId, metadata } =
       req.body || req;
     if (!name || !functionId || !testCases?.length) {
       throw Object.assign(
@@ -539,6 +607,7 @@ registerFunction(
       suiteId,
       name,
       functionId,
+      metadata,
       testCases,
       createdAt: Date.now(),
     };

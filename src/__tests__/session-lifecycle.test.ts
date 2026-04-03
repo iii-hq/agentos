@@ -43,13 +43,14 @@ const mockTrigger = vi.fn(async (fnId: string, data?: any): Promise<any> => {
   return null;
 });
 const mockTriggerVoid = vi.fn();
+const mockRegisterTrigger = vi.fn();
 
 vi.mock("iii-sdk", () => ({
   registerWorker: () => ({
     registerFunction: (config: any, handler: Function) => {
       handlers[config.id] = handler;
     },
-    registerTrigger: vi.fn(),
+    registerTrigger: mockRegisterTrigger,
     trigger: (req: any) =>
       req.action
         ? mockTriggerVoid(req.function_id, req.payload)
@@ -215,6 +216,18 @@ describe("lifecycle::add_reaction", () => {
     expect(result.registered).toBe(true);
     const stored = getScope("lifecycle_reactions:a1").get(result.id) as any;
     expect(stored.escalateAfter).toBe(1);
+  });
+});
+
+describe("lifecycle trigger registration", () => {
+  it("registers periodic lifecycle checks with six-field cron", () => {
+    expect(mockRegisterTrigger).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "cron",
+        function_id: "lifecycle::check_all",
+        config: { expression: "0 */2 * * * *" },
+      }),
+    );
   });
 });
 

@@ -235,8 +235,15 @@ impl App {
     }
 
     fn client() -> reqwest::Client {
+        let mut headers = reqwest::header::HeaderMap::new();
+        if let Ok(key) = std::env::var("AGENTOS_API_KEY") {
+            if let Ok(val) = reqwest::header::HeaderValue::from_str(&format!("Bearer {}", key)) {
+                headers.insert(reqwest::header::AUTHORIZATION, val);
+            }
+        }
         reqwest::Client::builder()
             .timeout(std::time::Duration::from_secs(5))
+            .default_headers(headers)
             .build()
             .unwrap_or_default()
     }
@@ -525,7 +532,7 @@ impl App {
         let agent_id = if self.chat_agent.is_empty() {
             self.agents.first()
                 .and_then(|a| a["id"].as_str().or(a["name"].as_str()))
-                .unwrap_or("default")
+                .unwrap_or("brain")
                 .to_string()
         } else {
             self.chat_agent.clone()
@@ -1276,7 +1283,7 @@ fn draw_chat(f: &mut Frame, app: &App, area: Rect) {
     let agent_label = if app.chat_agent.is_empty() {
         app.agents.first()
             .and_then(|a| a["name"].as_str())
-            .unwrap_or("default")
+            .unwrap_or("brain")
     } else {
         &app.chat_agent
     };

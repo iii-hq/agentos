@@ -28,6 +28,13 @@ interface LiveHandle {
 
 const liveHandles = new Map<string, LiveHandle>();
 
+function syncRolloutState(fn: EvolvedFunction) {
+  fn.metadata = {
+    ...fn.metadata,
+    rolloutState: fn.status,
+  };
+}
+
 function truncateResult(value: unknown): unknown {
   try {
     const str = JSON.stringify(value);
@@ -277,7 +284,10 @@ Example: async (input) => { return { result: input.value * 2 }; }`;
       evalScores: null,
       securityReport: { scanSafe: false, sandboxPassed: false, findingCount: 0 },
       parentVersion,
-      metadata: extraMeta || {},
+      metadata: {
+        rolloutState: "draft",
+        ...(extraMeta || {}),
+      },
     };
 
     await trigger({ function_id: "state::set", payload: {
@@ -337,6 +347,7 @@ registerFunction(
 
     if (!scanSafe) {
       fn.status = "killed";
+      syncRolloutState(fn);
       fn.updatedAt = Date.now();
       await trigger({ function_id: "state::set", payload: {
         scope: "evolved_functions",
@@ -359,6 +370,7 @@ registerFunction(
     } catch (err: any) {
       fn.securityReport.sandboxPassed = false;
       fn.status = "killed";
+      syncRolloutState(fn);
       fn.updatedAt = Date.now();
       await trigger({ function_id: "state::set", payload: {
         scope: "evolved_functions",
@@ -374,6 +386,7 @@ registerFunction(
 
     fn.securityReport.sandboxPassed = true;
     fn.status = "staging";
+    syncRolloutState(fn);
     fn.updatedAt = Date.now();
     await trigger({ function_id: "state::set", payload: {
       scope: "evolved_functions",
@@ -436,6 +449,7 @@ registerFunction(
     }
 
     fn.status = "killed";
+    syncRolloutState(fn);
     fn.updatedAt = Date.now();
     await trigger({ function_id: "state::set", payload: {
       scope: "evolved_functions",
@@ -760,7 +774,9 @@ async function reloadEvolvedFunctions() {
   }
 }
 
-if (process.env.NODE_ENV !== "test" && typeof globalThis.vitest === "undefined") {
+const testGlobals = globalThis as typeof globalThis & { vitest?: unknown };
+
+if (process.env.NODE_ENV !== "test" && typeof testGlobals.vitest === "undefined") {
   setTimeout(() => {
     reloadEvolvedFunctions().catch(() => {});
   }, 2000);

@@ -510,3 +510,75 @@ describe("workflow::list", () => {
     expect(result).toHaveLength(2);
   });
 });
+
+describe("workflow runtime controls", () => {
+  it("returns a workflow run by id", async () => {
+    seedKv("workflow_runs", "run-1", {
+      runId: "run-1",
+      workflowId: "wf-1",
+      status: "running",
+      startedAt: 1,
+    });
+
+    const result = await call("workflow::get_run", authReq({ runId: "run-1" }));
+    expect(result).toEqual(expect.objectContaining({
+      runId: "run-1",
+      workflowId: "wf-1",
+      status: "running",
+    }));
+  });
+
+  it("cancels a running workflow before the next step executes", async () => {
+    let releaseStep!: () => void;
+    const pausedStep = new Promise<string>((resolve) => {
+      releaseStep = () => resolve("step-1 complete");
+    });
+
+    const originalImpl = mockTrigger.getMockImplementation()!;
+    mockTrigger.mockImplementation(async (fnId: string, data?: any) => {
+      if (fnId === "pause::fn") return pausedStep;
+      return originalImpl(fnId, data);
+    });
+
+    seedKv("workflows", "cancel-wf", {
+      id: "cancel-wf",
+      name: "Cancelable",
+      steps: [
+        {
+          name: "pause",
+          functionId: "pause::fn",
+          mode: "sequential",
+          timeoutMs: 5000,
+          errorMode: "fail",
+        },
+        {
+          name: "after",
+          functionId: "echo::fn",
+          mode: "sequential",
+          timeoutMs: 5000,
+          errorMode: "fail",
+        },
+      ],
+    });
+
+    const running = call("workflow::run", authReq({
+      workflowId: "cancel-wf",
+      input: "go",
+    }));
+
+    await vi.waitFor(() => {
+      expect([...getScope("workflow_runs").keys()][0]).toBeDefined();
+    });
+    const runId = [...getScope("workflow_runs").keys()][0] as string;
+
+    await call("workflow::cancel", authReq({ runId }));
+    releaseStep();
+
+    await expect(running).rejects.toThrow("Workflow run cancelled");
+    expect(getScope("workflow_runs").get(runId)).toEqual(
+      expect.objectContaining({ status: "cancelled" }),
+    );
+
+    mockTrigger.mockImplementation(originalImpl);
+  });
+});

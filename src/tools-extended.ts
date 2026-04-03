@@ -14,6 +14,7 @@ import { promisify } from "util";
 import { createHash, randomUUID } from "crypto";
 import os from "os";
 import { assertNoSsrf } from "./shared/utils.js";
+import { normalizeCronExpression } from "./shared/cron.js";
 import { safeCall } from "./shared/errors.js";
 
 const execFileAsync = promisify(execFile);
@@ -105,10 +106,12 @@ registerFunction(
       throw new Error("Invalid function ID");
     }
 
+    const normalizedSchedule = normalizeCronExpression(schedule);
+
     registerTrigger({
       type: "cron",
       function_id: functionId,
-      config: { expression: schedule },
+      config: { expression: normalizedSchedule },
     });
 
     await trigger({
@@ -116,10 +119,10 @@ registerFunction(
       payload: {
         scope: "cron_jobs",
         key: name,
-        value: { name, schedule, functionId, payload, createdAt: Date.now() },
+        value: { name, schedule: normalizedSchedule, functionId, payload, createdAt: Date.now() },
       },
     });
-    return { created: true, name, schedule };
+    return { created: true, name, schedule: normalizedSchedule };
   },
 );
 

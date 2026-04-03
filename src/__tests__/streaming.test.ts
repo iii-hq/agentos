@@ -21,6 +21,9 @@ const mockTrigger = vi.fn(async (fnId: string, data?: any): Promise<any> => {
     };
   return null;
 });
+const mockTriggerVoid = vi.fn(
+  (_fnId?: string, _payload?: unknown): void => undefined,
+);
 
 const handlers: Record<string, Function> = {};
 vi.mock("iii-sdk", () => ({

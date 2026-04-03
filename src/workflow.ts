@@ -94,11 +94,12 @@ registerFunction(
     await trigger({ function_id: "state::set", payload: {
       scope: "workflow_runs",
       key: runId,
-      value: { runId, workflowId, status: "running", startedAt: Date.now() },
+      value: { runId, workflowId, status: "running", startedAt: Date.now(), results: [] },
     } });
 
     let i = 0;
     while (i < workflow.steps.length) {
+      await assertRunNotCancelled(runId);
       const step = workflow.steps[i];
       const startMs = Date.now();
 
@@ -253,6 +254,7 @@ registerFunction(
           let retried = false;
           for (let r = 0; r < maxRetries; r++) {
             try {
+              await assertRunNotCancelled(runId);
               const prompt = interpolate(
                 step.promptTemplate || "{{input}}",
                 vars,
@@ -287,6 +289,7 @@ registerFunction(
       i++;
     }
 
+    await assertRunNotCancelled(runId);
     await trigger({ function_id: "state::update", payload: {
       scope: "workflow_runs",
       key: runId,
@@ -298,6 +301,51 @@ registerFunction(
     } });
 
     return { runId, results, vars };
+  },
+);
+
+registerFunction(
+  {
+    id: "workflow::get_run",
+    description: "Get one workflow run by id",
+    metadata: { category: "workflow" },
+  },
+  async (req: any) => {
+    if (req.headers) requireAuth(req);
+    const { runId } = req.body || req;
+    return trigger({ function_id: "state::get", payload: {
+      scope: "workflow_runs",
+      key: runId,
+    } });
+  },
+);
+
+registerFunction(
+  {
+    id: "workflow::cancel",
+    description: "Request cancellation of a workflow run",
+    metadata: { category: "workflow" },
+  },
+  async (req: any) => {
+    if (req.headers) requireAuth(req);
+    const { runId } = req.body || req;
+    const run = await trigger({ function_id: "state::get", payload: {
+      scope: "workflow_runs",
+      key: runId,
+    } }) as any;
+
+    if (!run) throw new Error(`Workflow run ${runId} not found`);
+
+    await trigger({ function_id: "state::update", payload: {
+      scope: "workflow_runs",
+      key: runId,
+      operations: [
+        { type: "set", path: "status", value: "cancel_requested" },
+        { type: "set", path: "cancelRequestedAt", value: Date.now() },
+      ],
+    } });
+
+    return { cancelled: true, runId };
   },
 );
 
@@ -377,4 +425,25 @@ async function markRunFailed(
       { type: "set", path: "results", value: results },
     ],
   } });
+}
+
+async function assertRunNotCancelled(runId: string) {
+  const run = await trigger({ function_id: "state::get", payload: {
+    scope: "workflow_runs",
+    key: runId,
+  } }) as any;
+
+  if (run?.status !== "cancel_requested") return;
+
+  await trigger({ function_id: "state::update", payload: {
+    scope: "workflow_runs",
+    key: runId,
+    operations: [
+      { type: "set", path: "status", value: "cancelled" },
+      { type: "set", path: "cancelledAt", value: Date.now() },
+      { type: "set", path: "results", value: run?.results ?? [] },
+    ],
+  } });
+
+  throw new Error("Workflow run cancelled");
 }

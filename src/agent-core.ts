@@ -866,7 +866,7 @@ registerFunction(
         functionId: "agent::chat",
         errorType: err?.code || err?.name || "unknown",
       });
-      log.error("Chat failed", { agentId, sessionId, duration: chatDuration });
+      log.error("Chat failed", { agentId, sessionId, duration: chatDuration, error: err instanceof Error ? err.message : JSON.stringify(err) });
       throw err;
     } finally {
       clearTimeout(chatTimeoutId!);

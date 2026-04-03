@@ -6,7 +6,7 @@ export function recordMetric(
 ) {
 }
 
-type TriggerVoidFn = (id: string, input: unknown) => void | Promise<void>;
+type TriggerVoidFn = (id: string, input: unknown) => void | Promise<unknown>;
 
 export function createRecordMetric(triggerVoid: TriggerVoidFn) {
   return (name: string, value: number, labels?: Record<string, string | number>, _type?: string) => {

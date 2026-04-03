@@ -18,7 +18,9 @@ interface SwarmConfig {
   maxDurationMs: number;
   consensusThreshold: number;
   createdAt: number;
-  status: "active" | "dissolved";
+  status: "active" | "dissolved" | "cancelled";
+  cancelledAt?: number;
+  cancelReason?: string;
 }
 
 interface SwarmMessage {
@@ -197,6 +199,40 @@ registerFunction(
 
 registerFunction(
   {
+    id: "swarm::status",
+    description: "Get current swarm status and message totals",
+    metadata: { category: "swarm" },
+  },
+  async (req: any) => {
+    if (req.headers) requireAuth(req);
+    const { swarmId } = req.body || req;
+    const safeSwarmId = sanitizeId(swarmId);
+
+    const swarm = (await trigger({ function_id: "state::get", payload: {
+      scope: "swarms",
+      key: safeSwarmId,
+    } }).catch(() => null)) as SwarmConfig | null;
+
+    if (!swarm) throw new Error(`Swarm ${safeSwarmId} not found`);
+
+    const messages = (await trigger({ function_id: "state::list", payload: {
+      scope: `swarm_messages:${safeSwarmId}`,
+    } }).catch(() => [])) as any[];
+
+    return {
+      swarmId: safeSwarmId,
+      status: swarm.status,
+      goal: swarm.goal,
+      agentIds: swarm.agentIds,
+      totalMessages: messages.length,
+      cancelledAt: swarm.cancelledAt,
+      cancelReason: swarm.cancelReason,
+    };
+  },
+);
+
+registerFunction(
+  {
     id: "swarm::consensus",
     description: "Check if a swarm has reached consensus on a proposal",
     metadata: { category: "swarm" },
@@ -307,6 +343,49 @@ registerFunction(
     });
 
     return { dissolved: true, swarmId: safeSwarmId };
+  },
+);
+
+registerFunction(
+  {
+    id: "swarm::cancel",
+    description: "Cancel an active swarm",
+    metadata: { category: "swarm" },
+  },
+  async (req: any) => {
+    if (req.headers) requireAuth(req);
+    const { swarmId, reason = "operator cancel" } = req.body || req;
+    const safeSwarmId = sanitizeId(swarmId);
+
+    const swarm = (await trigger({ function_id: "state::get", payload: {
+      scope: "swarms",
+      key: safeSwarmId,
+    } }).catch(() => null)) as SwarmConfig | null;
+
+    if (!swarm) throw new Error(`Swarm ${safeSwarmId} not found`);
+    if (swarm.status !== "active") throw new Error(`Swarm ${safeSwarmId} is not active`);
+
+    await trigger({ function_id: "state::update", payload: {
+      scope: "swarms",
+      key: safeSwarmId,
+      operations: [
+        { type: "set", path: "status", value: "cancelled" },
+        { type: "set", path: "cancelledAt", value: Date.now() },
+        { type: "set", path: "cancelReason", value: reason },
+      ],
+    } });
+
+    triggerVoid("publish", {
+      topic: `swarm:${safeSwarmId}`,
+      data: { type: "swarm_cancelled", swarmId: safeSwarmId, reason },
+    });
+
+    triggerVoid("security::audit", {
+      type: "swarm_cancelled",
+      detail: { swarmId: safeSwarmId, reason },
+    });
+
+    return { cancelled: true, swarmId: safeSwarmId };
   },
 );
 

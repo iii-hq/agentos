@@ -52,13 +52,14 @@ const mockTrigger = vi.fn(async (fnId: string, data?: any): Promise<any> => {
   return null;
 });
 const mockTriggerVoid = vi.fn();
+const mockRegisterTrigger = vi.fn();
 
 vi.mock("iii-sdk", () => ({
   registerWorker: () => ({
     registerFunction: (config: any, handler: Function) => {
       handlers[config.id] = handler;
     },
-    registerTrigger: vi.fn(),
+    registerTrigger: mockRegisterTrigger,
     trigger: (req: any) =>
       req.action
         ? mockTriggerVoid(req.function_id, req.payload)
@@ -217,5 +218,17 @@ describe("recovery::scan", () => {
   it("returns empty when no agents", async () => {
     const result = await call("recovery::scan", {});
     expect(result.agents.length).toBe(0);
+  });
+});
+
+describe("recovery trigger registration", () => {
+  it("registers periodic recovery reports with six-field cron", () => {
+    expect(mockRegisterTrigger).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "cron",
+        function_id: "recovery::report",
+        config: { expression: "0 */10 * * * *" },
+      }),
+    );
   });
 });

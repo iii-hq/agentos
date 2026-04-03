@@ -1,5 +1,6 @@
 import { registerWorker, TriggerAction, Logger } from "iii-sdk";
 import { ENGINE_URL, OTEL_CONFIG, registerShutdown } from "./shared/config.js";
+import { normalizeCronExpression } from "./shared/cron.js";
 import { createRecordMetric } from "./shared/metrics.js";
 import { requireAuth, sanitizeId , httpOk } from "./shared/utils.js";
 import { safeCall } from "./shared/errors.js";
@@ -27,7 +28,7 @@ const DEFAULT_POLICY: FeedbackPolicy = {
   autoReviewIntervalMs: 6 * 60 * 60 * 1000,
 };
 
-type Decision = "keep" | "improve" | "kill";
+type Decision = "keep" | "improve" | "promote" | "demote" | "kill";
 
 function generateId(): string {
   return `dec_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
@@ -73,6 +74,21 @@ async function getRecentEvals(
     .slice(0, limit);
 }
 
+function nextPromotionReasonCode(status: string | undefined): ReviewResult["reasonCode"] {
+  if (status === "draft") return "ready_for_staging";
+  if (status === "staging") return "ready_for_shadow";
+  if (status === "shadow") return "ready_for_canary";
+  if (status === "canary") return "ready_for_production";
+  return undefined;
+}
+
+function syncRolloutState(fn: any) {
+  fn.metadata = {
+    ...(fn.metadata || {}),
+    rolloutState: fn.status,
+  };
+}
+
 registerFunction(
   {
     id: "feedback::review",
@@ -89,6 +105,11 @@ registerFunction(
     }
 
     const policy = await getPolicy();
+    const fn: any = await safeCall(
+      () => trigger({ function_id: "state::get", payload: { scope: "evolved_functions", key: functionId } }),
+      null,
+      { operation: "review_function" },
+    );
     const recent = await getRecentEvals(functionId, 5);
 
     if (recent.length === 0) {
@@ -97,6 +118,7 @@ registerFunction(
         functionId,
         decision: "keep",
         reason: "No eval data yet",
+        reasonCode: "no_eval_data",
         avgOverall: 0,
         recentFailures: 0,
         evalCount: 0,
@@ -121,13 +143,20 @@ registerFunction(
 
     let decision: Decision;
     let reason: string;
+    let reasonCode: ReviewResult["reasonCode"];
 
     if (recentFailures >= policy.maxFailuresToKill) {
       decision = "kill";
       reason = `${recentFailures} failures in last ${recent.length} evals (threshold: ${policy.maxFailuresToKill})`;
+      reasonCode = "too_many_failures";
     } else if (avgOverall < policy.minScoreToKeep) {
       decision = "improve";
       reason = `Average overall score ${avgOverall.toFixed(3)} below threshold ${policy.minScoreToKeep}`;
+      reasonCode = "avg_below_threshold";
+    } else if (recent.length >= policy.minEvalsToPromote && nextPromotionReasonCode(fn?.status)) {
+      decision = "promote";
+      reasonCode = nextPromotionReasonCode(fn?.status);
+      reason = `Ready to advance rollout from ${fn?.status ?? "unknown"}`;
     } else {
       decision = "keep";
       reason = `Passing: avg overall ${avgOverall.toFixed(3)}, ${recentFailures} failures`;
@@ -138,6 +167,7 @@ registerFunction(
       functionId,
       decision,
       reason,
+      reasonCode,
       avgOverall,
       recentFailures,
       evalCount: recent.length,
@@ -151,7 +181,7 @@ registerFunction(
     } });
 
     if (decision === "kill") {
-      const fn: any = await safeCall(
+      const fnToKill: any = await safeCall(
         () =>
           trigger({ function_id: "state::get", payload: {
             scope: "evolved_functions",
@@ -160,13 +190,14 @@ registerFunction(
         null,
         { operation: "auto_kill_get" },
       );
-      if (fn) {
-        fn.status = "killed";
-        fn.updatedAt = Date.now();
+      if (fnToKill) {
+        fnToKill.status = "killed";
+        syncRolloutState(fnToKill);
+        fnToKill.updatedAt = Date.now();
         await trigger({ function_id: "state::set", payload: {
           scope: "evolved_functions",
           key: functionId,
-          value: fn,
+          value: fnToKill,
         } });
       }
       log.warn("Auto-killed function", { functionId, reason });
@@ -188,6 +219,34 @@ registerFunction(
     );
 
     return result;
+  },
+);
+
+registerFunction(
+  {
+    id: "feedback::history",
+    description: "List stored review decisions for a function",
+    metadata: { category: "feedback" },
+  },
+  async (req: any) => {
+    requireAuth(req);
+    const { functionId } = req.body || req;
+    if (!functionId) {
+      throw Object.assign(new Error("functionId is required"), {
+        statusCode: 400,
+      });
+    }
+
+    const all: any[] = await safeCall(
+      () => trigger({ function_id: "state::list", payload: { scope: "feedback_decisions" } }),
+      [],
+      { operation: "feedback_history" },
+    );
+
+    return (Array.isArray(all) ? all : [])
+      .map((entry: any) => entry.value || entry)
+      .filter((decision: any) => decision.functionId === functionId)
+      .sort((a: any, b: any) => (b.timestamp || 0) - (a.timestamp || 0));
   },
 );
 
@@ -380,6 +439,10 @@ registerFunction(
     if (fn.status === "draft") {
       fn.status = "staging";
     } else if (fn.status === "staging") {
+      fn.status = "shadow";
+    } else if (fn.status === "shadow") {
+      fn.status = "canary";
+    } else if (fn.status === "canary") {
       const minSafety = Math.min(
         ...recentEvals.map((r: any) => r.scores?.safety ?? 1),
       );
@@ -394,6 +457,7 @@ registerFunction(
       return { promoted: false, reason: "Already in production" };
     }
 
+    syncRolloutState(fn);
     fn.updatedAt = Date.now();
     await trigger({ function_id: "state::set", payload: {
       scope: "evolved_functions",
@@ -438,6 +502,10 @@ registerFunction(
     } else if (fn.status === "killed") {
       return { demoted: false, functionId, reason: "Already killed" };
     } else if (fn.status === "production") {
+      fn.status = "canary";
+    } else if (fn.status === "canary") {
+      fn.status = "shadow";
+    } else if (fn.status === "shadow") {
       fn.status = "staging";
     } else if (fn.status === "staging") {
       fn.status = "draft";
@@ -445,6 +513,7 @@ registerFunction(
       fn.status = "deprecated";
     }
 
+    syncRolloutState(fn);
     fn.updatedAt = Date.now();
     await trigger({ function_id: "state::set", payload: {
       scope: "evolved_functions",
@@ -601,7 +670,11 @@ registerFunction(
     const reviewable = (Array.isArray(all) ? all : [])
       .map((e: any) => e.value || e)
       .filter(
-        (f: any) => f.status === "staging" || f.status === "production",
+        (f: any) =>
+          f.status === "staging"
+          || f.status === "shadow"
+          || f.status === "canary"
+          || f.status === "production",
       );
 
     const results: ReviewResult[] = [];
@@ -808,5 +881,5 @@ registerTrigger({
 registerTrigger({
   type: "cron",
   function_id: "feedback::auto_review",
-  config: { interval: "6h" },
+  config: { expression: normalizeCronExpression("0 */6 * * *") },
 });

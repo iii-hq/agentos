@@ -1,5 +1,6 @@
 import { registerWorker, TriggerAction } from "iii-sdk";
 import { ENGINE_URL, OTEL_CONFIG, registerShutdown } from "./shared/config.js";
+import { normalizeCronExpression } from "./shared/cron.js";
 import { requireAuth } from "./shared/utils.js";
 
 const sdk = registerWorker(ENGINE_URL, {
@@ -68,10 +69,11 @@ registerFunction(
     });
 
     if (config.enabled && config.schedule) {
+      const normalizedSchedule = normalizeCronExpression(config.schedule);
       registerTrigger({
         type: "cron",
         function_id: "hand::execute",
-        config: { expression: config.schedule },
+        config: { expression: normalizedSchedule },
       });
     }
 

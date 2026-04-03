@@ -1,5 +1,6 @@
 import { registerWorker, TriggerAction, Logger } from "iii-sdk";
 import { ENGINE_URL, OTEL_CONFIG, registerShutdown } from "./shared/config.js";
+import { normalizeCronExpression } from "./shared/cron.js";
 import { recordMetric } from "./shared/metrics.js";
 import { safeCall } from "./shared/errors.js";
 import { requireAuth , httpOk } from "./shared/utils.js";
@@ -52,6 +53,11 @@ interface Reaction {
   escalateAfter: number;
   attempts: number;
 }
+
+type StoredReaction = {
+  key?: string;
+  value: Reaction;
+};
 
 registerFunction(
   {
@@ -119,7 +125,7 @@ registerFunction(
     });
 
     const [agentReactions, globalReactions] = await Promise.all([
-      safeCall(
+      safeCall<StoredReaction[]>(
         () =>
           trigger({
             function_id: "state::list",
@@ -128,7 +134,7 @@ registerFunction(
         [],
         { operation: "list_agent_reactions" },
       ),
-      safeCall(
+      safeCall<StoredReaction[]>(
         () =>
           trigger({
             function_id: "state::list",
@@ -392,5 +398,5 @@ registerTrigger({
 registerTrigger({
   type: "cron",
   function_id: "lifecycle::check_all",
-  config: { expression: "*/2 * * * *" },
+  config: { expression: normalizeCronExpression("*/2 * * * *") },
 });
