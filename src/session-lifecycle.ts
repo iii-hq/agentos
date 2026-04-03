@@ -1,5 +1,6 @@
 import { registerWorker, TriggerAction, Logger } from "iii-sdk";
 import { ENGINE_URL, OTEL_CONFIG, registerShutdown } from "./shared/config.js";
+import { normalizeCronExpression } from "./shared/cron.js";
 import { recordMetric } from "./shared/metrics.js";
 import { safeCall } from "./shared/errors.js";
 import { requireAuth } from "./shared/utils.js";
@@ -391,5 +392,5 @@ registerTrigger({
 registerTrigger({
   type: "cron",
   function_id: "lifecycle::check_all",
-  config: { expression: "*/2 * * * *" },
+  config: { expression: normalizeCronExpression("*/2 * * * *") },
 });

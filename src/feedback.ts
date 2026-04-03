@@ -1,5 +1,6 @@
 import { registerWorker, TriggerAction, Logger } from "iii-sdk";
 import { ENGINE_URL, OTEL_CONFIG, registerShutdown } from "./shared/config.js";
+import { normalizeCronExpression } from "./shared/cron.js";
 import { createRecordMetric } from "./shared/metrics.js";
 import { requireAuth, sanitizeId } from "./shared/utils.js";
 import { safeCall } from "./shared/errors.js";
@@ -879,5 +880,5 @@ registerTrigger({
 registerTrigger({
   type: "cron",
   function_id: "feedback::auto_review",
-  config: { interval: "6h" },
+  config: { expression: normalizeCronExpression("0 */6 * * *") },
 });

@@ -48,6 +48,7 @@ const mockTrigger = vi.fn(async (fnId: string, data?: any): Promise<any> => {
   return null;
 });
 const mockTriggerVoid = vi.fn();
+const mockRegisterTrigger = vi.fn();
 
 const handlers: Record<string, Function> = {};
 vi.mock("iii-sdk", () => ({
@@ -55,7 +56,7 @@ vi.mock("iii-sdk", () => ({
     registerFunction: (config: any, handler: Function) => {
       handlers[config.id] = handler;
     },
-    registerTrigger: vi.fn(),
+    registerTrigger: mockRegisterTrigger,
     trigger: (req: any) =>
       req.action
         ? mockTriggerVoid(req.function_id, req.payload)
@@ -564,5 +565,15 @@ describe("feedback::auto_review", () => {
 
     expect(result.reviewed).toBe(2);
     expect(result.results).toHaveLength(2);
+  });
+
+  it("registers auto review with a six-field cron expression", () => {
+    expect(mockRegisterTrigger).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "cron",
+        function_id: "feedback::auto_review",
+        config: { expression: "0 0 */6 * * *" },
+      }),
+    );
   });
 });

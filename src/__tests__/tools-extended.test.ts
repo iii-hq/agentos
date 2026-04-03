@@ -35,6 +35,7 @@ const mockTrigger = vi.fn(async (fnId: string, data?: any): Promise<any> => {
   return null;
 });
 const mockTriggerVoid = vi.fn();
+const mockRegisterTrigger = vi.fn();
 
 const handlers: Record<string, Function> = {};
 vi.mock("iii-sdk", () => ({
@@ -42,7 +43,7 @@ vi.mock("iii-sdk", () => ({
     registerFunction: (config: any, handler: Function) => {
       handlers[config.id] = handler;
     },
-    registerTrigger: vi.fn(),
+    registerTrigger: mockRegisterTrigger,
     trigger: (req: any) =>
       req.action
         ? mockTriggerVoid(req.function_id, req.payload)
@@ -177,6 +178,14 @@ describe("tool::cron_create", () => {
     const stored = getScope("cron_jobs").get("test-cron") as any;
     expect(stored).toBeDefined();
     expect(stored.functionId).toBe("test::run");
+    expect(stored.schedule).toBe("0 */5 * * * *");
+    expect(mockRegisterTrigger).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        type: "cron",
+        function_id: "test::run",
+        config: { expression: "0 */5 * * * *" },
+      }),
+    );
   });
 
   it("rejects invalid cron name with spaces", async () => {

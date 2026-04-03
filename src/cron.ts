@@ -1,5 +1,6 @@
 import { registerWorker } from "iii-sdk";
 import { ENGINE_URL, OTEL_CONFIG, registerShutdown } from "./shared/config.js";
+import { normalizeCronExpression } from "./shared/cron.js";
 
 const sdk = registerWorker(ENGINE_URL, {
   workerName: "cron",
@@ -119,17 +120,17 @@ registerFunction(
 registerTrigger({
   type: "cron",
   function_id: "cron::cleanup_stale_sessions",
-  config: { expression: "0 */6 * * *" },
+  config: { expression: normalizeCronExpression("0 */6 * * *") },
 });
 
 registerTrigger({
   type: "cron",
   function_id: "cron::aggregate_daily_costs",
-  config: { expression: "0 * * * *" },
+  config: { expression: normalizeCronExpression("0 * * * *") },
 });
 
 registerTrigger({
   type: "cron",
   function_id: "cron::reset_rate_limits",
-  config: { expression: "*/5 * * * *" },
+  config: { expression: normalizeCronExpression("*/5 * * * *") },
 });

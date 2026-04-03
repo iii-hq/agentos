@@ -20,6 +20,7 @@ const mockTrigger = vi.fn(async (fnId: string, data?: any): Promise<any> => {
   return null;
 });
 const mockTriggerVoid = vi.fn();
+const mockRegisterTrigger = vi.fn();
 
 const handlers: Record<string, Function> = {};
 vi.mock("iii-sdk", () => ({
@@ -27,7 +28,7 @@ vi.mock("iii-sdk", () => ({
     registerFunction: (config: any, handler: Function) => {
       handlers[config.id] = handler;
     },
-    registerTrigger: vi.fn(),
+    registerTrigger: mockRegisterTrigger,
     trigger: (req: any) =>
       req.action
         ? mockTriggerVoid(req.function_id, req.payload)
@@ -92,6 +93,20 @@ describe("hand::register", () => {
     });
     const setCalls = mockTrigger.mock.calls.filter(c => c[0] === "state::set");
     expect(setCalls.some(c => c[1].scope === "hands")).toBe(true);
+  });
+
+  it("normalizes schedule to six-field cron before registering trigger", async () => {
+    await call("hand::register", {
+      body: makeHand({ schedule: "0 9 * * *" }),
+      headers: { authorization: "Bearer test-key" },
+    });
+    expect(mockRegisterTrigger).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "cron",
+        function_id: "hand::execute",
+        config: { expression: "0 0 9 * * *" },
+      }),
+    );
   });
 
   it("sets capabilities for hand agent", async () => {

@@ -44,6 +44,7 @@ const mockTrigger = vi.fn(async (fnId: string, data?: any): Promise<any> => {
   return null;
 });
 const mockTriggerVoid = vi.fn();
+const mockRegisterTrigger = vi.fn();
 
 const handlers: Record<string, Function> = {};
 vi.mock("iii-sdk", () => ({
@@ -51,7 +52,7 @@ vi.mock("iii-sdk", () => ({
     registerFunction: (config: any, handler: Function) => {
       handlers[config.id] = handler;
     },
-    registerTrigger: vi.fn(),
+    registerTrigger: mockRegisterTrigger,
     trigger: (req: any) =>
       req.action
         ? mockTriggerVoid(req.function_id, req.payload)
@@ -156,5 +157,31 @@ describe("cron::reset_rate_limits", () => {
     expect(result.reset).toBe(1);
     expect(getScope("rates").has("active-rate")).toBe(true);
     expect(getScope("rates").has("expired-rate")).toBe(false);
+  });
+});
+
+describe("cron trigger registration", () => {
+  it("registers built-in cron jobs with six-field expressions", () => {
+    expect(mockRegisterTrigger).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "cron",
+        function_id: "cron::cleanup_stale_sessions",
+        config: { expression: "0 0 */6 * * *" },
+      }),
+    );
+    expect(mockRegisterTrigger).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "cron",
+        function_id: "cron::aggregate_daily_costs",
+        config: { expression: "0 0 * * * *" },
+      }),
+    );
+    expect(mockRegisterTrigger).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "cron",
+        function_id: "cron::reset_rate_limits",
+        config: { expression: "0 */5 * * * *" },
+      }),
+    );
   });
 });
