@@ -342,6 +342,7 @@ export default function TerminalCanvas() {
   const lineHeight = useRef(20);
   const font = useRef(getFont(13));
   const touch = useRef({ startY: 0, lastY: 0, active: false });
+  const wasMobile = useRef(false);
 
   const recalcSizing = useCallback(() => {
     fontSize.current = getFontSize();
@@ -355,9 +356,9 @@ export default function TerminalCanvas() {
     const w = cv ? cv.width / (window.devicePixelRatio || 1) : window.innerWidth;
     pl.current = getPL(w);
     const isMobile = w < 480;
-    if (content.current.length === 0 || isMobile !== content.current._mobile) {
+    if (content.current.length === 0 || isMobile !== wasMobile.current) {
       content.current = isMobile ? buildMobileContent() : buildContent();
-      (content.current as any)._mobile = isMobile;
+      wasMobile.current = isMobile;
     }
     glyphs.current = makeGlyphs(content.current, cw.current, pl.current, lineHeight.current);
     rows.current = content.current.length;
@@ -383,7 +384,7 @@ export default function TerminalCanvas() {
     if (t === "clear") {
       const isMobile = window.innerWidth < 480;
       content.current = isMobile ? buildMobileContent() : buildContent();
-      (content.current as any)._mobile = isMobile;
+      wasMobile.current = isMobile;
       rebuild();
       scrollY.current = 0;
       setCmdHist(p => [t, ...p]);
@@ -397,7 +398,7 @@ export default function TerminalCanvas() {
       L(""),
     ];
     content.current = [...content.current, ...newLines];
-    (content.current as any)._mobile = window.innerWidth < 480;
+    wasMobile.current = window.innerWidth < 480;
     rebuild();
     autoScroll();
     setCmdHist(p => [t, ...p]);
@@ -411,7 +412,7 @@ export default function TerminalCanvas() {
     recalcSizing();
     const isMobile = window.innerWidth < 480;
     content.current = isMobile ? buildMobileContent() : buildContent();
-    (content.current as any)._mobile = isMobile;
+    wasMobile.current = isMobile;
     pl.current = getPL(window.innerWidth);
     glyphs.current = makeGlyphs(content.current, cw.current, pl.current, lineHeight.current);
     rows.current = content.current.length;
@@ -432,10 +433,9 @@ export default function TerminalCanvas() {
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       recalcSizing();
       const isMobile = w < 480;
-      const wasMobile = (content.current as any)._mobile;
-      if (isMobile !== wasMobile) {
+      if (isMobile !== wasMobile.current) {
         content.current = isMobile ? buildMobileContent() : buildContent();
-        (content.current as any)._mobile = isMobile;
+        wasMobile.current = isMobile;
       }
       rebuild();
     };
