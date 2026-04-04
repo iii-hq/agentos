@@ -528,7 +528,7 @@ registerFunction(
     for (const m of memories) {
       const sid = m.sessionId!;
       const content = m.content.toLowerCase();
-      const hits = keywords.filter((k) => content.includes(k)).length;
+      const hits = keywords.filter((keyword: string) => content.includes(keyword)).length;
       if (hits === 0) continue;
 
       const keywordScore = hits / Math.max(keywords.length, 1);

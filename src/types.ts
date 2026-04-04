@@ -28,6 +28,7 @@ export interface AgentConfig {
   id?: string;
   name: string;
   description?: string;
+  agentTier?: "economy" | "premium";
   model?: {
     provider?: string;
     model?: string;
