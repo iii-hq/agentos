@@ -1,4 +1,4 @@
-use iii_sdk::{register_worker, InitOptions, III};
+use iii_sdk::{III, InitOptions, register_worker};
 use iii_sdk::error::IIIError;
 use serde_json::{json, Value};
 use std::time::Instant;
@@ -7,13 +7,135 @@ mod types;
 
 use types::{AgentConfig, ChatRequest, ToolCall};
 
+#[allow(dead_code)]
+mod iii_compat {
+    use iii_sdk::{
+        III, RegisterFunction, RegisterTriggerInput, TriggerRequest, FunctionRef, Trigger,
+        Value,
+    };
+    use iii_sdk::error::IIIError;
+    use std::future::Future;
+
+    pub trait IIIExt {
+        fn register_function_with_description<F, Fut>(
+            &self,
+            id: &str,
+            desc: &str,
+            f: F,
+        ) -> FunctionRef
+        where
+            F: Fn(Value) -> Fut + Send + Sync + 'static,
+            Fut: Future<Output = Result<Value, IIIError>> + Send + 'static;
+
+        fn register_function_v0<F, Fut>(&self, id: &str, f: F) -> FunctionRef
+        where
+            F: Fn(Value) -> Fut + Send + Sync + 'static,
+            Fut: Future<Output = Result<Value, IIIError>> + Send + 'static;
+
+        fn register_trigger_v0(
+            &self,
+            kind: &str,
+            function_id: &str,
+            config: Value,
+        ) -> Result<Trigger, IIIError>;
+
+        fn trigger_v0(
+            &self,
+            function_id: &str,
+            payload: Value,
+        ) -> impl Future<Output = Result<Value, IIIError>> + Send;
+
+        fn trigger_void(
+            &self,
+            function_id: &str,
+            payload: Value,
+        ) -> Result<(), IIIError>;
+    }
+
+    impl IIIExt for III {
+        fn register_function_with_description<F, Fut>(
+            &self,
+            id: &str,
+            desc: &str,
+            f: F,
+        ) -> FunctionRef
+        where
+            F: Fn(Value) -> Fut + Send + Sync + 'static,
+            Fut: Future<Output = Result<Value, IIIError>> + Send + 'static,
+        {
+            self.register_function(
+                RegisterFunction::new_async(id.to_string(), f).description(desc.to_string()),
+            )
+        }
+
+        fn register_function_v0<F, Fut>(&self, id: &str, f: F) -> FunctionRef
+        where
+            F: Fn(Value) -> Fut + Send + Sync + 'static,
+            Fut: Future<Output = Result<Value, IIIError>> + Send + 'static,
+        {
+            self.register_function(RegisterFunction::new_async(id.to_string(), f))
+        }
+
+        fn register_trigger_v0(
+            &self,
+            kind: &str,
+            function_id: &str,
+            config: Value,
+        ) -> Result<Trigger, IIIError> {
+            self.register_trigger(RegisterTriggerInput {
+                trigger_type: kind.to_string(),
+                function_id: function_id.to_string(),
+                config,
+                metadata: None,
+            })
+        }
+
+        async fn trigger_v0(
+            &self,
+            function_id: &str,
+            payload: Value,
+        ) -> Result<Value, IIIError> {
+            self.trigger(TriggerRequest {
+                function_id: function_id.to_string(),
+                payload,
+                action: None,
+                timeout_ms: None,
+            })
+            .await
+        }
+
+        fn trigger_void(
+            &self,
+            function_id: &str,
+            payload: Value,
+        ) -> Result<(), IIIError> {
+            let iii = self.clone();
+            let fid = function_id.to_string();
+            tokio::spawn(async move {
+                let _ = iii
+                    .trigger(TriggerRequest {
+                        function_id: fid,
+                        payload,
+                        action: None,
+                        timeout_ms: None,
+                    })
+                    .await;
+            });
+            Ok(())
+        }
+    }
+}
+use iii_compat::IIIExt as _;
+
+
+
 const MAX_ITERATIONS: u32 = 50;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing_subscriber::fmt::init();
 
-    let iii = register_worker("ws://localhost:49134", InitOptions::default())?;
+    let iii = register_worker("ws://localhost:49134", InitOptions::default());
 
     let iii_clone = iii.clone();
     iii.register_function_with_description(
@@ -63,7 +185,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         move |_: Value| {
             let iii = iii_clone.clone();
             async move {
-                iii.trigger("state::list", json!({ "scope": "agents" })).await
+                iii.trigger_v0("state::list", json!({ "scope": "agents" })).await
                     .map_err(|e| IIIError::Handler(e.to_string()))
             }
         },
@@ -77,7 +199,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             let iii = iii_clone.clone();
             async move {
                 let agent_id = input["agentId"].as_str().unwrap_or("");
-                iii.trigger("state::delete", json!({
+                iii.trigger_v0("state::delete", json!({
                     "scope": "agents",
                     "key": agent_id,
                 })).await.map_err(|e| IIIError::Handler(e.to_string()))?;
@@ -92,7 +214,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         },
     );
 
-    iii.register_trigger("queue", "agent::chat", json!({ "topic": "agent.inbox" }))?;
+    iii.register_trigger_v0("queue", "agent::chat", json!({ "topic": "agent.inbox" }))?;
 
     tracing::info!("agent-core worker started");
     tokio::signal::ctrl_c().await?;
@@ -104,7 +226,7 @@ async fn agent_chat(iii: &III, req: ChatRequest) -> Result<Value, IIIError> {
     let start = Instant::now();
 
     let config: Option<AgentConfig> = iii
-        .trigger("state::get", json!({
+        .trigger_v0("state::get", json!({
             "scope": "agents",
             "key": &req.agent_id,
         }))
@@ -113,7 +235,7 @@ async fn agent_chat(iii: &III, req: ChatRequest) -> Result<Value, IIIError> {
         .and_then(|v| serde_json::from_value(v).ok());
 
     let memories: Value = iii
-        .trigger("memory::recall", json!({
+        .trigger_v0("memory::recall", json!({
             "agentId": &req.agent_id,
             "query": &req.message,
             "limit": 20,
@@ -122,7 +244,7 @@ async fn agent_chat(iii: &III, req: ChatRequest) -> Result<Value, IIIError> {
         .unwrap_or(json!([]));
 
     let tools: Value = iii
-        .trigger("agent::list_tools", json!({ "agentId": &req.agent_id }))
+        .trigger_v0("agent::list_tools", json!({ "agentId": &req.agent_id }))
         .await
         .unwrap_or(json!([]));
 
@@ -131,7 +253,7 @@ async fn agent_chat(iii: &III, req: ChatRequest) -> Result<Value, IIIError> {
         .unwrap_or_default();
 
     let model: Value = iii
-        .trigger("llm::route", json!({
+        .trigger_v0("llm::route", json!({
             "message": &req.message,
             "toolCount": tools.as_array().map(|a| a.len()).unwrap_or(0),
             "config": config.as_ref().and_then(|c| c.model.as_ref()),
@@ -140,7 +262,7 @@ async fn agent_chat(iii: &III, req: ChatRequest) -> Result<Value, IIIError> {
         .map_err(|e| IIIError::Handler(e.to_string()))?;
 
     let scan_result = iii
-        .trigger("security::scan_injection", json!({ "text": &req.message }))
+        .trigger_v0("security::scan_injection", json!({ "text": &req.message }))
         .await
         .unwrap_or(json!({ "safe": true, "riskScore": 0.0 }));
     let risk_score = scan_result["riskScore"].as_f64().unwrap_or(0.0);
@@ -158,7 +280,7 @@ async fn agent_chat(iii: &III, req: ChatRequest) -> Result<Value, IIIError> {
     messages.push(json!({ "role": "user", "content": &req.message }));
 
     let mut response: Value = iii
-        .trigger("llm::complete", json!({
+        .trigger_v0("llm::complete", json!({
             "model": model,
             "systemPrompt": system_prompt,
             "messages": messages,
@@ -182,7 +304,7 @@ async fn agent_chat(iii: &III, req: ChatRequest) -> Result<Value, IIIError> {
 
         let mut tool_results = Vec::new();
         for tc in &calls {
-            let cap_check = iii.trigger("security::check_capability", json!({
+            let cap_check = iii.trigger_v0("security::check_capability", json!({
                 "agentId": &req.agent_id,
                 "capability": tc.id.split("::").next().unwrap_or(""),
                 "resource": &tc.id,
@@ -196,7 +318,7 @@ async fn agent_chat(iii: &III, req: ChatRequest) -> Result<Value, IIIError> {
                 continue;
             }
 
-            match iii.trigger(&tc.id, tc.arguments.clone()).await {
+            match iii.trigger_v0(&tc.id, tc.arguments.clone()).await {
                 Ok(result) => {
                     tool_results.push(json!({
                         "toolCallId": tc.call_id,
@@ -218,7 +340,7 @@ async fn agent_chat(iii: &III, req: ChatRequest) -> Result<Value, IIIError> {
         }
 
         response = iii
-            .trigger("llm::complete", json!({
+            .trigger_v0("llm::complete", json!({
                 "model": model,
                 "systemPrompt": system_prompt,
                 "messages": messages,
@@ -266,7 +388,7 @@ async fn agent_chat(iii: &III, req: ChatRequest) -> Result<Value, IIIError> {
 
 async fn list_tools(iii: &III, agent_id: &str) -> Result<Value, IIIError> {
     let config: Option<AgentConfig> = iii
-        .trigger("state::get", json!({ "scope": "agents", "key": agent_id }))
+        .trigger_v0("state::get", json!({ "scope": "agents", "key": agent_id }))
         .await
         .ok()
         .and_then(|v| serde_json::from_value(v).ok());
@@ -284,7 +406,7 @@ async fn list_tools(iii: &III, agent_id: &str) -> Result<Value, IIIError> {
         .collect();
 
     let all_functions: Value = iii
-        .trigger("engine::functions::list", json!({}))
+        .trigger_v0("engine::functions::list", json!({}))
         .await
         .unwrap_or(json!([]));
 
@@ -1189,7 +1311,7 @@ mod tests {
 async fn create_agent(iii: &III, config: AgentConfig) -> Result<Value, IIIError> {
     let agent_id = config.id.clone().unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
 
-    iii.trigger("state::set", json!({
+    iii.trigger_v0("state::set", json!({
         "scope": "agents",
         "key": &agent_id,
         "value": {

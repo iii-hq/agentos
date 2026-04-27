@@ -1,7 +1,129 @@
-use iii_sdk::{register_worker, InitOptions, III};
+use iii_sdk::{III, InitOptions, register_worker};
 use iii_sdk::error::IIIError;
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
+
+#[allow(dead_code)]
+mod iii_compat {
+    use iii_sdk::{
+        III, RegisterFunction, RegisterTriggerInput, TriggerRequest, FunctionRef, Trigger,
+        Value,
+    };
+    use iii_sdk::error::IIIError;
+    use std::future::Future;
+
+    pub trait IIIExt {
+        fn register_function_with_description<F, Fut>(
+            &self,
+            id: &str,
+            desc: &str,
+            f: F,
+        ) -> FunctionRef
+        where
+            F: Fn(Value) -> Fut + Send + Sync + 'static,
+            Fut: Future<Output = Result<Value, IIIError>> + Send + 'static;
+
+        fn register_function_v0<F, Fut>(&self, id: &str, f: F) -> FunctionRef
+        where
+            F: Fn(Value) -> Fut + Send + Sync + 'static,
+            Fut: Future<Output = Result<Value, IIIError>> + Send + 'static;
+
+        fn register_trigger_v0(
+            &self,
+            kind: &str,
+            function_id: &str,
+            config: Value,
+        ) -> Result<Trigger, IIIError>;
+
+        fn trigger_v0(
+            &self,
+            function_id: &str,
+            payload: Value,
+        ) -> impl Future<Output = Result<Value, IIIError>> + Send;
+
+        fn trigger_void(
+            &self,
+            function_id: &str,
+            payload: Value,
+        ) -> Result<(), IIIError>;
+    }
+
+    impl IIIExt for III {
+        fn register_function_with_description<F, Fut>(
+            &self,
+            id: &str,
+            desc: &str,
+            f: F,
+        ) -> FunctionRef
+        where
+            F: Fn(Value) -> Fut + Send + Sync + 'static,
+            Fut: Future<Output = Result<Value, IIIError>> + Send + 'static,
+        {
+            self.register_function(
+                RegisterFunction::new_async(id.to_string(), f).description(desc.to_string()),
+            )
+        }
+
+        fn register_function_v0<F, Fut>(&self, id: &str, f: F) -> FunctionRef
+        where
+            F: Fn(Value) -> Fut + Send + Sync + 'static,
+            Fut: Future<Output = Result<Value, IIIError>> + Send + 'static,
+        {
+            self.register_function(RegisterFunction::new_async(id.to_string(), f))
+        }
+
+        fn register_trigger_v0(
+            &self,
+            kind: &str,
+            function_id: &str,
+            config: Value,
+        ) -> Result<Trigger, IIIError> {
+            self.register_trigger(RegisterTriggerInput {
+                trigger_type: kind.to_string(),
+                function_id: function_id.to_string(),
+                config,
+                metadata: None,
+            })
+        }
+
+        async fn trigger_v0(
+            &self,
+            function_id: &str,
+            payload: Value,
+        ) -> Result<Value, IIIError> {
+            self.trigger(TriggerRequest {
+                function_id: function_id.to_string(),
+                payload,
+                action: None,
+                timeout_ms: None,
+            })
+            .await
+        }
+
+        fn trigger_void(
+            &self,
+            function_id: &str,
+            payload: Value,
+        ) -> Result<(), IIIError> {
+            let iii = self.clone();
+            let fid = function_id.to_string();
+            tokio::spawn(async move {
+                let _ = iii
+                    .trigger(TriggerRequest {
+                        function_id: fid,
+                        payload,
+                        action: None,
+                        timeout_ms: None,
+                    })
+                    .await;
+            });
+            Ok(())
+        }
+    }
+}
+use iii_compat::IIIExt as _;
+
+
 
 mod types;
 
@@ -20,7 +142,7 @@ fn activity_scope(realm_id: &str) -> String {
 
 async fn get_prev_hash(iii: &III, realm_id: &str) -> String {
     let entries = iii
-        .trigger("state::list", json!({ "scope": activity_scope(realm_id) }))
+        .trigger_v0("state::list", json!({ "scope": activity_scope(realm_id) }))
         .await
         .ok();
 
@@ -70,7 +192,7 @@ async fn log_activity(iii: &III, req: LogActivityRequest) -> Result<Value, IIIEr
 
     let value = serde_json::to_value(&entry).map_err(|e| IIIError::Handler(e.to_string()))?;
 
-    iii.trigger("state::set", json!({
+    iii.trigger_v0("state::set", json!({
         "scope": activity_scope(&req.realm_id),
         "key": id,
         "value": value,
@@ -101,7 +223,7 @@ async fn submit_proposal(iii: &III, req: SubmitProposalRequest) -> Result<Value,
 
     let value = serde_json::to_value(&proposal).map_err(|e| IIIError::Handler(e.to_string()))?;
 
-    iii.trigger("state::set", json!({
+    iii.trigger_v0("state::set", json!({
         "scope": proposals_scope(&req.realm_id),
         "key": id,
         "value": value,
@@ -132,7 +254,7 @@ async fn decide_proposal(iii: &III, req: DecideProposalRequest) -> Result<Value,
     let realm_id = &req.realm_id;
 
     let val = iii
-        .trigger("state::get", json!({ "scope": proposals_scope(realm_id), "key": &req.id }))
+        .trigger_v0("state::get", json!({ "scope": proposals_scope(realm_id), "key": &req.id }))
         .await
         .map_err(|e| IIIError::Handler(e.to_string()))?;
 
@@ -157,7 +279,7 @@ async fn decide_proposal(iii: &III, req: DecideProposalRequest) -> Result<Value,
 
     let value = serde_json::to_value(&proposal).map_err(|e| IIIError::Handler(e.to_string()))?;
 
-    iii.trigger("state::set", json!({
+    iii.trigger_v0("state::set", json!({
         "scope": proposals_scope(realm_id),
         "key": proposal.id,
         "value": value,
@@ -190,7 +312,7 @@ async fn decide_proposal(iii: &III, req: DecideProposalRequest) -> Result<Value,
 
 async fn list_proposals(iii: &III, realm_id: &str, status_filter: Option<ProposalStatus>) -> Result<Value, IIIError> {
     let all = iii
-        .trigger("state::list", json!({ "scope": proposals_scope(realm_id) }))
+        .trigger_v0("state::list", json!({ "scope": proposals_scope(realm_id) }))
         .await
         .map_err(|e| IIIError::Handler(e.to_string()))?;
 
@@ -219,7 +341,7 @@ async fn override_agent(iii: &III, req: OverrideRequest) -> Result<Value, IIIErr
     };
 
     let _ = iii
-        .trigger("state::update", json!({
+        .trigger_v0("state::update", json!({
             "scope": "agents",
             "key": &req.target_agent_id,
             "path": "status",
@@ -257,7 +379,7 @@ async fn override_agent(iii: &III, req: OverrideRequest) -> Result<Value, IIIErr
 
 async fn get_activity_log(iii: &III, realm_id: &str, limit: usize) -> Result<Value, IIIError> {
     let all = iii
-        .trigger("state::list", json!({ "scope": activity_scope(realm_id) }))
+        .trigger_v0("state::list", json!({ "scope": activity_scope(realm_id) }))
         .await
         .map_err(|e| IIIError::Handler(e.to_string()))?;
 
@@ -281,7 +403,7 @@ async fn get_activity_log(iii: &III, realm_id: &str, limit: usize) -> Result<Val
 
 async fn verify_activity_chain(iii: &III, realm_id: &str) -> Result<Value, IIIError> {
     let all = iii
-        .trigger("state::list", json!({ "scope": activity_scope(realm_id) }))
+        .trigger_v0("state::list", json!({ "scope": activity_scope(realm_id) }))
         .await
         .map_err(|e| IIIError::Handler(e.to_string()))?;
 
@@ -322,7 +444,7 @@ async fn verify_activity_chain(iii: &III, realm_id: &str) -> Result<Value, IIIEr
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing_subscriber::fmt::init();
 
-    let iii = register_worker("ws://localhost:49134", InitOptions::default())?;
+    let iii = register_worker("ws://localhost:49134", InitOptions::default());
 
     let iii_clone = iii.clone();
     iii.register_function_with_description(
@@ -429,14 +551,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         },
     );
 
-    iii.register_trigger("http", "council::submit", json!({ "method": "POST", "path": "/api/council/proposals" }))?;
-    iii.register_trigger("http", "council::decide", json!({ "method": "POST", "path": "/api/council/proposals/:id/decide" }))?;
-    iii.register_trigger("http", "council::proposals", json!({ "method": "GET", "path": "/api/council/proposals/:realmId" }))?;
-    iii.register_trigger("http", "council::override", json!({ "method": "POST", "path": "/api/council/override" }))?;
-    iii.register_trigger("http", "council::activity_log", json!({ "method": "GET", "path": "/api/council/activity/:realmId" }))?;
-    iii.register_trigger("http", "council::verify", json!({ "method": "GET", "path": "/api/council/verify/:realmId" }))?;
+    iii.register_trigger_v0("http", "council::submit", json!({ "method": "POST", "path": "/api/council/proposals" }))?;
+    iii.register_trigger_v0("http", "council::decide", json!({ "method": "POST", "path": "/api/council/proposals/:id/decide" }))?;
+    iii.register_trigger_v0("http", "council::proposals", json!({ "method": "GET", "path": "/api/council/proposals/:realmId" }))?;
+    iii.register_trigger_v0("http", "council::override", json!({ "method": "POST", "path": "/api/council/override" }))?;
+    iii.register_trigger_v0("http", "council::activity_log", json!({ "method": "GET", "path": "/api/council/activity/:realmId" }))?;
+    iii.register_trigger_v0("http", "council::verify", json!({ "method": "GET", "path": "/api/council/verify/:realmId" }))?;
 
-    iii.register_trigger("subscribe", "council::activity", json!({ "topic": "council.audit" }))?;
+    iii.register_trigger_v0("subscribe", "council::activity", json!({ "topic": "council.audit" }))?;
 
     tracing::info!("council worker started");
     tokio::signal::ctrl_c().await?;

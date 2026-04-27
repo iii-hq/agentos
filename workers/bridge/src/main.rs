@@ -1,8 +1,130 @@
-use iii_sdk::{register_worker, InitOptions, III};
+use iii_sdk::{III, InitOptions, register_worker};
 use iii_sdk::error::IIIError;
 use serde_json::{json, Value};
 use dashmap::DashMap;
 use std::sync::Arc;
+
+#[allow(dead_code)]
+mod iii_compat {
+    use iii_sdk::{
+        III, RegisterFunction, RegisterTriggerInput, TriggerRequest, FunctionRef, Trigger,
+        Value,
+    };
+    use iii_sdk::error::IIIError;
+    use std::future::Future;
+
+    pub trait IIIExt {
+        fn register_function_with_description<F, Fut>(
+            &self,
+            id: &str,
+            desc: &str,
+            f: F,
+        ) -> FunctionRef
+        where
+            F: Fn(Value) -> Fut + Send + Sync + 'static,
+            Fut: Future<Output = Result<Value, IIIError>> + Send + 'static;
+
+        fn register_function_v0<F, Fut>(&self, id: &str, f: F) -> FunctionRef
+        where
+            F: Fn(Value) -> Fut + Send + Sync + 'static,
+            Fut: Future<Output = Result<Value, IIIError>> + Send + 'static;
+
+        fn register_trigger_v0(
+            &self,
+            kind: &str,
+            function_id: &str,
+            config: Value,
+        ) -> Result<Trigger, IIIError>;
+
+        fn trigger_v0(
+            &self,
+            function_id: &str,
+            payload: Value,
+        ) -> impl Future<Output = Result<Value, IIIError>> + Send;
+
+        fn trigger_void(
+            &self,
+            function_id: &str,
+            payload: Value,
+        ) -> Result<(), IIIError>;
+    }
+
+    impl IIIExt for III {
+        fn register_function_with_description<F, Fut>(
+            &self,
+            id: &str,
+            desc: &str,
+            f: F,
+        ) -> FunctionRef
+        where
+            F: Fn(Value) -> Fut + Send + Sync + 'static,
+            Fut: Future<Output = Result<Value, IIIError>> + Send + 'static,
+        {
+            self.register_function(
+                RegisterFunction::new_async(id.to_string(), f).description(desc.to_string()),
+            )
+        }
+
+        fn register_function_v0<F, Fut>(&self, id: &str, f: F) -> FunctionRef
+        where
+            F: Fn(Value) -> Fut + Send + Sync + 'static,
+            Fut: Future<Output = Result<Value, IIIError>> + Send + 'static,
+        {
+            self.register_function(RegisterFunction::new_async(id.to_string(), f))
+        }
+
+        fn register_trigger_v0(
+            &self,
+            kind: &str,
+            function_id: &str,
+            config: Value,
+        ) -> Result<Trigger, IIIError> {
+            self.register_trigger(RegisterTriggerInput {
+                trigger_type: kind.to_string(),
+                function_id: function_id.to_string(),
+                config,
+                metadata: None,
+            })
+        }
+
+        async fn trigger_v0(
+            &self,
+            function_id: &str,
+            payload: Value,
+        ) -> Result<Value, IIIError> {
+            self.trigger(TriggerRequest {
+                function_id: function_id.to_string(),
+                payload,
+                action: None,
+                timeout_ms: None,
+            })
+            .await
+        }
+
+        fn trigger_void(
+            &self,
+            function_id: &str,
+            payload: Value,
+        ) -> Result<(), IIIError> {
+            let iii = self.clone();
+            let fid = function_id.to_string();
+            tokio::spawn(async move {
+                let _ = iii
+                    .trigger(TriggerRequest {
+                        function_id: fid,
+                        payload,
+                        action: None,
+                        timeout_ms: None,
+                    })
+                    .await;
+            });
+            Ok(())
+        }
+    }
+}
+use iii_compat::IIIExt as _;
+
+
 
 mod types;
 
@@ -51,7 +173,7 @@ async fn register_runtime(iii: &III, req: RegisterRuntimeRequest) -> Result<Valu
 
     let value = serde_json::to_value(&config).map_err(|e| IIIError::Handler(e.to_string()))?;
 
-    iii.trigger("state::set", json!({
+    iii.trigger_v0("state::set", json!({
         "scope": runtimes_scope(),
         "key": &id,
         "value": value,
@@ -68,7 +190,7 @@ async fn invoke_runtime(
     active_runs: &Arc<DashMap<String, tokio::task::JoinHandle<()>>>,
 ) -> Result<Value, IIIError> {
     let config_val = iii
-        .trigger("state::get", json!({
+        .trigger_v0("state::get", json!({
             "scope": runtimes_scope(),
             "key": &req.runtime_id,
         }))
@@ -94,7 +216,7 @@ async fn invoke_runtime(
     };
 
     let run_val = serde_json::to_value(&run).map_err(|e| IIIError::Handler(e.to_string()))?;
-    iii.trigger("state::set", json!({
+    iii.trigger_v0("state::set", json!({
         "scope": runs_scope(),
         "key": &run_id,
         "value": run_val,
@@ -127,7 +249,7 @@ async fn invoke_runtime(
         };
 
         let val = serde_json::to_value(&finished_run).unwrap();
-        let _ = iii_bg.trigger("state::set", json!({
+        let _ = iii_bg.trigger_v0("state::set", json!({
             "scope": runs_scope(),
             "key": &run_id_bg,
             "value": val,
@@ -156,7 +278,7 @@ async fn execute_runtime(iii: &III, config: &RuntimeConfig, context: &Value, tim
             let url = config.url.as_deref().ok_or_else(|| IIIError::Handler("missing url".into()))?;
 
             let result = iii
-                .trigger("http::post", json!({
+                .trigger_v0("http::post", json!({
                     "url": url,
                     "body": context,
                     "headers": config.headers,
@@ -231,7 +353,7 @@ async fn cancel_run(
     if let Some((_, handle)) = active_runs.remove(&req.run_id) {
         handle.abort();
 
-        let _ = iii.trigger("state::update", json!({
+        let _ = iii.trigger_v0("state::update", json!({
             "scope": runs_scope(),
             "key": &req.run_id,
             "path": "status",
@@ -246,13 +368,13 @@ async fn cancel_run(
 }
 
 async fn list_runtimes(iii: &III) -> Result<Value, IIIError> {
-    iii.trigger("state::list", json!({ "scope": runtimes_scope() }))
+    iii.trigger_v0("state::list", json!({ "scope": runtimes_scope() }))
         .await
         .map_err(|e| IIIError::Handler(e.to_string()))
 }
 
 async fn get_run(iii: &III, run_id: &str) -> Result<Value, IIIError> {
-    iii.trigger("state::get", json!({
+    iii.trigger_v0("state::get", json!({
         "scope": runs_scope(),
         "key": run_id,
     }))
@@ -264,7 +386,7 @@ async fn get_run(iii: &III, run_id: &str) -> Result<Value, IIIError> {
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing_subscriber::fmt::init();
 
-    let iii = register_worker("ws://localhost:49134", InitOptions::default())?;
+    let iii = register_worker("ws://localhost:49134", InitOptions::default());
     let active_runs: Arc<DashMap<String, tokio::task::JoinHandle<()>>> = Arc::new(DashMap::new());
 
     let iii_clone = iii.clone();
@@ -338,11 +460,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         },
     );
 
-    iii.register_trigger("http", "bridge::register", json!({ "method": "POST", "path": "/api/bridge/runtimes" }))?;
-    iii.register_trigger("http", "bridge::invoke", json!({ "method": "POST", "path": "/api/bridge/invoke" }))?;
-    iii.register_trigger("http", "bridge::cancel", json!({ "method": "POST", "path": "/api/bridge/cancel" }))?;
-    iii.register_trigger("http", "bridge::list", json!({ "method": "GET", "path": "/api/bridge/runtimes" }))?;
-    iii.register_trigger("http", "bridge::run", json!({ "method": "GET", "path": "/api/bridge/runs/:runId" }))?;
+    iii.register_trigger_v0("http", "bridge::register", json!({ "method": "POST", "path": "/api/bridge/runtimes" }))?;
+    iii.register_trigger_v0("http", "bridge::invoke", json!({ "method": "POST", "path": "/api/bridge/invoke" }))?;
+    iii.register_trigger_v0("http", "bridge::cancel", json!({ "method": "POST", "path": "/api/bridge/cancel" }))?;
+    iii.register_trigger_v0("http", "bridge::list", json!({ "method": "GET", "path": "/api/bridge/runtimes" }))?;
+    iii.register_trigger_v0("http", "bridge::run", json!({ "method": "GET", "path": "/api/bridge/runs/:runId" }))?;
 
     tracing::info!("bridge worker started");
     tokio::signal::ctrl_c().await?;

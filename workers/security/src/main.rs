@@ -1,10 +1,132 @@
-use iii_sdk::{register_worker, InitOptions, III};
+use iii_sdk::{III, InitOptions, register_worker};
 use iii_sdk::error::IIIError;
 use hmac::{Hmac, Mac};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sha2::Sha256;
 use std::sync::OnceLock;
+
+#[allow(dead_code)]
+mod iii_compat {
+    use iii_sdk::{
+        III, RegisterFunction, RegisterTriggerInput, TriggerRequest, FunctionRef, Trigger,
+        Value,
+    };
+    use iii_sdk::error::IIIError;
+    use std::future::Future;
+
+    pub trait IIIExt {
+        fn register_function_with_description<F, Fut>(
+            &self,
+            id: &str,
+            desc: &str,
+            f: F,
+        ) -> FunctionRef
+        where
+            F: Fn(Value) -> Fut + Send + Sync + 'static,
+            Fut: Future<Output = Result<Value, IIIError>> + Send + 'static;
+
+        fn register_function_v0<F, Fut>(&self, id: &str, f: F) -> FunctionRef
+        where
+            F: Fn(Value) -> Fut + Send + Sync + 'static,
+            Fut: Future<Output = Result<Value, IIIError>> + Send + 'static;
+
+        fn register_trigger_v0(
+            &self,
+            kind: &str,
+            function_id: &str,
+            config: Value,
+        ) -> Result<Trigger, IIIError>;
+
+        fn trigger_v0(
+            &self,
+            function_id: &str,
+            payload: Value,
+        ) -> impl Future<Output = Result<Value, IIIError>> + Send;
+
+        fn trigger_void(
+            &self,
+            function_id: &str,
+            payload: Value,
+        ) -> Result<(), IIIError>;
+    }
+
+    impl IIIExt for III {
+        fn register_function_with_description<F, Fut>(
+            &self,
+            id: &str,
+            desc: &str,
+            f: F,
+        ) -> FunctionRef
+        where
+            F: Fn(Value) -> Fut + Send + Sync + 'static,
+            Fut: Future<Output = Result<Value, IIIError>> + Send + 'static,
+        {
+            self.register_function(
+                RegisterFunction::new_async(id.to_string(), f).description(desc.to_string()),
+            )
+        }
+
+        fn register_function_v0<F, Fut>(&self, id: &str, f: F) -> FunctionRef
+        where
+            F: Fn(Value) -> Fut + Send + Sync + 'static,
+            Fut: Future<Output = Result<Value, IIIError>> + Send + 'static,
+        {
+            self.register_function(RegisterFunction::new_async(id.to_string(), f))
+        }
+
+        fn register_trigger_v0(
+            &self,
+            kind: &str,
+            function_id: &str,
+            config: Value,
+        ) -> Result<Trigger, IIIError> {
+            self.register_trigger(RegisterTriggerInput {
+                trigger_type: kind.to_string(),
+                function_id: function_id.to_string(),
+                config,
+                metadata: None,
+            })
+        }
+
+        async fn trigger_v0(
+            &self,
+            function_id: &str,
+            payload: Value,
+        ) -> Result<Value, IIIError> {
+            self.trigger(TriggerRequest {
+                function_id: function_id.to_string(),
+                payload,
+                action: None,
+                timeout_ms: None,
+            })
+            .await
+        }
+
+        fn trigger_void(
+            &self,
+            function_id: &str,
+            payload: Value,
+        ) -> Result<(), IIIError> {
+            let iii = self.clone();
+            let fid = function_id.to_string();
+            tokio::spawn(async move {
+                let _ = iii
+                    .trigger(TriggerRequest {
+                        function_id: fid,
+                        payload,
+                        action: None,
+                        timeout_ms: None,
+                    })
+                    .await;
+            });
+            Ok(())
+        }
+    }
+}
+use iii_compat::IIIExt as _;
+
+
 
 type HmacSha256 = Hmac<Sha256>;
 
@@ -62,7 +184,7 @@ static INJECTION_PATTERNS: &[&str] = &[
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing_subscriber::fmt::init();
 
-    let iii = register_worker("ws://localhost:49134", InitOptions::default())?;
+    let iii = register_worker("ws://localhost:49134", InitOptions::default());
 
     let iii_ref = iii.clone();
     iii.register_function_with_description(
@@ -84,7 +206,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let agent_id = input["agentId"].as_str().unwrap_or("");
                 let caps = &input["capabilities"];
 
-                iii.trigger("state::set", json!({
+                iii.trigger_v0("state::set", json!({
                     "scope": "capabilities",
                     "key": agent_id,
                     "value": caps,
@@ -130,16 +252,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         },
     );
 
-    iii.register_trigger("subscribe", "security::audit", json!({
+    iii.register_trigger_v0("subscribe", "security::audit", json!({
         "topic": "audit",
     }))?;
 
-    iii.register_trigger("http", "security::verify_audit", json!({
+    iii.register_trigger_v0("http", "security::verify_audit", json!({
         "api_path": "security/audit/verify",
         "http_method": "GET",
     }))?;
 
-    iii.register_trigger("http", "security::scan_injection", json!({
+    iii.register_trigger_v0("http", "security::scan_injection", json!({
         "api_path": "security/scan",
         "http_method": "POST",
     }))?;
@@ -167,7 +289,7 @@ async fn check_capability(iii: &III, input: Value) -> Result<Value, IIIError> {
     }
 
     let caps: Value = iii
-        .trigger("state::get", json!({
+        .trigger_v0("state::get", json!({
             "scope": "capabilities",
             "key": agent_id,
         }))
@@ -193,7 +315,7 @@ async fn check_capability(iii: &III, input: Value) -> Result<Value, IIIError> {
     let max_tokens = caps["max_tokens_per_hour"].as_u64().unwrap_or(0);
     if max_tokens > 0 {
         let usage: Value = iii
-            .trigger("state::get", json!({ "scope": "metering", "key": agent_id }))
+            .trigger_v0("state::get", json!({ "scope": "metering", "key": agent_id }))
             .await
             .unwrap_or(json!({}));
 
@@ -213,7 +335,7 @@ async fn check_capability(iii: &III, input: Value) -> Result<Value, IIIError> {
 
 async fn append_audit(iii: &III, input: Value) -> Result<Value, IIIError> {
     let prev: Value = iii
-        .trigger("state::get", json!({ "scope": "audit", "key": "__latest" }))
+        .trigger_v0("state::get", json!({ "scope": "audit", "key": "__latest" }))
         .await
         .unwrap_or(json!({ "hash": "0".repeat(64) }));
 
@@ -249,13 +371,13 @@ async fn append_audit(iii: &III, input: Value) -> Result<Value, IIIError> {
         "prevHash": &prev_hash,
     });
 
-    iii.trigger("state::set", json!({
+    iii.trigger_v0("state::set", json!({
         "scope": "audit",
         "key": &id,
         "value": &full_entry,
     })).await.map_err(|e| IIIError::Handler(e.to_string()))?;
 
-    iii.trigger("state::set", json!({
+    iii.trigger_v0("state::set", json!({
         "scope": "audit",
         "key": "__latest",
         "value": { "hash": &hash, "id": &id, "timestamp": timestamp },
@@ -266,7 +388,7 @@ async fn append_audit(iii: &III, input: Value) -> Result<Value, IIIError> {
 
 async fn verify_audit(iii: &III) -> Result<Value, IIIError> {
     let entries: Value = iii
-        .trigger("state::list", json!({ "scope": "audit" }))
+        .trigger_v0("state::list", json!({ "scope": "audit" }))
         .await
         .map_err(|e| IIIError::Handler(e.to_string()))?;
 

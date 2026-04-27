@@ -3,6 +3,128 @@ use iii_sdk::error::IIIError;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
+#[allow(dead_code)]
+mod iii_compat {
+    use iii_sdk::{
+        III, RegisterFunction, RegisterTriggerInput, TriggerRequest, FunctionRef, Trigger,
+        Value,
+    };
+    use iii_sdk::error::IIIError;
+    use std::future::Future;
+
+    pub trait IIIExt {
+        fn register_function_with_description<F, Fut>(
+            &self,
+            id: &str,
+            desc: &str,
+            f: F,
+        ) -> FunctionRef
+        where
+            F: Fn(Value) -> Fut + Send + Sync + 'static,
+            Fut: Future<Output = Result<Value, IIIError>> + Send + 'static;
+
+        fn register_function_v0<F, Fut>(&self, id: &str, f: F) -> FunctionRef
+        where
+            F: Fn(Value) -> Fut + Send + Sync + 'static,
+            Fut: Future<Output = Result<Value, IIIError>> + Send + 'static;
+
+        fn register_trigger_v0(
+            &self,
+            kind: &str,
+            function_id: &str,
+            config: Value,
+        ) -> Result<Trigger, IIIError>;
+
+        fn trigger_v0(
+            &self,
+            function_id: &str,
+            payload: Value,
+        ) -> impl Future<Output = Result<Value, IIIError>> + Send;
+
+        fn trigger_void(
+            &self,
+            function_id: &str,
+            payload: Value,
+        ) -> Result<(), IIIError>;
+    }
+
+    impl IIIExt for III {
+        fn register_function_with_description<F, Fut>(
+            &self,
+            id: &str,
+            desc: &str,
+            f: F,
+        ) -> FunctionRef
+        where
+            F: Fn(Value) -> Fut + Send + Sync + 'static,
+            Fut: Future<Output = Result<Value, IIIError>> + Send + 'static,
+        {
+            self.register_function(
+                RegisterFunction::new_async(id.to_string(), f).description(desc.to_string()),
+            )
+        }
+
+        fn register_function_v0<F, Fut>(&self, id: &str, f: F) -> FunctionRef
+        where
+            F: Fn(Value) -> Fut + Send + Sync + 'static,
+            Fut: Future<Output = Result<Value, IIIError>> + Send + 'static,
+        {
+            self.register_function(RegisterFunction::new_async(id.to_string(), f))
+        }
+
+        fn register_trigger_v0(
+            &self,
+            kind: &str,
+            function_id: &str,
+            config: Value,
+        ) -> Result<Trigger, IIIError> {
+            self.register_trigger(RegisterTriggerInput {
+                trigger_type: kind.to_string(),
+                function_id: function_id.to_string(),
+                config,
+                metadata: None,
+            })
+        }
+
+        async fn trigger_v0(
+            &self,
+            function_id: &str,
+            payload: Value,
+        ) -> Result<Value, IIIError> {
+            self.trigger(TriggerRequest {
+                function_id: function_id.to_string(),
+                payload,
+                action: None,
+                timeout_ms: None,
+            })
+            .await
+        }
+
+        fn trigger_void(
+            &self,
+            function_id: &str,
+            payload: Value,
+        ) -> Result<(), IIIError> {
+            let iii = self.clone();
+            let fid = function_id.to_string();
+            tokio::spawn(async move {
+                let _ = iii
+                    .trigger(TriggerRequest {
+                        function_id: fid,
+                        payload,
+                        action: None,
+                        timeout_ms: None,
+                    })
+                    .await;
+            });
+            Ok(())
+        }
+    }
+}
+use iii_compat::IIIExt as _;
+
+
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PolicyRule {
     pub pattern: String,
@@ -626,7 +748,7 @@ pub fn register(iii: &III) {
                 let current_concurrency = input["currentConcurrency"].as_u64().unwrap_or(0) as u32;
 
                 let agent_policy: Option<PolicyConfig> = iii
-                    .trigger("state::get", json!({
+                    .trigger_v0("state::get", json!({
                         "scope": "policies",
                         "key": agent_id,
                     }))
@@ -635,7 +757,7 @@ pub fn register(iii: &III) {
                     .and_then(|v| serde_json::from_value(v).ok());
 
                 let global_policy: Option<PolicyConfig> = iii
-                    .trigger("state::get", json!({
+                    .trigger_v0("state::get", json!({
                         "scope": "policies",
                         "key": "__global",
                     }))
@@ -709,7 +831,7 @@ pub fn register(iii: &III) {
                     input.get("policy").cloned().unwrap_or(json!({ "rules": [] }))
                 ).map_err(|e| IIIError::Handler(e.to_string()))?;
 
-                iii.trigger("state::set", json!({
+                iii.trigger_v0("state::set", json!({
                     "scope": "policies",
                     "key": &key,
                     "value": &policy,
@@ -738,7 +860,7 @@ pub fn register(iii: &III) {
                     .unwrap_or("__global");
 
                 let policy: Value = iii
-                    .trigger("state::get", json!({
+                    .trigger_v0("state::get", json!({
                         "scope": "policies",
                         "key": key,
                     }))
