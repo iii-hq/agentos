@@ -792,25 +792,25 @@ agentos/
 ├── vitest.config.ts        Unit/integration test configuration
 ├── vitest.e2e.config.ts    E2E test configuration
 │
-├── crates/                 Rust crates (18 — hot path + control plane)
-│   ├── agent-core/         ReAct agent loop
-│   ├── api/                Rust HTTP API
-│   ├── bridge/             External runtime adapters (6 runtimes)
+├── crates/                 Surfaces (clients, not workers)
 │   ├── cli/                CLI (50+ commands)
-│   ├── council/            Governance proposals + merkle audit chain
-│   ├── directive/          Hierarchical goal alignment
-│   ├── hand-runner/        Autonomous hands
-│   ├── hierarchy/          Agent org structure (cycle-safe)
-│   ├── ledger/             Budget enforcement (soft/hard limits)
-│   ├── llm-router/         25 LLM providers
-│   ├── memory/             Session memory
-│   ├── mission/            Task lifecycle + state machine
-│   ├── pulse/              Scheduled agent invocation
-│   ├── realm/              Multi-tenant isolation domains
-│   ├── security/           RBAC, audit, taint, signing, sandbox
-│   ├── tui/                21-screen terminal dashboard
-│   ├── wasm-sandbox/       WASM execution
-│   └── workflow/           Workflow engine
+│   └── tui/                21-screen terminal dashboard
+│
+├── workers/                Narrow iii workers (one binary each, registered functions over iii.trigger)
+│   ├── agent-core/         ReAct agent loop                       agent::*
+│   ├── bridge/             External runtime adapters              bridge::*
+│   ├── council/            Proposals + hash-chained activity log  council::*
+│   ├── directive/          Hierarchical goal alignment            directive::*
+│   ├── embedding/          Embedding generation (Python)          embedding::*
+│   ├── hierarchy/          Agent org graph (cycle-safe)           hierarchy::*
+│   ├── ledger/             Budget enforcement                     ledger::*
+│   ├── llm-router/         LLM provider routing                   llm::*
+│   ├── memory/             Narrow agent memory                    memory::*
+│   ├── mission/            Task lifecycle + state machine         mission::*
+│   ├── pulse/              Scheduled agent invocation             pulse::*
+│   ├── realm/              Multi-tenant isolation                 realm::*
+│   ├── security/           Combined guardrails + audit            security::*
+│   └── wasm-sandbox/       WASM execution (wasmtime)              wasm::*
 │
 ├── src/                    TypeScript workers (51)
 │   ├── api.ts              OpenAI-compatible API

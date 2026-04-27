@@ -1,0 +1,7 @@
+iii: v1
+name: realm
+language: rust
+deploy: binary
+manifest: Cargo.toml
+bin: agentos-realm
+description: Tenancy + scope — realm CRUD, import, export, isolation

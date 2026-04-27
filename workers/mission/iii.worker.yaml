@@ -1,0 +1,7 @@
+iii: v1
+name: mission
+language: rust
+deploy: binary
+manifest: Cargo.toml
+bin: agentos-mission
+description: Goal decomposition + state machine — create, list, transition, checkout, comment

@@ -1,0 +1,7 @@
+iii: v1
+name: security
+language: rust
+deploy: binary
+manifest: Cargo.toml
+bin: agentos-security
+description: Combined guardrails + audit — HMAC-chained log, prompt-injection scan, capability checks, tool policy, signing, taint

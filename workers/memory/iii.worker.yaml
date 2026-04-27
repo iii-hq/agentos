@@ -1,0 +1,7 @@
+iii: v1
+name: memory
+language: rust
+deploy: binary
+manifest: Cargo.toml
+bin: agentos-memory
+description: Narrow agent memory — store, recall, consolidate, evict, delete

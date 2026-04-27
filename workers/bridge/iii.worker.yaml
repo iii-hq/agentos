@@ -1,0 +1,7 @@
+iii: v1
+name: bridge
+language: rust
+deploy: binary
+manifest: Cargo.toml
+bin: agentos-bridge
+description: External runtime adapter — register runtime, invoke, run, list, cancel

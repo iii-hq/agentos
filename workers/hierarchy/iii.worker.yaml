@@ -1,0 +1,7 @@
+iii: v1
+name: hierarchy
+language: rust
+deploy: binary
+manifest: Cargo.toml
+bin: agentos-hierarchy
+description: Delegation graph — agent reports-to chains, capability lookup, tree

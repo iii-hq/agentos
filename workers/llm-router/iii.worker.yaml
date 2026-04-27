@@ -1,0 +1,7 @@
+iii: v1
+name: llm-router
+language: rust
+deploy: binary
+manifest: Cargo.toml
+bin: agentos-llm-router
+description: LLM provider routing, usage tracking, completion fan-out

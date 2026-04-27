@@ -137,7 +137,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cache_ref = cache.clone();
     let iii_ref = iii.clone();
     iii.register_function_with_description(
-        "sandbox::execute",
+        "wasm::execute",
         "Execute WASM module in sandboxed environment",
         move |input: Value| {
             let cache = cache_ref.clone();
@@ -148,7 +148,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let cache_ref = cache.clone();
     iii.register_function_with_description(
-        "sandbox::validate",
+        "wasm::validate",
         "Validate and cache a WASM module",
         move |input: Value| {
             let cache = cache_ref.clone();
@@ -158,7 +158,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let cache_ref = cache.clone();
     iii.register_function_with_description(
-        "sandbox::list_modules",
+        "wasm::list_modules",
         "List cached WASM modules",
         move |_: Value| {
             let cache = cache_ref.clone();
@@ -169,9 +169,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         },
     );
 
-    iii.register_trigger("http", "sandbox::execute", json!({ "api_path": "sandbox/execute", "http_method": "POST" }))?;
-    iii.register_trigger("http", "sandbox::validate", json!({ "api_path": "sandbox/validate", "http_method": "POST" }))?;
-    iii.register_trigger("http", "sandbox::list_modules", json!({ "api_path": "sandbox/modules", "http_method": "GET" }))?;
+    iii.register_trigger("http", "wasm::execute", json!({ "api_path": "wasm/execute", "http_method": "POST" }))?;
+    iii.register_trigger("http", "wasm::validate", json!({ "api_path": "wasm/validate", "http_method": "POST" }))?;
+    iii.register_trigger("http", "wasm::list_modules", json!({ "api_path": "wasm/modules", "http_method": "GET" }))?;
 
     tracing::info!("wasm-sandbox worker started");
     tokio::signal::ctrl_c().await?;

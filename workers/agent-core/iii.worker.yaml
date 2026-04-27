@@ -1,0 +1,7 @@
+iii: v1
+name: agent-core
+language: rust
+deploy: binary
+manifest: Cargo.toml
+bin: agentos-core
+description: Agent loop — chat, tool dispatch, multi-iteration ReAct over iii primitives
