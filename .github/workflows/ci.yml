@@ -150,17 +150,42 @@ jobs:
           done
           sleep 5
 
-      - name: smoke check engine health
-        run: |
-          curl -fsS http://127.0.0.1:3111/api/health || (cat engine.log; exit 1)
-
-      - name: "assert wasm:: + sandbox:: coexist"
+      - name: engine WS port + HTTP port listening
         run: |
           set -e
-          functions=$(curl -fsS http://127.0.0.1:3111/api/functions || echo '[]')
-          echo "$functions" | grep -q 'wasm::execute' || (echo "wasm::execute not registered"; exit 1)
-          echo "$functions" | grep -q 'sandbox::create' || echo "warn: sandbox::create not registered (iii-sandbox not configured)"
-          echo "ok: namespaces do not clash"
+          for port in 49134 3111; do
+            timeout 5 bash -c "until echo > /dev/tcp/127.0.0.1/$port 2>/dev/null; do sleep 0.5; done" \
+              || (echo "::error::port $port never opened"; cat engine.log; exit 1)
+            echo "ok: port $port listening"
+          done
+
+      - name: workers registered functions in engine
+        run: |
+          set -e
+          # Workers report [REGISTERED] Function <id> when SDK successfully wires a function.
+          # Require >= 30 registered functions across all 13 agentos workers.
+          count=$(grep -c '\[REGISTERED\] Function' engine.log || echo 0)
+          echo "registered functions: $count"
+          if [ "$count" -lt 30 ]; then
+            echo "::error::expected >=30 registered functions, got $count"
+            cat engine.log
+            exit 1
+          fi
+
+      - name: "assert wasm:: + sandbox:: coexist (no namespace clash)"
+        run: |
+          set -e
+          # wasm-sandbox worker must register wasm::* not sandbox::*
+          grep -q 'Function wasm::execute' engine.log \
+            || (echo "::error::wasm::execute not registered"; exit 1)
+          # The builtin sandbox::* worker is opt-in (commented in config.yaml);
+          # if iii-sandbox were enabled, sandbox::create would also appear without
+          # colliding with our wasm::* names.
+          if grep -q 'Function sandbox::execute' engine.log; then
+            echo "::error::sandbox::execute is reserved for builtin iii-sandbox (iii v0.11.4-next.4)"
+            exit 1
+          fi
+          echo "ok: wasm:: registered, no agentos worker shadows sandbox::*"
 
       - name: dump worker logs on failure
         if: failure()
