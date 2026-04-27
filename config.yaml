@@ -55,4 +55,5 @@ workers:
           threshold: 10
           operator: ">"
           window_seconds: 60
-          action: log
+          action:
+            type: log
