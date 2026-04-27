@@ -928,7 +928,7 @@ mod tests {
 
 pub fn register(iii: &III) {
     iii.register_function_with_description(
-        "sandbox::docker_exec",
+        "security::docker_exec",
         "Execute a command inside a Docker container sandbox",
         move |input: Value| async move { docker_exec(input).await },
     );

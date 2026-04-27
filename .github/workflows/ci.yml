@@ -17,8 +17,6 @@ jobs:
       - uses: actions/checkout@v4
 
       - uses: dtolnay/rust-toolchain@stable
-        with:
-          toolchain: 1.85.0
 
       - uses: Swatinem/rust-cache@v2
 
@@ -48,31 +46,40 @@ jobs:
       - name: validate every workers/*/iii.worker.yaml
         run: |
           set -euo pipefail
-          missing=0
-          for d in workers/*/; do
-            name="$(basename "$d")"
-            [ "$name" = "embedding" ] && continue
-            if [ ! -f "$d/iii.worker.yaml" ]; then
-              echo "::error::missing iii.worker.yaml in $d"
-              missing=1
-              continue
-            fi
-            python3 - <<EOF
-          import yaml, sys
-          with open("$d/iii.worker.yaml") as fp:
-              m = yaml.safe_load(fp)
-          required = ["iii", "name", "language", "deploy", "manifest"]
-          for k in required:
-              assert k in m, f"$d/iii.worker.yaml missing key: {k}"
-          assert m["name"] == "$name", f"$d/iii.worker.yaml name='{m['name']}' != folder '$name'"
-          assert m["iii"] == "v1", f"$d/iii.worker.yaml iii must be v1"
-          assert m["deploy"] in ("binary", "image"), f"$d/iii.worker.yaml deploy invalid"
-          if m["deploy"] == "binary":
-              assert "bin" in m, f"$d/iii.worker.yaml binary deploy needs bin"
-          print(f"ok: {m['name']}")
-          EOF
-          done
-          exit $missing
+          python3 - <<'PYEOF'
+          import sys
+          from pathlib import Path
+          import yaml
+
+          fail = False
+          for d in sorted(Path("workers").iterdir()):
+              if not d.is_dir() or d.name == "embedding":
+                  continue
+              p = d / "iii.worker.yaml"
+              if not p.exists():
+                  print(f"::error::missing {p}")
+                  fail = True
+                  continue
+              m = yaml.safe_load(p.read_text())
+              for k in ("iii", "name", "language", "deploy", "manifest"):
+                  if k not in m:
+                      print(f"::error::{p} missing key {k}")
+                      fail = True
+              if m.get("name") != d.name:
+                  print(f"::error::{p} name='{m.get('name')}' != folder '{d.name}'")
+                  fail = True
+              if m.get("iii") != "v1":
+                  print(f"::error::{p} iii must be v1")
+                  fail = True
+              if m.get("deploy") not in ("binary", "image"):
+                  print(f"::error::{p} deploy invalid")
+                  fail = True
+              if m.get("deploy") == "binary" and "bin" not in m:
+                  print(f"::error::{p} binary deploy needs bin")
+                  fail = True
+              print(f"ok: {m.get('name')}")
+          sys.exit(1 if fail else 0)
+          PYEOF
 
   namespace-clash:
     name: "no sandbox::* clash with builtin"

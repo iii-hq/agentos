@@ -4,4 +4,4 @@ language: rust
 deploy: binary
 manifest: Cargo.toml
 bin: agentos-wasm-sandbox
-description: WASM module execution — wasmtime fuel-metered runner, validate, list (uses wasm:: namespace, distinct from builtin sandbox::* OCI microVMs)
+description: "WASM module execution — wasmtime fuel-metered runner, validate, list (uses wasm:: namespace, distinct from builtin sandbox::* OCI microVMs)"
