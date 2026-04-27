@@ -1,7 +1,5 @@
-port: 49134
-
-modules:
-  - class: modules::api::RestApiModule
+workers:
+  - name: iii-http
     config:
       port: 3111
       host: 0.0.0.0
@@ -12,43 +10,44 @@ modules:
         allowed_methods: [GET, POST, PUT, DELETE, OPTIONS]
         allowed_headers: ['*']
 
-  - class: modules::state::StateModule
+  - name: iii-state
     config:
       adapter:
-        class: modules::state::adapters::KvStore
+        name: kv
         config:
           store_method: file_based
           file_path: ./data/state
 
-  - class: modules::stream::StreamModule
+  - name: iii-stream
     config:
       port: 3112
       host: 0.0.0.0
       adapter:
-        class: modules::stream::adapters::KvStore
+        name: kv
         config:
           store_method: file_based
           file_path: ./data/streams
 
-  - class: modules::queue::QueueModule
+  - name: iii-queue
     config:
       adapter:
-        class: modules::queue::BuiltinQueueAdapter
+        name: builtin
 
-  - class: modules::pubsub::PubSubModule
+  - name: iii-pubsub
     config:
       adapter:
-        class: modules::pubsub::LocalAdapter
+        name: local
 
-  - class: modules::cron::CronModule
+  - name: iii-cron
     config:
       adapter:
-        class: modules::cron::KvCronAdapter
+        name: kv
 
-  - class: modules::observability::OtelModule
+  - name: iii-observability
     config:
       enabled: true
-      exporter: stdout
+      service_name: agentos
+      exporter: memory
       metrics_enabled: true
       logs_enabled: true
       alerts:
@@ -57,5 +56,4 @@ modules:
           threshold: 10
           operator: ">"
           window_seconds: 60
-          action:
-            type: log
+          action: log
