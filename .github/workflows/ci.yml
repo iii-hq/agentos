@@ -122,10 +122,11 @@ jobs:
         run: chmod +x target/release/agentos-*
 
       - name: install iii CLI
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -e
-          curl -fsSL https://install.iii.dev/iii/main/install.sh | sh -s -- --version 0.11.4-next.4 || \
-            curl -fsSL https://install.iii.dev/iii/main/install.sh | sh
+          curl -fsSL https://install.iii.dev/iii/main/install.sh | sh
           echo "$HOME/.iii/bin" >> $GITHUB_PATH
 
       - name: verify iii version
@@ -229,9 +230,11 @@ jobs:
         run: chmod +x target/release/agentos-*
 
       - name: install iii CLI
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          curl -fsSL https://install.iii.dev/iii/main/install.sh | sh -s -- --version 0.11.4-next.4 || \
-            curl -fsSL https://install.iii.dev/iii/main/install.sh | sh
+          set -e
+          curl -fsSL https://install.iii.dev/iii/main/install.sh | sh
           echo "$HOME/.iii/bin" >> $GITHUB_PATH
 
       - name: skip if no api key
