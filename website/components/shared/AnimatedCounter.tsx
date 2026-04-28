@@ -16,11 +16,12 @@ export default function AnimatedCounter({
   const [started, setStarted] = useState(false);
 
   useEffect(() => {
+    if (started) return;
     const el = ref.current;
     if (!el) return;
     const observer = new IntersectionObserver(
       ([entry]) => {
-        if (entry.isIntersecting && !started) {
+        if (entry.isIntersecting) {
           setStarted(true);
           observer.unobserve(el);
         }

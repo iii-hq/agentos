@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Copy, Check } from "lucide-react";
 
 type Token = { text: string; className: string };
@@ -155,8 +155,8 @@ export default function CodeBlock({
   filename?: string;
 }) {
   const [copied, setCopied] = useState(false);
-  const timerRef = useRef<ReturnType<typeof setTimeout>>(null);
-  const lines = tokenize(code, lang);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lines = useMemo(() => tokenize(code, lang), [code, lang]);
 
   useEffect(() => {
     return () => {
