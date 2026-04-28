@@ -838,9 +838,6 @@ agentos/
 │   ├── __tests__/          1,748 TypeScript tests (70 files)
 │   └── ...                 25 more workers
 │
-├── workers/                Python workers
-│   └── embedding/          Text embeddings
-│
 ├── agents/                 45 agent templates
 ├── hands/                  7 autonomous hands
 ├── integrations/           25 MCP integrations
