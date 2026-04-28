@@ -1,0 +1,7 @@
+iii: v1
+name: cron
+language: rust
+deploy: binary
+manifest: Cargo.toml
+bin: agentos-cron
+description: Scheduled function invocations on top of iii-cron — session cleanup, cost aggregation, rate limit reset

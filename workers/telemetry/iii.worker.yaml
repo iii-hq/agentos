@@ -1,0 +1,7 @@
+iii: v1
+name: telemetry
+language: rust
+deploy: binary
+manifest: Cargo.toml
+bin: agentos-telemetry
+description: OTel-style metric/span recording bridge — process memory, uptime, and metrics summary

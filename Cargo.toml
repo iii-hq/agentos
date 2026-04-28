@@ -7,6 +7,7 @@ members = [
     "workers/bridge",
     "workers/channel-slack",
     "workers/council",
+    "workers/cron",
     "workers/directive",
     "workers/hand-runner",
     "workers/hierarchy",
@@ -17,6 +18,8 @@ members = [
     "workers/pulse",
     "workers/realm",
     "workers/security",
+    "workers/telemetry",
+    "workers/vault",
     "workers/wasm-sandbox",
 ]
 
