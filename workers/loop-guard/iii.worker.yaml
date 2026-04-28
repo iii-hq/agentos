@@ -1,0 +1,7 @@
+iii: v1
+name: loop-guard
+language: rust
+deploy: binary
+manifest: Cargo.toml
+bin: agentos-loop-guard
+description: Agent loop guard — iteration cap, ping-pong detection, repeated-tool-call backoff

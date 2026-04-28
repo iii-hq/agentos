@@ -1,0 +1,7 @@
+iii: v1
+name: hashline
+language: rust
+deploy: binary
+manifest: Cargo.toml
+bin: agentos-hashline
+description: Hash-anchored line edits — read, edit, diff with content-hash validation
