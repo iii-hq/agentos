@@ -1,0 +1,7 @@
+iii: v1
+name: vault
+language: rust
+deploy: binary
+manifest: Cargo.toml
+bin: agentos-vault
+description: Encrypted secret storage — AES-GCM-256 + scrypt KDF with auto-lock and access control

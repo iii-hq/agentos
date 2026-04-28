@@ -6,6 +6,7 @@ members = [
     "workers/agent-core",
     "workers/bridge",
     "workers/council",
+    "workers/cron",
     "workers/directive",
     "workers/hierarchy",
     "workers/ledger",
@@ -15,6 +16,8 @@ members = [
     "workers/pulse",
     "workers/realm",
     "workers/security",
+    "workers/telemetry",
+    "workers/vault",
     "workers/wasm-sandbox",
 ]
 
