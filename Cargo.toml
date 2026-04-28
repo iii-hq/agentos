@@ -5,6 +5,7 @@ members = [
     "crates/tui",
     "workers/agent-core",
     "workers/bridge",
+    "workers/channel-slack",
     "workers/council",
     "workers/directive",
     "workers/hand-runner",
