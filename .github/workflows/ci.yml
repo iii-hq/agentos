@@ -106,11 +106,8 @@ jobs:
         with:
           node-version: 22
 
-      - name: install pnpm
-        run: npm install -g pnpm@9
-
       - name: install deps
-        run: pnpm install --frozen-lockfile || pnpm install
+        run: npm install --no-audit --no-fund
 
       - name: download worker binaries
         uses: actions/download-artifact@v4
@@ -214,11 +211,8 @@ jobs:
         with:
           node-version: 22
 
-      - name: install pnpm
-        run: npm install -g pnpm@9
-
       - name: install deps
-        run: pnpm install --frozen-lockfile || pnpm install
+        run: npm install --no-audit --no-fund
 
       - name: download worker binaries
         uses: actions/download-artifact@v4
@@ -273,7 +267,7 @@ jobs:
           AGENTOS_BASE_URL: http://127.0.0.1:3111
           AGENTOS_API_KEY: ${{ secrets.AGENTOS_API_KEY }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-        run: pnpm run test:e2e
+        run: npm run test:e2e
 
       - name: dump logs on failure
         if: failure()
