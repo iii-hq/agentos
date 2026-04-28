@@ -102,7 +102,7 @@ vi.mock("iii-sdk", () => ({
   })),
 }));
 
-vi.mock("../shared/errors.js", () => ({
+vi.mock("@agentos/shared/errors", () => ({
   safeCall: vi.fn(async (fn: Function, fallback: any) => {
     try {
       return await fn();
@@ -123,7 +123,7 @@ vi.mock("../shared/errors.js", () => ({
   },
 }));
 
-vi.mock("../shared/shutdown.js", () => ({
+vi.mock("@agentos/shared/shutdown", () => ({
   shutdownManager: {
     initShutdown: vi.fn(),
     isShuttingDown: vi.fn(() => false),

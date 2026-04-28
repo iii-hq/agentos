@@ -5,15 +5,15 @@ import {
   registerShutdown,
   WORKSPACE_ROOT,
   assertPathContained,
-} from "./shared/config.js";
+} from "@agentos/shared/config";
 import { readFile, writeFile, readdir, stat } from "fs/promises";
 import { realpathSync } from "node:fs";
 import path, { resolve, relative, join } from "path";
 import { execFile } from "child_process";
 import { promisify } from "util";
-import { assertNoSsrf } from "./shared/utils.js";
-import { safeCall } from "./shared/errors.js";
-import { recordMetric } from "./shared/metrics.js";
+import { assertNoSsrf } from "@agentos/shared/utils";
+import { safeCall } from "@agentos/shared/errors";
+import { recordMetric } from "@agentos/shared/metrics";
 
 const log = new Logger();
 const execFileAsync = promisify(execFile);

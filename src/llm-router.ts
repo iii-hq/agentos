@@ -1,6 +1,6 @@
 import { registerWorker, TriggerAction } from "iii-sdk";
-import { ENGINE_URL, OTEL_CONFIG, registerShutdown } from "./shared/config.js";
-import { PRICING } from "./shared/pricing.js";
+import { ENGINE_URL, OTEL_CONFIG, registerShutdown } from "@agentos/shared/config";
+import { PRICING } from "@agentos/shared/pricing";
 import Anthropic from "@anthropic-ai/sdk";
 
 const sdk = registerWorker(ENGINE_URL, {

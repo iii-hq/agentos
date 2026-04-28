@@ -58,7 +58,7 @@ vi.mock("iii-sdk", () => ({
   TriggerAction: { Void: () => ({}) },
 }));
 
-vi.mock("../shared/pricing.js", () => ({
+vi.mock("@agentos/shared/pricing", () => ({
   PRICING: {
     "claude-opus-4-6": { input: 15, output: 75 },
     "gpt-4o": { input: 2.5, output: 10 },

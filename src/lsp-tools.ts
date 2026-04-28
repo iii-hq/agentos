@@ -1,4 +1,4 @@
-import { httpOk } from "./shared/utils.js";
+import { httpOk } from "@agentos/shared/utils";
 import { registerWorker, TriggerAction } from "iii-sdk";
 import {
   ENGINE_URL,
@@ -6,13 +6,13 @@ import {
   registerShutdown,
   WORKSPACE_ROOT,
   assertPathContained,
-} from "./shared/config.js";
+} from "@agentos/shared/config";
 import { readFile, writeFile } from "fs/promises";
 import { resolve, extname, relative } from "path";
 import { execFile } from "child_process";
 import { promisify } from "util";
-import { safeCall } from "./shared/errors.js";
-import { createRecordMetric } from "./shared/metrics.js";
+import { safeCall } from "@agentos/shared/errors";
+import { createRecordMetric } from "@agentos/shared/metrics";
 
 const sdk = registerWorker(ENGINE_URL, {
   workerName: "lsp-tools",

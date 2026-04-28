@@ -1,8 +1,8 @@
 import { registerWorker, TriggerAction, Logger } from "iii-sdk";
-import { ENGINE_URL, OTEL_CONFIG, registerShutdown } from "./shared/config.js";
-import { createRecordMetric } from "./shared/metrics.js";
-import { requireAuth, sanitizeId } from "./shared/utils.js";
-import { safeCall } from "./shared/errors.js";
+import { ENGINE_URL, OTEL_CONFIG, registerShutdown } from "@agentos/shared/config";
+import { createRecordMetric } from "@agentos/shared/metrics";
+import { requireAuth, sanitizeId } from "@agentos/shared/utils";
+import { safeCall } from "@agentos/shared/errors";
 import type { EvolvedFunction } from "./types.js";
 import * as vm from "node:vm";
 

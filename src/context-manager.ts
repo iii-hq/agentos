@@ -1,7 +1,7 @@
 import { registerWorker } from "iii-sdk";
-import { ENGINE_URL, OTEL_CONFIG, registerShutdown } from "./shared/config.js";
-import type { Message } from "./shared/tokens.js";
-import { estimateTokens, estimateMessagesTokens } from "./shared/tokens.js";
+import { ENGINE_URL, OTEL_CONFIG, registerShutdown } from "@agentos/shared/config";
+import type { Message } from "@agentos/shared/tokens";
+import { estimateTokens, estimateMessagesTokens } from "@agentos/shared/tokens";
 
 const sdk = registerWorker(ENGINE_URL, {
   workerName: "context-manager",

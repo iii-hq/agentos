@@ -50,7 +50,7 @@ vi.mock("iii-sdk", () => ({
   TriggerAction: { Void: () => ({}) },
 }));
 
-vi.mock("../shared/tokens.js", () => ({
+vi.mock("@agentos/shared/tokens", () => ({
   estimateTokens: (text: string) => Math.ceil([...text].length / 4),
   estimateMessagesTokens: (msgs: any[]) => {
     let total = 0;

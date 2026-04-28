@@ -106,7 +106,7 @@ vi.mock("fs/promises", () => ({
   stat: vi.fn(async () => ({ size: 100 })),
 }));
 
-vi.mock("../shared/utils.js", () => ({
+vi.mock("@agentos/shared/utils", () => ({
   httpOk: (req: any, data: any) => data,
   requireAuth: vi.fn(),
 }));

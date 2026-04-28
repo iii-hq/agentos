@@ -9,7 +9,7 @@ import {
   validateMcpCommand,
   stripSecretsFromEnv,
   sanitizeId,
-} from "../shared/utils.js";
+} from "@agentos/shared/utils";
 import { createHmac } from "crypto";
 
 describe("splitMessage", () => {

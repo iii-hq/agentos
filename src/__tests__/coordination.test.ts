@@ -45,7 +45,7 @@ vi.mock("iii-sdk", () => ({
   Logger: class { info() {} warn() {} error() {} },
 }));
 
-vi.mock("../shared/utils.js", () => ({
+vi.mock("@agentos/shared/utils", () => ({
   httpOk: (req: any, data: any) => data,
   requireAuth: vi.fn(),
   sanitizeId: (id: string) => {
@@ -56,11 +56,11 @@ vi.mock("../shared/utils.js", () => ({
 }));
 
 
-vi.mock("../shared/metrics.js", () => ({
+vi.mock("@agentos/shared/metrics", () => ({
   createRecordMetric: () => vi.fn(),
 }));
 
-vi.mock("../shared/errors.js", () => ({
+vi.mock("@agentos/shared/errors", () => ({
   safeCall: async (fn: Function, fallback: any, _context?: any) => {
     try {
       return await fn();

@@ -52,7 +52,7 @@ vi.mock("iii-sdk", () => ({
   Logger: class { info() {} warn() {} error() {} },
 }));
 
-vi.mock("../shared/utils.js", () => ({
+vi.mock("@agentos/shared/utils", () => ({
   httpOk: (req: any, data: any) => data,
   assertNoSsrf: vi.fn(async (url: string) => {
     const parsed = new URL(url);

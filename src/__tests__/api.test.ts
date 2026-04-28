@@ -58,7 +58,7 @@ vi.mock("iii-sdk", () => ({
   TriggerAction: { Void: () => ({}) },
 }));
 
-vi.mock("../shared/validate.js", () => ({
+vi.mock("@agentos/shared/validate", () => ({
   safeInt: vi.fn((val: any, min: number, max: number, def: number) => {
     const n = parseInt(val, 10);
     if (isNaN(n)) return def;
@@ -67,7 +67,7 @@ vi.mock("../shared/validate.js", () => ({
 }));
 
 
-vi.mock("../shared/errors.js", () => ({
+vi.mock("@agentos/shared/errors", () => ({
   safeCall: vi.fn(async (fn: Function, fallback: any) => {
     try {
       return await fn();
@@ -77,7 +77,7 @@ vi.mock("../shared/errors.js", () => ({
   }),
 }));
 
-vi.mock("../shared/shutdown.js", () => ({
+vi.mock("@agentos/shared/shutdown", () => ({
   shutdownManager: {
     initShutdown: vi.fn(),
     isShuttingDown: vi.fn(() => false),
@@ -88,7 +88,7 @@ vi.mock("../shared/shutdown.js", () => ({
   },
 }));
 
-vi.mock("../shared/utils.js", () => ({
+vi.mock("@agentos/shared/utils", () => ({
   httpOk: (req: any, data: any) => data,
   requireAuth: vi.fn(),
   sanitizeId: vi.fn((id: string) => id?.replace(/[^a-zA-Z0-9_-]/g, "")),
@@ -264,7 +264,7 @@ describe("api::chat_completions", () => {
   });
 
   it("returns 401 when auth fails", async () => {
-    const { requireAuth } = await import("../shared/utils.js");
+    const { requireAuth } = await import("@agentos/shared/utils");
     vi.mocked(requireAuth).mockImplementationOnce(() => {
       const err: any = new Error("Unauthorized");
       err.statusCode = 401;

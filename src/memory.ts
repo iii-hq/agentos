@@ -1,9 +1,9 @@
-import { httpOk } from "./shared/utils.js";
+import { httpOk } from "@agentos/shared/utils";
 import { registerWorker, TriggerAction, Logger } from "iii-sdk";
-import { ENGINE_URL, OTEL_CONFIG, registerShutdown } from "./shared/config.js";
+import { ENGINE_URL, OTEL_CONFIG, registerShutdown } from "@agentos/shared/config";
 import { createHash } from "crypto";
-import { safeCall } from "./shared/errors.js";
-import { recordMetric } from "./shared/metrics.js";
+import { safeCall } from "@agentos/shared/errors";
+import { recordMetric } from "@agentos/shared/metrics";
 
 
 const log = new Logger();

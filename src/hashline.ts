@@ -1,4 +1,4 @@
-import { httpOk } from "./shared/utils.js";
+import { httpOk } from "@agentos/shared/utils";
 import { registerWorker, TriggerAction } from "iii-sdk";
 import {
   ENGINE_URL,
@@ -6,10 +6,10 @@ import {
   registerShutdown,
   WORKSPACE_ROOT,
   assertPathContained,
-} from "./shared/config.js";
+} from "@agentos/shared/config";
 import { readFile, writeFile } from "fs/promises";
 import { resolve } from "path";
-import { createRecordMetric } from "./shared/metrics.js";
+import { createRecordMetric } from "@agentos/shared/metrics";
 
 const sdk = registerWorker(ENGINE_URL, {
   workerName: "hashline",

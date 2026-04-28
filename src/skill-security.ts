@@ -1,5 +1,5 @@
 import { registerWorker, TriggerAction } from "iii-sdk";
-import { ENGINE_URL, OTEL_CONFIG, registerShutdown } from "./shared/config.js";
+import { ENGINE_URL, OTEL_CONFIG, registerShutdown } from "@agentos/shared/config";
 import { createVerify } from "crypto";
 import { writeFileSync, unlinkSync, rmdirSync, mkdtempSync } from "fs";
 import { join } from "path";

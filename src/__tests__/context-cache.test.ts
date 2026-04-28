@@ -44,12 +44,12 @@ vi.mock("iii-sdk", () => ({
   }),
 }));
 
-vi.mock("../shared/config.js", () => ({
+vi.mock("@agentos/shared/config", () => ({
   ENGINE_URL: "ws://localhost:3111",
   OTEL_CONFIG: undefined,
   registerShutdown: vi.fn(),
 }));
-vi.mock("../shared/utils.js", () => ({
+vi.mock("@agentos/shared/utils", () => ({
   httpOk: (req: any, data: any) => data,
   sanitizeId: (id: string) => id,
   requireAuth: vi.fn(),

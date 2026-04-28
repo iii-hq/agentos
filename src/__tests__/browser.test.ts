@@ -41,7 +41,7 @@ const PRIVATE_PATTERNS = [
   /^192\.168\./,
   /^169\.254\./,
 ];
-vi.mock("../shared/utils.js", () => ({
+vi.mock("@agentos/shared/utils", () => ({
   httpOk: (req: any, data: any) => data,
   requireAuth: vi.fn(),
   assertNoSsrf: vi.fn(async (urlStr: string) => {

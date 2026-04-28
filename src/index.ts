@@ -1,4 +1,4 @@
-import { shutdownManager } from "./shared/shutdown.js";
+import { shutdownManager } from "@agentos/shared/shutdown";
 
 shutdownManager.initShutdown();
 console.log("AgentOS booting (iii-sdk registerWorker API, OTel enabled)");

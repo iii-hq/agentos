@@ -1,6 +1,6 @@
 import { createHash } from "crypto";
 import { registerWorker, TriggerAction, Logger } from "iii-sdk";
-import { ENGINE_URL, OTEL_CONFIG, registerShutdown } from "./shared/config.js";
+import { ENGINE_URL, OTEL_CONFIG, registerShutdown } from "@agentos/shared/config";
 import type {
   AgentConfig,
   ChatRequest,
@@ -9,9 +9,9 @@ import type {
   ToolCall,
 } from "./types.js";
 import { filterToolsByProfile } from "./tool-profiles.js";
-import { safeCall } from "./shared/errors.js";
-import { shutdownManager } from "./shared/shutdown.js";
-import { recordMetric } from "./shared/metrics.js";
+import { safeCall } from "@agentos/shared/errors";
+import { shutdownManager } from "@agentos/shared/shutdown";
+import { recordMetric } from "@agentos/shared/metrics";
 
 const log = new Logger();
 

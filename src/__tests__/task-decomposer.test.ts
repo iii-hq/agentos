@@ -74,15 +74,15 @@ vi.mock("iii-sdk", () => ({
   Logger: class { info() {} warn() {} error() {} },
 }));
 
-vi.mock("../shared/config.js", () => ({
+vi.mock("@agentos/shared/config", () => ({
   ENGINE_URL: "ws://localhost:3111",
   OTEL_CONFIG: {},
   registerShutdown: vi.fn(),
 }));
-vi.mock("../shared/metrics.js", () => ({
+vi.mock("@agentos/shared/metrics", () => ({
   recordMetric: vi.fn(),
 }));
-vi.mock("../shared/errors.js", () => ({
+vi.mock("@agentos/shared/errors", () => ({
   safeCall: async (fn: Function, fallback: any, _context?: any) => {
     try {
       return await fn();
@@ -91,7 +91,7 @@ vi.mock("../shared/errors.js", () => ({
     }
   },
 }));
-vi.mock("../shared/utils.js", () => ({
+vi.mock("@agentos/shared/utils", () => ({
   httpOk: (req: any, data: any) => data,
   requireAuth: vi.fn(),
   sanitizeId: (id: string) => id,

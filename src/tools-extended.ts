@@ -5,7 +5,7 @@ import {
   registerShutdown,
   WORKSPACE_ROOT,
   assertPathContained,
-} from "./shared/config.js";
+} from "@agentos/shared/config";
 import { readFile } from "fs/promises";
 import { realpathSync } from "node:fs";
 import path, { resolve, relative } from "path";
@@ -13,8 +13,8 @@ import { execFile } from "child_process";
 import { promisify } from "util";
 import { createHash, randomUUID } from "crypto";
 import os from "os";
-import { assertNoSsrf } from "./shared/utils.js";
-import { safeCall } from "./shared/errors.js";
+import { assertNoSsrf } from "@agentos/shared/utils";
+import { safeCall } from "@agentos/shared/errors";
 
 const execFileAsync = promisify(execFile);
 

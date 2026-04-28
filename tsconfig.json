@@ -12,9 +12,13 @@
     "declarationMap": true,
     "sourceMap": true,
     "outDir": "dist",
-    "rootDir": "src",
-    "lib": ["ES2022"]
+    "lib": ["ES2022"],
+    "baseUrl": ".",
+    "paths": {
+      "@agentos/shared": ["packages/shared/src/index.ts"],
+      "@agentos/shared/*": ["packages/shared/src/*.ts"]
+    }
   },
-  "include": ["src/**/*.ts"],
+  "include": ["src/**/*.ts", "packages/*/src/**/*.ts", "e2e/**/*.ts"],
   "exclude": ["node_modules", "dist", "target"]
 }

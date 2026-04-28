@@ -5,13 +5,13 @@ import {
   withRetry,
   safeCall,
   logError,
-} from "../shared/errors.js";
+} from "@agentos/shared/errors";
 import {
   safeInt,
   safeString,
   safeArray,
   safePagination,
-} from "../shared/validate.js";
+} from "@agentos/shared/validate";
 
 describe("AppError", () => {
   it("sets code, context, retryable", () => {

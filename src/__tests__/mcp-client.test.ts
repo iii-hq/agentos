@@ -24,7 +24,7 @@ vi.mock("iii-sdk", () => ({
   TriggerAction: { Void: () => ({}) },
 }));
 
-vi.mock("../shared/utils.js", () => ({
+vi.mock("@agentos/shared/utils", () => ({
   httpOk: (req: any, data: any) => data,
   requireAuth: vi.fn(),
   validateMcpCommand: vi.fn(),
@@ -82,7 +82,7 @@ describe("mcp::connect", () => {
 
   it("validates MCP command", async () => {
     vi.useFakeTimers();
-    const { validateMcpCommand } = await import("../shared/utils.js");
+    const { validateMcpCommand } = await import("@agentos/shared/utils");
     const promise = call("mcp::connect", {
       body: {
         name: "validated",
@@ -119,7 +119,7 @@ describe("mcp::connect", () => {
 
   it("uses stripped environment for spawned process", async () => {
     vi.useFakeTimers();
-    const { stripSecretsFromEnv } = await import("../shared/utils.js");
+    const { stripSecretsFromEnv } = await import("@agentos/shared/utils");
     const promise = call("mcp::connect", {
       body: { name: "env-check", transport: "stdio", command: "npx" },
       headers: { authorization: "Bearer test-key" },

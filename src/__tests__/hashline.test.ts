@@ -59,11 +59,11 @@ vi.mock("fs/promises", () => ({
   }),
 }));
 
-vi.mock("../shared/metrics.js", () => ({
+vi.mock("@agentos/shared/metrics", () => ({
   createRecordMetric: () => vi.fn(),
 }));
 
-vi.mock("../shared/errors.js", () => ({
+vi.mock("@agentos/shared/errors", () => ({
   safeCall: async (fn: Function, fallback: any, _context?: any) => {
     try {
       return await fn();

@@ -1,11 +1,11 @@
 import { registerWorker, TriggerAction } from "iii-sdk";
-import { ENGINE_URL, OTEL_CONFIG, registerShutdown } from "./shared/config.js";
+import { ENGINE_URL, OTEL_CONFIG, registerShutdown } from "@agentos/shared/config";
 import { execFile } from "child_process";
 import { promisify } from "util";
 import { writeFile, unlink } from "fs/promises";
 import { tmpdir } from "os";
 import { join } from "path";
-import { assertNoSsrf, requireAuth } from "./shared/utils.js";
+import { assertNoSsrf, requireAuth } from "@agentos/shared/utils";
 
 const execFileAsync = promisify(execFile);
 

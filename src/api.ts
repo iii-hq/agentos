@@ -1,12 +1,12 @@
 import { registerWorker } from "iii-sdk";
-import { ENGINE_URL, OTEL_CONFIG, registerShutdown } from "./shared/config.js";
+import { ENGINE_URL, OTEL_CONFIG, registerShutdown } from "@agentos/shared/config";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { requireAuth, sanitizeId } from "./shared/utils.js";
+import { requireAuth, sanitizeId } from "@agentos/shared/utils";
 import { SECURITY_HEADERS } from "./security-headers.js";
-import { safeInt } from "./shared/validate.js";
-import { safeCall } from "./shared/errors.js";
-import { shutdownManager } from "./shared/shutdown.js";
+import { safeInt } from "@agentos/shared/validate";
+import { safeCall } from "@agentos/shared/errors";
+import { shutdownManager } from "@agentos/shared/shutdown";
 
 function withSecHeaders(response: { status_code: number; body: any }): {
   status_code: number;

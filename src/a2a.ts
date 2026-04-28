@@ -1,6 +1,6 @@
 import { registerWorker, TriggerAction } from "iii-sdk";
-import { ENGINE_URL, OTEL_CONFIG, registerShutdown } from "./shared/config.js";
-import { assertNoSsrf, requireAuth } from "./shared/utils.js";
+import { ENGINE_URL, OTEL_CONFIG, registerShutdown } from "@agentos/shared/config";
+import { assertNoSsrf, requireAuth } from "@agentos/shared/utils";
 
 const sdk = registerWorker(ENGINE_URL, {
   workerName: "a2a",

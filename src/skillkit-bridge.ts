@@ -4,7 +4,7 @@ import {
   OTEL_CONFIG,
   registerShutdown,
   WORKSPACE_ROOT,
-} from "./shared/config.js";
+} from "@agentos/shared/config";
 import { execFile } from "child_process";
 import { promisify } from "util";
 import { readFile, readdir } from "fs/promises";

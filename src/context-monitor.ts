@@ -1,9 +1,9 @@
 import { registerWorker, TriggerAction } from "iii-sdk";
-import { ENGINE_URL, OTEL_CONFIG, registerShutdown } from "./shared/config.js";
+import { ENGINE_URL, OTEL_CONFIG, registerShutdown } from "@agentos/shared/config";
 import type { ContextHealthScore } from "./types.js";
-import type { Message } from "./shared/tokens.js";
-import { estimateTokens, estimateMessagesTokens } from "./shared/tokens.js";
-import { requireAuth , httpOk } from "./shared/utils.js";
+import type { Message } from "@agentos/shared/tokens";
+import { estimateTokens, estimateMessagesTokens } from "@agentos/shared/tokens";
+import { requireAuth , httpOk } from "@agentos/shared/utils";
 
 
 const sdk = registerWorker(ENGINE_URL, {

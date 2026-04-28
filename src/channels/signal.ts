@@ -1,7 +1,7 @@
 import { registerWorker, TriggerAction } from "iii-sdk";
-import { ENGINE_URL, OTEL_CONFIG, registerShutdown } from "../shared/config.js";
-import { createSecretGetter } from "../shared/secrets.js";
-import { splitMessage, resolveAgent } from "../shared/utils.js";
+import { ENGINE_URL, OTEL_CONFIG, registerShutdown } from "@agentos/shared/config";
+import { createSecretGetter } from "@agentos/shared/secrets";
+import { splitMessage, resolveAgent } from "@agentos/shared/utils";
 
 const sdk = registerWorker(ENGINE_URL, {
   workerName: "channel-signal",

@@ -1,8 +1,8 @@
 import { registerWorker, TriggerAction, Logger } from "iii-sdk";
-import { ENGINE_URL, OTEL_CONFIG, registerShutdown } from "./shared/config.js";
-import { requireAuth, sanitizeId } from "./shared/utils.js";
-import { createRecordMetric } from "./shared/metrics.js";
-import { safeCall } from "./shared/errors.js";
+import { ENGINE_URL, OTEL_CONFIG, registerShutdown } from "@agentos/shared/config";
+import { requireAuth, sanitizeId } from "@agentos/shared/utils";
+import { createRecordMetric } from "@agentos/shared/metrics";
+import { safeCall } from "@agentos/shared/errors";
 import { createHash, randomUUID } from "node:crypto";
 
 const sdk = registerWorker(ENGINE_URL, {

@@ -1,7 +1,7 @@
 import { registerWorker, TriggerAction, Logger } from "iii-sdk";
-import { ENGINE_URL, OTEL_CONFIG, registerShutdown } from "./shared/config.js";
-import { recordMetric } from "./shared/metrics.js";
-import { stripCodeFences, requireAuth , httpOk } from "./shared/utils.js";
+import { ENGINE_URL, OTEL_CONFIG, registerShutdown } from "@agentos/shared/config";
+import { recordMetric } from "@agentos/shared/metrics";
+import { stripCodeFences, requireAuth , httpOk } from "@agentos/shared/utils";
 
 
 const log = new Logger();

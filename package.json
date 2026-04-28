@@ -3,6 +3,9 @@
   "version": "0.0.1",
   "description": "Agent Operating System built on iii primitives",
   "type": "module",
+  "workspaces": [
+    "packages/*"
+  ],
   "scripts": {
     "dev": "iii --config config.yaml & sleep 2 && tsx watch src/",
     "start": "iii --config config.yaml & tsx src/",
@@ -13,6 +16,7 @@
     "test:e2e:smoke": "AGENTOS_E2E=1 vitest --run --config vitest.e2e.config.ts --testNamePattern=\"health|chat_completions\""
   },
   "dependencies": {
+    "@agentos/shared": "workspace:*",
     "@anthropic-ai/sdk": "^0.39.0",
     "iii-sdk": "^0.10.0",
     "nodemailer": "^8.0.1"
