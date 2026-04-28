@@ -1,0 +1,25 @@
+name: vercel deploy
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'website/**'
+      - '.github/workflows/vercel-deploy.yml'
+  workflow_dispatch:
+
+jobs:
+  trigger:
+    name: trigger vercel production deploy
+    runs-on: ubuntu-latest
+    steps:
+      - name: trigger via deploy hook
+        env:
+          HOOK_URL: ${{ secrets.VERCEL_DEPLOY_HOOK_URL }}
+        run: |
+          if [ -z "${HOOK_URL:-}" ]; then
+            echo "::warning::VERCEL_DEPLOY_HOOK_URL not set; create one in Vercel project Settings -> Git -> Deploy Hooks (branch=main) and add as repo secret"
+            exit 0
+          fi
+          response=$(curl -fsSL -X POST "$HOOK_URL")
+          echo "vercel response: $response"
