@@ -1,0 +1,7 @@
+iii: v1
+name: ledger
+language: rust
+deploy: binary
+manifest: Cargo.toml
+bin: agentos-ledger
+description: Budget + spend tracking — set budget, record spend, check, summary

@@ -1,0 +1,7 @@
+iii: v1
+name: council
+language: rust
+deploy: binary
+manifest: Cargo.toml
+bin: agentos-council
+description: Multi-agent decision-making — proposals, voting, override, hash-chained activity log

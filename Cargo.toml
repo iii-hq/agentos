@@ -1,21 +1,21 @@
 [workspace]
 resolver = "2"
 members = [
-    "crates/agent-core",
-    "crates/bridge",
     "crates/cli",
-    "crates/council",
-    "crates/directive",
-    "crates/hierarchy",
-    "crates/ledger",
-    "crates/llm-router",
-    "crates/memory",
-    "crates/mission",
-    "crates/pulse",
-    "crates/realm",
-    "crates/security",
     "crates/tui",
-    "crates/wasm-sandbox",
+    "workers/agent-core",
+    "workers/bridge",
+    "workers/council",
+    "workers/directive",
+    "workers/hierarchy",
+    "workers/ledger",
+    "workers/llm-router",
+    "workers/memory",
+    "workers/mission",
+    "workers/pulse",
+    "workers/realm",
+    "workers/security",
+    "workers/wasm-sandbox",
 ]
 
 [workspace.package]

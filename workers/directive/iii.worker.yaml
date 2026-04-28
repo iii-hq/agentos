@@ -1,0 +1,7 @@
+iii: v1
+name: directive
+language: rust
+deploy: binary
+manifest: Cargo.toml
+bin: agentos-directive
+description: Task routing semantics — directive CRUD, ancestry traversal

@@ -1,0 +1,7 @@
+iii: v1
+name: pulse
+language: rust
+deploy: binary
+manifest: Cargo.toml
+bin: agentos-pulse
+description: Scheduled function invocation — register, tick, invoke, status, toggle
