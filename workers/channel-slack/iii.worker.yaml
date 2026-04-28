@@ -1,0 +1,7 @@
+iii: v1
+name: channel-slack
+language: rust
+deploy: binary
+manifest: Cargo.toml
+bin: agentos-channel-slack
+description: "Slack channel adapter — send/receive via Slack Web API + Events API"
