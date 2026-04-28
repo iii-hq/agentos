@@ -1,0 +1,6 @@
+iii: v1
+name: embedding
+language: python
+deploy: image
+manifest: pyproject.toml
+description: "Text embedding generation via SentenceTransformers (fallback: hash-based)"
