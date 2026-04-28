@@ -1,127 +1,8 @@
-use iii_sdk::{III, InitOptions, register_worker};
+use iii_sdk::{III, InitOptions, RegisterFunction, RegisterTriggerInput, TriggerRequest, register_worker};
 use iii_sdk::error::IIIError;
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 
-#[allow(dead_code)]
-mod iii_compat {
-    use iii_sdk::{
-        III, RegisterFunction, RegisterTriggerInput, TriggerRequest, FunctionRef, Trigger,
-        Value,
-    };
-    use iii_sdk::error::IIIError;
-    use std::future::Future;
-
-    pub trait IIIExt {
-        fn register_function_with_description<F, Fut>(
-            &self,
-            id: &str,
-            desc: &str,
-            f: F,
-        ) -> FunctionRef
-        where
-            F: Fn(Value) -> Fut + Send + Sync + 'static,
-            Fut: Future<Output = Result<Value, IIIError>> + Send + 'static;
-
-        fn register_function_v0<F, Fut>(&self, id: &str, f: F) -> FunctionRef
-        where
-            F: Fn(Value) -> Fut + Send + Sync + 'static,
-            Fut: Future<Output = Result<Value, IIIError>> + Send + 'static;
-
-        fn register_trigger_v0(
-            &self,
-            kind: &str,
-            function_id: &str,
-            config: Value,
-        ) -> Result<Trigger, IIIError>;
-
-        fn trigger_v0(
-            &self,
-            function_id: &str,
-            payload: Value,
-        ) -> impl Future<Output = Result<Value, IIIError>> + Send;
-
-        fn trigger_void(
-            &self,
-            function_id: &str,
-            payload: Value,
-        ) -> Result<(), IIIError>;
-    }
-
-    impl IIIExt for III {
-        fn register_function_with_description<F, Fut>(
-            &self,
-            id: &str,
-            desc: &str,
-            f: F,
-        ) -> FunctionRef
-        where
-            F: Fn(Value) -> Fut + Send + Sync + 'static,
-            Fut: Future<Output = Result<Value, IIIError>> + Send + 'static,
-        {
-            self.register_function(
-                RegisterFunction::new_async(id.to_string(), f).description(desc.to_string()),
-            )
-        }
-
-        fn register_function_v0<F, Fut>(&self, id: &str, f: F) -> FunctionRef
-        where
-            F: Fn(Value) -> Fut + Send + Sync + 'static,
-            Fut: Future<Output = Result<Value, IIIError>> + Send + 'static,
-        {
-            self.register_function(RegisterFunction::new_async(id.to_string(), f))
-        }
-
-        fn register_trigger_v0(
-            &self,
-            kind: &str,
-            function_id: &str,
-            config: Value,
-        ) -> Result<Trigger, IIIError> {
-            self.register_trigger(RegisterTriggerInput {
-                trigger_type: kind.to_string(),
-                function_id: function_id.to_string(),
-                config,
-                metadata: None,
-            })
-        }
-
-        async fn trigger_v0(
-            &self,
-            function_id: &str,
-            payload: Value,
-        ) -> Result<Value, IIIError> {
-            self.trigger(TriggerRequest {
-                function_id: function_id.to_string(),
-                payload,
-                action: None,
-                timeout_ms: None,
-            })
-            .await
-        }
-
-        fn trigger_void(
-            &self,
-            function_id: &str,
-            payload: Value,
-        ) -> Result<(), IIIError> {
-            let iii = self.clone();
-            let fid = function_id.to_string();
-            tokio::spawn(async move {
-                let _ = iii
-                    .trigger(TriggerRequest {
-                        function_id: fid,
-                        payload,
-                        action: None,
-                        timeout_ms: None,
-                    })
-                    .await;
-            });
-            Ok(())
-        }
-    }
-}
-use iii_compat::IIIExt as _;
 
 
 
@@ -142,7 +23,12 @@ fn activity_scope(realm_id: &str) -> String {
 
 async fn get_prev_hash(iii: &III, realm_id: &str) -> String {
     let entries = iii
-        .trigger_v0("state::list", json!({ "scope": activity_scope(realm_id) }))
+        .trigger(TriggerRequest {
+            function_id: "state::list".to_string(),
+            payload: json!({ "scope": activity_scope(realm_id) }),
+            action: None,
+            timeout_ms: None,
+        })
         .await
         .ok();
 
@@ -192,11 +78,16 @@ async fn log_activity(iii: &III, req: LogActivityRequest) -> Result<Value, IIIEr
 
     let value = serde_json::to_value(&entry).map_err(|e| IIIError::Handler(e.to_string()))?;
 
-    iii.trigger_v0("state::set", json!({
+    iii.trigger(TriggerRequest {
+        function_id: "state::set".to_string(),
+        payload: json!({
         "scope": activity_scope(&req.realm_id),
         "key": id,
         "value": value,
-    }))
+    }),
+        action: None,
+        timeout_ms: None,
+    })
     .await
     .map_err(|e| IIIError::Handler(e.to_string()))?;
 
@@ -223,11 +114,16 @@ async fn submit_proposal(iii: &III, req: SubmitProposalRequest) -> Result<Value,
 
     let value = serde_json::to_value(&proposal).map_err(|e| IIIError::Handler(e.to_string()))?;
 
-    iii.trigger_v0("state::set", json!({
+    iii.trigger(TriggerRequest {
+        function_id: "state::set".to_string(),
+        payload: json!({
         "scope": proposals_scope(&req.realm_id),
         "key": id,
         "value": value,
-    }))
+    }),
+        action: None,
+        timeout_ms: None,
+    })
     .await
     .map_err(|e| IIIError::Handler(e.to_string()))?;
 
@@ -242,10 +138,21 @@ async fn submit_proposal(iii: &III, req: SubmitProposalRequest) -> Result<Value,
     })
     .await;
 
-    let _ = iii.trigger_void("publish", json!({
+    let _ = {
+        let _iii = iii.clone();
+        let _payload = json!({
         "topic": "council.proposal",
         "data": { "type": "submitted", "proposalId": proposal.id, "realmId": req.realm_id },
-    }));
+    });
+        tokio::spawn(async move {
+            let _ = _iii.trigger(TriggerRequest {
+                function_id: "publish".to_string(),
+                payload: _payload,
+                action: None,
+                timeout_ms: None,
+            }).await;
+        });
+    };
 
     Ok(serde_json::to_value(&proposal).unwrap())
 }
@@ -254,7 +161,12 @@ async fn decide_proposal(iii: &III, req: DecideProposalRequest) -> Result<Value,
     let realm_id = &req.realm_id;
 
     let val = iii
-        .trigger_v0("state::get", json!({ "scope": proposals_scope(realm_id), "key": &req.id }))
+        .trigger(TriggerRequest {
+            function_id: "state::get".to_string(),
+            payload: json!({ "scope": proposals_scope(realm_id), "key": &req.id }),
+            action: None,
+            timeout_ms: None,
+        })
         .await
         .map_err(|e| IIIError::Handler(e.to_string()))?;
 
@@ -279,11 +191,16 @@ async fn decide_proposal(iii: &III, req: DecideProposalRequest) -> Result<Value,
 
     let value = serde_json::to_value(&proposal).map_err(|e| IIIError::Handler(e.to_string()))?;
 
-    iii.trigger_v0("state::set", json!({
+    iii.trigger(TriggerRequest {
+        function_id: "state::set".to_string(),
+        payload: json!({
         "scope": proposals_scope(realm_id),
         "key": proposal.id,
         "value": value,
-    }))
+    }),
+        action: None,
+        timeout_ms: None,
+    })
     .await
     .map_err(|e| IIIError::Handler(e.to_string()))?;
 
@@ -298,21 +215,37 @@ async fn decide_proposal(iii: &III, req: DecideProposalRequest) -> Result<Value,
     })
     .await;
 
-    let _ = iii.trigger_void("publish", json!({
+    let _ = {
+        let _iii = iii.clone();
+        let _payload = json!({
         "topic": "council.proposal",
         "data": {
             "type": if req.approved { "approved" } else { "rejected" },
             "proposalId": proposal.id,
             "realmId": realm_id,
         },
-    }));
+    });
+        tokio::spawn(async move {
+            let _ = _iii.trigger(TriggerRequest {
+                function_id: "publish".to_string(),
+                payload: _payload,
+                action: None,
+                timeout_ms: None,
+            }).await;
+        });
+    };
 
     Ok(serde_json::to_value(&proposal).unwrap())
 }
 
 async fn list_proposals(iii: &III, realm_id: &str, status_filter: Option<ProposalStatus>) -> Result<Value, IIIError> {
     let all = iii
-        .trigger_v0("state::list", json!({ "scope": proposals_scope(realm_id) }))
+        .trigger(TriggerRequest {
+            function_id: "state::list".to_string(),
+            payload: json!({ "scope": proposals_scope(realm_id) }),
+            action: None,
+            timeout_ms: None,
+        })
         .await
         .map_err(|e| IIIError::Handler(e.to_string()))?;
 
@@ -341,12 +274,17 @@ async fn override_agent(iii: &III, req: OverrideRequest) -> Result<Value, IIIErr
     };
 
     let _ = iii
-        .trigger_v0("state::update", json!({
+        .trigger(TriggerRequest {
+            function_id: "state::update".to_string(),
+            payload: json!({
             "scope": "agents",
             "key": &req.target_agent_id,
             "path": "status",
             "value": new_status,
-        }))
+        }),
+            action: None,
+            timeout_ms: None,
+        })
         .await;
 
     let _ = log_activity(iii, LogActivityRequest {
@@ -360,7 +298,9 @@ async fn override_agent(iii: &III, req: OverrideRequest) -> Result<Value, IIIErr
     })
     .await;
 
-    let _ = iii.trigger_void("publish", json!({
+    let _ = {
+        let _iii = iii.clone();
+        let _payload = json!({
         "topic": "council.override",
         "data": {
             "action": req.action,
@@ -368,7 +308,16 @@ async fn override_agent(iii: &III, req: OverrideRequest) -> Result<Value, IIIErr
             "operatorId": req.operator_id,
             "realmId": req.realm_id,
         },
-    }));
+    });
+        tokio::spawn(async move {
+            let _ = _iii.trigger(TriggerRequest {
+                function_id: "publish".to_string(),
+                payload: _payload,
+                action: None,
+                timeout_ms: None,
+            }).await;
+        });
+    };
 
     Ok(json!({
         "overridden": true,
@@ -379,7 +328,12 @@ async fn override_agent(iii: &III, req: OverrideRequest) -> Result<Value, IIIErr
 
 async fn get_activity_log(iii: &III, realm_id: &str, limit: usize) -> Result<Value, IIIError> {
     let all = iii
-        .trigger_v0("state::list", json!({ "scope": activity_scope(realm_id) }))
+        .trigger(TriggerRequest {
+            function_id: "state::list".to_string(),
+            payload: json!({ "scope": activity_scope(realm_id) }),
+            action: None,
+            timeout_ms: None,
+        })
         .await
         .map_err(|e| IIIError::Handler(e.to_string()))?;
 
@@ -403,7 +357,12 @@ async fn get_activity_log(iii: &III, realm_id: &str, limit: usize) -> Result<Val
 
 async fn verify_activity_chain(iii: &III, realm_id: &str) -> Result<Value, IIIError> {
     let all = iii
-        .trigger_v0("state::list", json!({ "scope": activity_scope(realm_id) }))
+        .trigger(TriggerRequest {
+            function_id: "state::list".to_string(),
+            payload: json!({ "scope": activity_scope(realm_id) }),
+            action: None,
+            timeout_ms: None,
+        })
         .await
         .map_err(|e| IIIError::Handler(e.to_string()))?;
 
@@ -447,38 +406,34 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let iii = register_worker("ws://localhost:49134", InitOptions::default());
 
     let iii_clone = iii.clone();
-    iii.register_function_with_description(
-        "council::submit",
-        "Submit a proposal for council review",
-        move |input: Value| {
+    iii.register_function(
+        RegisterFunction::new_async("council::submit", move |input: Value| {
             let iii = iii_clone.clone();
             async move {
                 let req: SubmitProposalRequest =
                     serde_json::from_value(input).map_err(|e| IIIError::Handler(e.to_string()))?;
                 submit_proposal(&iii, req).await
             }
-        },
+        })
+        .description("Submit a proposal for council review"),
     );
 
     let iii_clone = iii.clone();
-    iii.register_function_with_description(
-        "council::decide",
-        "Approve or reject a proposal",
-        move |input: Value| {
+    iii.register_function(
+        RegisterFunction::new_async("council::decide", move |input: Value| {
             let iii = iii_clone.clone();
             async move {
                 let req: DecideProposalRequest =
                     serde_json::from_value(input).map_err(|e| IIIError::Handler(e.to_string()))?;
                 decide_proposal(&iii, req).await
             }
-        },
+        })
+        .description("Approve or reject a proposal"),
     );
 
     let iii_clone = iii.clone();
-    iii.register_function_with_description(
-        "council::proposals",
-        "List proposals for a realm",
-        move |input: Value| {
+    iii.register_function(
+        RegisterFunction::new_async("council::proposals", move |input: Value| {
             let iii = iii_clone.clone();
             async move {
                 let realm_id = input["realmId"]
@@ -489,42 +444,39 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     .and_then(|v| serde_json::from_value(v.clone()).ok());
                 list_proposals(&iii, realm_id, status).await
             }
-        },
+        })
+        .description("List proposals for a realm"),
     );
 
     let iii_clone = iii.clone();
-    iii.register_function_with_description(
-        "council::override",
-        "Override agent state (pause/resume/terminate)",
-        move |input: Value| {
+    iii.register_function(
+        RegisterFunction::new_async("council::override", move |input: Value| {
             let iii = iii_clone.clone();
             async move {
                 let req: OverrideRequest =
                     serde_json::from_value(input).map_err(|e| IIIError::Handler(e.to_string()))?;
                 override_agent(&iii, req).await
             }
-        },
+        })
+        .description("Override agent state (pause/resume/terminate)"),
     );
 
     let iii_clone = iii.clone();
-    iii.register_function_with_description(
-        "council::activity",
-        "Log an activity entry",
-        move |input: Value| {
+    iii.register_function(
+        RegisterFunction::new_async("council::activity", move |input: Value| {
             let iii = iii_clone.clone();
             async move {
                 let req: LogActivityRequest =
                     serde_json::from_value(input).map_err(|e| IIIError::Handler(e.to_string()))?;
                 log_activity(&iii, req).await
             }
-        },
+        })
+        .description("Log an activity entry"),
     );
 
     let iii_clone = iii.clone();
-    iii.register_function_with_description(
-        "council::activity_log",
-        "Get recent activity log entries",
-        move |input: Value| {
+    iii.register_function(
+        RegisterFunction::new_async("council::activity_log", move |input: Value| {
             let iii = iii_clone.clone();
             async move {
                 let realm_id = input["realmId"]
@@ -533,14 +485,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let limit = input["limit"].as_u64().unwrap_or(50) as usize;
                 get_activity_log(&iii, realm_id, limit).await
             }
-        },
+        })
+        .description("Get recent activity log entries"),
     );
 
     let iii_clone = iii.clone();
-    iii.register_function_with_description(
-        "council::verify",
-        "Verify integrity of activity chain",
-        move |input: Value| {
+    iii.register_function(
+        RegisterFunction::new_async("council::verify", move |input: Value| {
             let iii = iii_clone.clone();
             async move {
                 let realm_id = input["realmId"]
@@ -548,17 +499,53 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     .ok_or_else(|| IIIError::Handler("missing realmId".into()))?;
                 verify_activity_chain(&iii, realm_id).await
             }
-        },
+        })
+        .description("Verify integrity of activity chain"),
     );
 
-    iii.register_trigger_v0("http", "council::submit", json!({ "method": "POST", "path": "/api/council/proposals" }))?;
-    iii.register_trigger_v0("http", "council::decide", json!({ "method": "POST", "path": "/api/council/proposals/:id/decide" }))?;
-    iii.register_trigger_v0("http", "council::proposals", json!({ "method": "GET", "path": "/api/council/proposals/:realmId" }))?;
-    iii.register_trigger_v0("http", "council::override", json!({ "method": "POST", "path": "/api/council/override" }))?;
-    iii.register_trigger_v0("http", "council::activity_log", json!({ "method": "GET", "path": "/api/council/activity/:realmId" }))?;
-    iii.register_trigger_v0("http", "council::verify", json!({ "method": "GET", "path": "/api/council/verify/:realmId" }))?;
+    iii.register_trigger(RegisterTriggerInput {
+        trigger_type: "http".to_string(),
+        function_id: "council::submit".to_string(),
+        config: json!({ "method": "POST", "path": "/api/council/proposals" }),
+        metadata: None,
+    })?;
+    iii.register_trigger(RegisterTriggerInput {
+        trigger_type: "http".to_string(),
+        function_id: "council::decide".to_string(),
+        config: json!({ "method": "POST", "path": "/api/council/proposals/:id/decide" }),
+        metadata: None,
+    })?;
+    iii.register_trigger(RegisterTriggerInput {
+        trigger_type: "http".to_string(),
+        function_id: "council::proposals".to_string(),
+        config: json!({ "method": "GET", "path": "/api/council/proposals/:realmId" }),
+        metadata: None,
+    })?;
+    iii.register_trigger(RegisterTriggerInput {
+        trigger_type: "http".to_string(),
+        function_id: "council::override".to_string(),
+        config: json!({ "method": "POST", "path": "/api/council/override" }),
+        metadata: None,
+    })?;
+    iii.register_trigger(RegisterTriggerInput {
+        trigger_type: "http".to_string(),
+        function_id: "council::activity_log".to_string(),
+        config: json!({ "method": "GET", "path": "/api/council/activity/:realmId" }),
+        metadata: None,
+    })?;
+    iii.register_trigger(RegisterTriggerInput {
+        trigger_type: "http".to_string(),
+        function_id: "council::verify".to_string(),
+        config: json!({ "method": "GET", "path": "/api/council/verify/:realmId" }),
+        metadata: None,
+    })?;
 
-    iii.register_trigger_v0("subscribe", "council::activity", json!({ "topic": "council.audit" }))?;
+    iii.register_trigger(RegisterTriggerInput {
+        trigger_type: "subscribe".to_string(),
+        function_id: "council::activity".to_string(),
+        config: json!({ "topic": "council.audit" }),
+        metadata: None,
+    })?;
 
     tracing::info!("council worker started");
     tokio::signal::ctrl_c().await?;

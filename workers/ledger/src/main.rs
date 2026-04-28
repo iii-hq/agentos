@@ -1,126 +1,7 @@
-use iii_sdk::{III, InitOptions, register_worker};
+use iii_sdk::{III, InitOptions, RegisterFunction, RegisterTriggerInput, TriggerRequest, register_worker};
 use iii_sdk::error::IIIError;
 use serde_json::{json, Value};
 
-#[allow(dead_code)]
-mod iii_compat {
-    use iii_sdk::{
-        III, RegisterFunction, RegisterTriggerInput, TriggerRequest, FunctionRef, Trigger,
-        Value,
-    };
-    use iii_sdk::error::IIIError;
-    use std::future::Future;
-
-    pub trait IIIExt {
-        fn register_function_with_description<F, Fut>(
-            &self,
-            id: &str,
-            desc: &str,
-            f: F,
-        ) -> FunctionRef
-        where
-            F: Fn(Value) -> Fut + Send + Sync + 'static,
-            Fut: Future<Output = Result<Value, IIIError>> + Send + 'static;
-
-        fn register_function_v0<F, Fut>(&self, id: &str, f: F) -> FunctionRef
-        where
-            F: Fn(Value) -> Fut + Send + Sync + 'static,
-            Fut: Future<Output = Result<Value, IIIError>> + Send + 'static;
-
-        fn register_trigger_v0(
-            &self,
-            kind: &str,
-            function_id: &str,
-            config: Value,
-        ) -> Result<Trigger, IIIError>;
-
-        fn trigger_v0(
-            &self,
-            function_id: &str,
-            payload: Value,
-        ) -> impl Future<Output = Result<Value, IIIError>> + Send;
-
-        fn trigger_void(
-            &self,
-            function_id: &str,
-            payload: Value,
-        ) -> Result<(), IIIError>;
-    }
-
-    impl IIIExt for III {
-        fn register_function_with_description<F, Fut>(
-            &self,
-            id: &str,
-            desc: &str,
-            f: F,
-        ) -> FunctionRef
-        where
-            F: Fn(Value) -> Fut + Send + Sync + 'static,
-            Fut: Future<Output = Result<Value, IIIError>> + Send + 'static,
-        {
-            self.register_function(
-                RegisterFunction::new_async(id.to_string(), f).description(desc.to_string()),
-            )
-        }
-
-        fn register_function_v0<F, Fut>(&self, id: &str, f: F) -> FunctionRef
-        where
-            F: Fn(Value) -> Fut + Send + Sync + 'static,
-            Fut: Future<Output = Result<Value, IIIError>> + Send + 'static,
-        {
-            self.register_function(RegisterFunction::new_async(id.to_string(), f))
-        }
-
-        fn register_trigger_v0(
-            &self,
-            kind: &str,
-            function_id: &str,
-            config: Value,
-        ) -> Result<Trigger, IIIError> {
-            self.register_trigger(RegisterTriggerInput {
-                trigger_type: kind.to_string(),
-                function_id: function_id.to_string(),
-                config,
-                metadata: None,
-            })
-        }
-
-        async fn trigger_v0(
-            &self,
-            function_id: &str,
-            payload: Value,
-        ) -> Result<Value, IIIError> {
-            self.trigger(TriggerRequest {
-                function_id: function_id.to_string(),
-                payload,
-                action: None,
-                timeout_ms: None,
-            })
-            .await
-        }
-
-        fn trigger_void(
-            &self,
-            function_id: &str,
-            payload: Value,
-        ) -> Result<(), IIIError> {
-            let iii = self.clone();
-            let fid = function_id.to_string();
-            tokio::spawn(async move {
-                let _ = iii
-                    .trigger(TriggerRequest {
-                        function_id: fid,
-                        payload,
-                        action: None,
-                        timeout_ms: None,
-                    })
-                    .await;
-            });
-            Ok(())
-        }
-    }
-}
-use iii_compat::IIIExt as _;
 
 
 
@@ -147,10 +28,15 @@ async fn set_budget(iii: &III, req: SetBudgetRequest) -> Result<Value, IIIError>
         .to_string();
 
     let existing = iii
-        .trigger_v0("state::get", json!({
+        .trigger(TriggerRequest {
+            function_id: "state::get".to_string(),
+            payload: json!({
             "scope": budget_scope(&req.realm_id),
             "key": &key,
-        }))
+        }),
+            action: None,
+            timeout_ms: None,
+        })
         .await
         .ok()
         .and_then(|v| serde_json::from_value::<Budget>(v).ok());
@@ -176,11 +62,16 @@ async fn set_budget(iii: &III, req: SetBudgetRequest) -> Result<Value, IIIError>
 
     let value = serde_json::to_value(&budget).map_err(|e| IIIError::Handler(e.to_string()))?;
 
-    iii.trigger_v0("state::set", json!({
+    iii.trigger(TriggerRequest {
+        function_id: "state::set".to_string(),
+        payload: json!({
         "scope": budget_scope(&req.realm_id),
         "key": key,
         "value": value,
-    }))
+    }),
+        action: None,
+        timeout_ms: None,
+    })
     .await
     .map_err(|e| IIIError::Handler(e.to_string()))?;
 
@@ -189,18 +80,28 @@ async fn set_budget(iii: &III, req: SetBudgetRequest) -> Result<Value, IIIError>
 
 async fn check_budget(iii: &III, req: CheckBudgetRequest) -> Result<Value, IIIError> {
     let agent_budget = iii
-        .trigger_v0("state::get", json!({
+        .trigger(TriggerRequest {
+            function_id: "state::get".to_string(),
+            payload: json!({
             "scope": budget_scope(&req.realm_id),
             "key": &req.agent_id,
-        }))
+        }),
+            action: None,
+            timeout_ms: None,
+        })
         .await
         .ok();
 
     let realm_budget = iii
-        .trigger_v0("state::get", json!({
+        .trigger(TriggerRequest {
+            function_id: "state::get".to_string(),
+            payload: json!({
             "scope": budget_scope(&req.realm_id),
             "key": "realm",
-        }))
+        }),
+            action: None,
+            timeout_ms: None,
+        })
         .await
         .ok();
 
@@ -263,7 +164,9 @@ async fn record_spend(iii: &III, req: RecordSpendRequest) -> Result<Value, IIIEr
         serde_json::from_value(check).map_err(|e| IIIError::Handler(e.to_string()))?;
 
     if !check_result.allowed {
-        let _ = iii.trigger_void("publish", json!({
+        let _ = {
+            let _iii = iii.clone();
+            let _payload = json!({
             "topic": "ledger.alert",
             "data": {
                 "type": "hard_limit_reached",
@@ -272,11 +175,20 @@ async fn record_spend(iii: &III, req: RecordSpendRequest) -> Result<Value, IIIEr
                 "spentCents": check_result.spent_cents,
                 "limitCents": check_result.limit_cents,
             },
-        }));
+        });
+            tokio::spawn(async move {
+                let _ = _iii.trigger(TriggerRequest {
+                    function_id: "publish".to_string(),
+                    payload: _payload,
+                    action: None,
+                    timeout_ms: None,
+                }).await;
+            });
+        };
 
-        let _ = iii.trigger_v0(
-            "council::activity",
-            json!({
+        let _ = iii.trigger(TriggerRequest {
+            function_id: "council::activity".to_string(),
+            payload: json!({
                 "realmId": req.realm_id,
                 "actorKind": "system",
                 "actorId": "ledger",
@@ -285,7 +197,9 @@ async fn record_spend(iii: &III, req: RecordSpendRequest) -> Result<Value, IIIEr
                 "entityId": req.agent_id,
                 "details": { "spentCents": check_result.spent_cents, "limitCents": check_result.limit_cents },
             }),
-        ).await;
+            action: None,
+            timeout_ms: None,
+        }).await;
 
         return Err(IIIError::Handler(format!(
             "agent {} exceeded budget: {}/{}",
@@ -309,19 +223,29 @@ async fn record_spend(iii: &III, req: RecordSpendRequest) -> Result<Value, IIIEr
 
     let value = serde_json::to_value(&event).map_err(|e| IIIError::Handler(e.to_string()))?;
 
-    iii.trigger_v0("state::set", json!({
+    iii.trigger(TriggerRequest {
+        function_id: "state::set".to_string(),
+        payload: json!({
         "scope": spend_scope(&req.realm_id),
         "key": event.id,
         "value": value,
-    }))
+    }),
+        action: None,
+        timeout_ms: None,
+    })
     .await
     .map_err(|e| IIIError::Handler(e.to_string()))?;
 
     let budget_val = iii
-        .trigger_v0("state::get", json!({
+        .trigger(TriggerRequest {
+            function_id: "state::get".to_string(),
+            payload: json!({
             "scope": budget_scope(&req.realm_id),
             "key": &req.agent_id,
-        }))
+        }),
+            action: None,
+            timeout_ms: None,
+        })
         .await
         .ok();
 
@@ -334,17 +258,24 @@ async fn record_spend(iii: &III, req: RecordSpendRequest) -> Result<Value, IIIEr
 
             let updated = serde_json::to_value(&budget).map_err(|e| IIIError::Handler(e.to_string()))?;
             let _ = iii
-                .trigger_v0("state::set", json!({
+                .trigger(TriggerRequest {
+                    function_id: "state::set".to_string(),
+                    payload: json!({
                     "scope": budget_scope(&req.realm_id),
                     "key": &req.agent_id,
                     "value": updated,
                     "expectedVersion": prev_version,
-                }))
+                }),
+                    action: None,
+                    timeout_ms: None,
+                })
                 .await;
 
             let utilization = (budget.spent_cents as f64 / budget.monthly_cents as f64) * 100.0;
             if utilization >= budget.soft_threshold * 100.0 && utilization < 100.0 {
-                let _ = iii.trigger_void("publish", json!({
+                let _ = {
+                    let _iii = iii.clone();
+                    let _payload = json!({
                     "topic": "ledger.alert",
                     "data": {
                         "type": "soft_threshold",
@@ -352,7 +283,16 @@ async fn record_spend(iii: &III, req: RecordSpendRequest) -> Result<Value, IIIEr
                         "agentId": req.agent_id,
                         "utilizationPct": utilization,
                     },
-                }));
+                });
+                    tokio::spawn(async move {
+                        let _ = _iii.trigger(TriggerRequest {
+                            function_id: "publish".to_string(),
+                            payload: _payload,
+                            action: None,
+                            timeout_ms: None,
+                        }).await;
+                    });
+                };
             }
         }
     }
@@ -362,7 +302,12 @@ async fn record_spend(iii: &III, req: RecordSpendRequest) -> Result<Value, IIIEr
 
 async fn get_summary(iii: &III, req: SummaryRequest) -> Result<Value, IIIError> {
     let events = iii
-        .trigger_v0("state::list", json!({ "scope": spend_scope(&req.realm_id) }))
+        .trigger(TriggerRequest {
+            function_id: "state::list".to_string(),
+            payload: json!({ "scope": spend_scope(&req.realm_id) }),
+            action: None,
+            timeout_ms: None,
+        })
         .await
         .map_err(|e| IIIError::Handler(e.to_string()))?;
 
@@ -409,67 +354,88 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let iii = register_worker("ws://localhost:49134", InitOptions::default());
 
     let iii_clone = iii.clone();
-    iii.register_function_with_description(
-        "ledger::set_budget",
-        "Set budget for realm or agent",
-        move |input: Value| {
+    iii.register_function(
+        RegisterFunction::new_async("ledger::set_budget", move |input: Value| {
             let iii = iii_clone.clone();
             async move {
                 let req: SetBudgetRequest =
                     serde_json::from_value(input).map_err(|e| IIIError::Handler(e.to_string()))?;
                 set_budget(&iii, req).await
             }
-        },
+        })
+        .description("Set budget for realm or agent"),
     );
 
     let iii_clone = iii.clone();
-    iii.register_function_with_description(
-        "ledger::check",
-        "Check if agent is within budget",
-        move |input: Value| {
+    iii.register_function(
+        RegisterFunction::new_async("ledger::check", move |input: Value| {
             let iii = iii_clone.clone();
             async move {
                 let req: CheckBudgetRequest =
                     serde_json::from_value(input).map_err(|e| IIIError::Handler(e.to_string()))?;
                 check_budget(&iii, req).await
             }
-        },
+        })
+        .description("Check if agent is within budget"),
     );
 
     let iii_clone = iii.clone();
-    iii.register_function_with_description(
-        "ledger::spend",
-        "Record a spend event and enforce budget",
-        move |input: Value| {
+    iii.register_function(
+        RegisterFunction::new_async("ledger::spend", move |input: Value| {
             let iii = iii_clone.clone();
             async move {
                 let req: RecordSpendRequest =
                     serde_json::from_value(input).map_err(|e| IIIError::Handler(e.to_string()))?;
                 record_spend(&iii, req).await
             }
-        },
+        })
+        .description("Record a spend event and enforce budget"),
     );
 
     let iii_clone = iii.clone();
-    iii.register_function_with_description(
-        "ledger::summary",
-        "Get spend summary with breakdowns",
-        move |input: Value| {
+    iii.register_function(
+        RegisterFunction::new_async("ledger::summary", move |input: Value| {
             let iii = iii_clone.clone();
             async move {
                 let req: SummaryRequest =
                     serde_json::from_value(input).map_err(|e| IIIError::Handler(e.to_string()))?;
                 get_summary(&iii, req).await
             }
-        },
+        })
+        .description("Get spend summary with breakdowns"),
     );
 
-    iii.register_trigger_v0("http", "ledger::set_budget", json!({ "method": "POST", "path": "/api/ledger/budget" }))?;
-    iii.register_trigger_v0("http", "ledger::check", json!({ "method": "GET", "path": "/api/ledger/check/:realmId/:agentId" }))?;
-    iii.register_trigger_v0("http", "ledger::spend", json!({ "method": "POST", "path": "/api/ledger/spend" }))?;
-    iii.register_trigger_v0("http", "ledger::summary", json!({ "method": "GET", "path": "/api/ledger/summary/:realmId" }))?;
+    iii.register_trigger(RegisterTriggerInput {
+        trigger_type: "http".to_string(),
+        function_id: "ledger::set_budget".to_string(),
+        config: json!({ "method": "POST", "path": "/api/ledger/budget" }),
+        metadata: None,
+    })?;
+    iii.register_trigger(RegisterTriggerInput {
+        trigger_type: "http".to_string(),
+        function_id: "ledger::check".to_string(),
+        config: json!({ "method": "GET", "path": "/api/ledger/check/:realmId/:agentId" }),
+        metadata: None,
+    })?;
+    iii.register_trigger(RegisterTriggerInput {
+        trigger_type: "http".to_string(),
+        function_id: "ledger::spend".to_string(),
+        config: json!({ "method": "POST", "path": "/api/ledger/spend" }),
+        metadata: None,
+    })?;
+    iii.register_trigger(RegisterTriggerInput {
+        trigger_type: "http".to_string(),
+        function_id: "ledger::summary".to_string(),
+        config: json!({ "method": "GET", "path": "/api/ledger/summary/:realmId" }),
+        metadata: None,
+    })?;
 
-    iii.register_trigger_v0("subscribe", "ledger::spend", json!({ "topic": "cost.incurred" }))?;
+    iii.register_trigger(RegisterTriggerInput {
+        trigger_type: "subscribe".to_string(),
+        function_id: "ledger::spend".to_string(),
+        config: json!({ "topic": "cost.incurred" }),
+        metadata: None,
+    })?;
 
     tracing::info!("ledger worker started");
     tokio::signal::ctrl_c().await?;

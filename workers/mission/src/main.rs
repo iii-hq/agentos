@@ -1,126 +1,7 @@
-use iii_sdk::{III, InitOptions, register_worker};
+use iii_sdk::{III, InitOptions, RegisterFunction, RegisterTriggerInput, TriggerRequest, register_worker};
 use iii_sdk::error::IIIError;
 use serde_json::{json, Value};
 
-#[allow(dead_code)]
-mod iii_compat {
-    use iii_sdk::{
-        III, RegisterFunction, RegisterTriggerInput, TriggerRequest, FunctionRef, Trigger,
-        Value,
-    };
-    use iii_sdk::error::IIIError;
-    use std::future::Future;
-
-    pub trait IIIExt {
-        fn register_function_with_description<F, Fut>(
-            &self,
-            id: &str,
-            desc: &str,
-            f: F,
-        ) -> FunctionRef
-        where
-            F: Fn(Value) -> Fut + Send + Sync + 'static,
-            Fut: Future<Output = Result<Value, IIIError>> + Send + 'static;
-
-        fn register_function_v0<F, Fut>(&self, id: &str, f: F) -> FunctionRef
-        where
-            F: Fn(Value) -> Fut + Send + Sync + 'static,
-            Fut: Future<Output = Result<Value, IIIError>> + Send + 'static;
-
-        fn register_trigger_v0(
-            &self,
-            kind: &str,
-            function_id: &str,
-            config: Value,
-        ) -> Result<Trigger, IIIError>;
-
-        fn trigger_v0(
-            &self,
-            function_id: &str,
-            payload: Value,
-        ) -> impl Future<Output = Result<Value, IIIError>> + Send;
-
-        fn trigger_void(
-            &self,
-            function_id: &str,
-            payload: Value,
-        ) -> Result<(), IIIError>;
-    }
-
-    impl IIIExt for III {
-        fn register_function_with_description<F, Fut>(
-            &self,
-            id: &str,
-            desc: &str,
-            f: F,
-        ) -> FunctionRef
-        where
-            F: Fn(Value) -> Fut + Send + Sync + 'static,
-            Fut: Future<Output = Result<Value, IIIError>> + Send + 'static,
-        {
-            self.register_function(
-                RegisterFunction::new_async(id.to_string(), f).description(desc.to_string()),
-            )
-        }
-
-        fn register_function_v0<F, Fut>(&self, id: &str, f: F) -> FunctionRef
-        where
-            F: Fn(Value) -> Fut + Send + Sync + 'static,
-            Fut: Future<Output = Result<Value, IIIError>> + Send + 'static,
-        {
-            self.register_function(RegisterFunction::new_async(id.to_string(), f))
-        }
-
-        fn register_trigger_v0(
-            &self,
-            kind: &str,
-            function_id: &str,
-            config: Value,
-        ) -> Result<Trigger, IIIError> {
-            self.register_trigger(RegisterTriggerInput {
-                trigger_type: kind.to_string(),
-                function_id: function_id.to_string(),
-                config,
-                metadata: None,
-            })
-        }
-
-        async fn trigger_v0(
-            &self,
-            function_id: &str,
-            payload: Value,
-        ) -> Result<Value, IIIError> {
-            self.trigger(TriggerRequest {
-                function_id: function_id.to_string(),
-                payload,
-                action: None,
-                timeout_ms: None,
-            })
-            .await
-        }
-
-        fn trigger_void(
-            &self,
-            function_id: &str,
-            payload: Value,
-        ) -> Result<(), IIIError> {
-            let iii = self.clone();
-            let fid = function_id.to_string();
-            tokio::spawn(async move {
-                let _ = iii
-                    .trigger(TriggerRequest {
-                        function_id: fid,
-                        payload,
-                        action: None,
-                        timeout_ms: None,
-                    })
-                    .await;
-            });
-            Ok(())
-        }
-    }
-}
-use iii_compat::IIIExt as _;
 
 
 
@@ -164,28 +45,49 @@ async fn create_mission(iii: &III, req: CreateMissionRequest) -> Result<Value, I
 
     let value = serde_json::to_value(&mission).map_err(|e| IIIError::Handler(e.to_string()))?;
 
-    iii.trigger_v0("state::set", json!({
+    iii.trigger(TriggerRequest {
+        function_id: "state::set".to_string(),
+        payload: json!({
         "scope": scope(&req.realm_id),
         "key": id,
         "value": value,
-    }))
+    }),
+        action: None,
+        timeout_ms: None,
+    })
     .await
     .map_err(|e| IIIError::Handler(e.to_string()))?;
 
-    let _ = iii.trigger_void("publish", json!({
+    let _ = {
+        let _iii = iii.clone();
+        let _payload = json!({
         "topic": "mission.lifecycle",
         "data": { "type": "created", "missionId": mission.id, "realmId": mission.realm_id },
-    }));
+    });
+        tokio::spawn(async move {
+            let _ = _iii.trigger(TriggerRequest {
+                function_id: "publish".to_string(),
+                payload: _payload,
+                action: None,
+                timeout_ms: None,
+            }).await;
+        });
+    };
 
     Ok(serde_json::to_value(&mission).unwrap())
 }
 
 async fn load_mission(iii: &III, realm_id: &str, id: &str) -> Result<Mission, IIIError> {
     let val = iii
-        .trigger_v0("state::get", json!({
+        .trigger(TriggerRequest {
+            function_id: "state::get".to_string(),
+            payload: json!({
             "scope": scope(realm_id),
             "key": id,
-        }))
+        }),
+            action: None,
+            timeout_ms: None,
+        })
         .await
         .map_err(|e| IIIError::Handler(e.to_string()))?;
 
@@ -194,11 +96,16 @@ async fn load_mission(iii: &III, realm_id: &str, id: &str) -> Result<Mission, II
 
 async fn save_mission(iii: &III, mission: &Mission) -> Result<(), IIIError> {
     let value = serde_json::to_value(mission).map_err(|e| IIIError::Handler(e.to_string()))?;
-    iii.trigger_v0("state::set", json!({
+    iii.trigger(TriggerRequest {
+        function_id: "state::set".to_string(),
+        payload: json!({
         "scope": scope(&mission.realm_id),
         "key": mission.id,
         "value": value,
-    }))
+    }),
+        action: None,
+        timeout_ms: None,
+    })
     .await
     .map_err(|e| IIIError::Handler(e.to_string()))?;
     Ok(())
@@ -233,14 +140,25 @@ async fn checkout_mission(iii: &III, req: CheckoutRequest) -> Result<Value, IIIE
 
     save_mission(iii, &mission).await?;
 
-    let _ = iii.trigger_void("publish", json!({
+    let _ = {
+        let _iii = iii.clone();
+        let _payload = json!({
         "topic": "mission.lifecycle",
         "data": {
             "type": "checked_out",
             "missionId": mission.id,
             "agentId": req.agent_id,
         },
-    }));
+    });
+        tokio::spawn(async move {
+            let _ = _iii.trigger(TriggerRequest {
+                function_id: "publish".to_string(),
+                payload: _payload,
+                action: None,
+                timeout_ms: None,
+            }).await;
+        });
+    };
 
     Ok(serde_json::to_value(&mission).unwrap())
 }
@@ -284,7 +202,9 @@ async fn transition_mission(iii: &III, req: TransitionRequest) -> Result<Value, 
 
     save_mission(iii, &mission).await?;
 
-    let _ = iii.trigger_void("publish", json!({
+    let _ = {
+        let _iii = iii.clone();
+        let _payload = json!({
         "topic": "mission.lifecycle",
         "data": {
             "type": "transitioned",
@@ -294,7 +214,16 @@ async fn transition_mission(iii: &III, req: TransitionRequest) -> Result<Value, 
             "agentId": req.agent_id,
             "reason": req.reason,
         },
-    }));
+    });
+        tokio::spawn(async move {
+            let _ = _iii.trigger(TriggerRequest {
+                function_id: "publish".to_string(),
+                payload: _payload,
+                action: None,
+                timeout_ms: None,
+            }).await;
+        });
+    };
 
     Ok(serde_json::to_value(&mission).unwrap())
 }
@@ -313,11 +242,16 @@ async fn add_comment(iii: &III, req: CommentRequest) -> Result<Value, IIIError> 
 
     let value = serde_json::to_value(&comment).map_err(|e| IIIError::Handler(e.to_string()))?;
 
-    iii.trigger_v0("state::set", json!({
+    iii.trigger(TriggerRequest {
+        function_id: "state::set".to_string(),
+        payload: json!({
         "scope": comments_scope(&realm_id, &req.mission_id),
         "key": id,
         "value": value,
-    }))
+    }),
+        action: None,
+        timeout_ms: None,
+    })
     .await
     .map_err(|e| IIIError::Handler(e.to_string()))?;
 
@@ -325,16 +259,26 @@ async fn add_comment(iii: &III, req: CommentRequest) -> Result<Value, IIIError> 
 }
 
 async fn list_comments(iii: &III, realm_id: &str, mission_id: &str) -> Result<Value, IIIError> {
-    iii.trigger_v0("state::list", json!({
+    iii.trigger(TriggerRequest {
+        function_id: "state::list".to_string(),
+        payload: json!({
         "scope": comments_scope(realm_id, mission_id),
-    }))
+    }),
+        action: None,
+        timeout_ms: None,
+    })
     .await
     .map_err(|e| IIIError::Handler(e.to_string()))
 }
 
 async fn list_missions(iii: &III, req: ListMissionsRequest) -> Result<Value, IIIError> {
     let all = iii
-        .trigger_v0("state::list", json!({ "scope": scope(&req.realm_id) }))
+        .trigger(TriggerRequest {
+            function_id: "state::list".to_string(),
+            payload: json!({ "scope": scope(&req.realm_id) }),
+            action: None,
+            timeout_ms: None,
+        })
         .await
         .map_err(|e| IIIError::Handler(e.to_string()))?;
 
@@ -366,38 +310,34 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let iii = register_worker("ws://localhost:49134", InitOptions::default());
 
     let iii_clone = iii.clone();
-    iii.register_function_with_description(
-        "mission::create",
-        "Create a new mission",
-        move |input: Value| {
+    iii.register_function(
+        RegisterFunction::new_async("mission::create", move |input: Value| {
             let iii = iii_clone.clone();
             async move {
                 let req: CreateMissionRequest =
                     serde_json::from_value(input).map_err(|e| IIIError::Handler(e.to_string()))?;
                 create_mission(&iii, req).await
             }
-        },
+        })
+        .description("Create a new mission"),
     );
 
     let iii_clone = iii.clone();
-    iii.register_function_with_description(
-        "mission::checkout",
-        "Atomically claim a mission for an agent",
-        move |input: Value| {
+    iii.register_function(
+        RegisterFunction::new_async("mission::checkout", move |input: Value| {
             let iii = iii_clone.clone();
             async move {
                 let req: CheckoutRequest =
                     serde_json::from_value(input).map_err(|e| IIIError::Handler(e.to_string()))?;
                 checkout_mission(&iii, req).await
             }
-        },
+        })
+        .description("Atomically claim a mission for an agent"),
     );
 
     let iii_clone = iii.clone();
-    iii.register_function_with_description(
-        "mission::release",
-        "Release a mission back to the queue",
-        move |input: Value| {
+    iii.register_function(
+        RegisterFunction::new_async("mission::release", move |input: Value| {
             let iii = iii_clone.clone();
             async move {
                 let realm_id = input["realmId"]
@@ -411,56 +351,52 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     .ok_or_else(|| IIIError::Handler("missing agentId".into()))?;
                 release_mission(&iii, realm_id, id, agent_id).await
             }
-        },
+        })
+        .description("Release a mission back to the queue"),
     );
 
     let iii_clone = iii.clone();
-    iii.register_function_with_description(
-        "mission::transition",
-        "Transition mission to a new status",
-        move |input: Value| {
+    iii.register_function(
+        RegisterFunction::new_async("mission::transition", move |input: Value| {
             let iii = iii_clone.clone();
             async move {
                 let req: TransitionRequest =
                     serde_json::from_value(input).map_err(|e| IIIError::Handler(e.to_string()))?;
                 transition_mission(&iii, req).await
             }
-        },
+        })
+        .description("Transition mission to a new status"),
     );
 
     let iii_clone = iii.clone();
-    iii.register_function_with_description(
-        "mission::list",
-        "List missions with filtering",
-        move |input: Value| {
+    iii.register_function(
+        RegisterFunction::new_async("mission::list", move |input: Value| {
             let iii = iii_clone.clone();
             async move {
                 let req: ListMissionsRequest =
                     serde_json::from_value(input).map_err(|e| IIIError::Handler(e.to_string()))?;
                 list_missions(&iii, req).await
             }
-        },
+        })
+        .description("List missions with filtering"),
     );
 
     let iii_clone = iii.clone();
-    iii.register_function_with_description(
-        "mission::comment",
-        "Add a comment to a mission",
-        move |input: Value| {
+    iii.register_function(
+        RegisterFunction::new_async("mission::comment", move |input: Value| {
             let iii = iii_clone.clone();
             async move {
                 let req: CommentRequest =
                     serde_json::from_value(input).map_err(|e| IIIError::Handler(e.to_string()))?;
                 add_comment(&iii, req).await
             }
-        },
+        })
+        .description("Add a comment to a mission"),
     );
 
     let iii_clone = iii.clone();
-    iii.register_function_with_description(
-        "mission::comments",
-        "List comments on a mission",
-        move |input: Value| {
+    iii.register_function(
+        RegisterFunction::new_async("mission::comments", move |input: Value| {
             let iii = iii_clone.clone();
             async move {
                 let realm_id = input["realmId"]
@@ -471,16 +407,52 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     .ok_or_else(|| IIIError::Handler("missing missionId".into()))?;
                 list_comments(&iii, realm_id, mission_id).await
             }
-        },
+        })
+        .description("List comments on a mission"),
     );
 
-    iii.register_trigger_v0("http", "mission::create", json!({ "method": "POST", "path": "/api/missions" }))?;
-    iii.register_trigger_v0("http", "mission::checkout", json!({ "method": "POST", "path": "/api/missions/:id/checkout" }))?;
-    iii.register_trigger_v0("http", "mission::release", json!({ "method": "POST", "path": "/api/missions/:id/release" }))?;
-    iii.register_trigger_v0("http", "mission::transition", json!({ "method": "PATCH", "path": "/api/missions/:id/status" }))?;
-    iii.register_trigger_v0("http", "mission::list", json!({ "method": "GET", "path": "/api/missions/:realmId" }))?;
-    iii.register_trigger_v0("http", "mission::comment", json!({ "method": "POST", "path": "/api/missions/:id/comments" }))?;
-    iii.register_trigger_v0("http", "mission::comments", json!({ "method": "GET", "path": "/api/missions/:realmId/:missionId/comments" }))?;
+    iii.register_trigger(RegisterTriggerInput {
+        trigger_type: "http".to_string(),
+        function_id: "mission::create".to_string(),
+        config: json!({ "method": "POST", "path": "/api/missions" }),
+        metadata: None,
+    })?;
+    iii.register_trigger(RegisterTriggerInput {
+        trigger_type: "http".to_string(),
+        function_id: "mission::checkout".to_string(),
+        config: json!({ "method": "POST", "path": "/api/missions/:id/checkout" }),
+        metadata: None,
+    })?;
+    iii.register_trigger(RegisterTriggerInput {
+        trigger_type: "http".to_string(),
+        function_id: "mission::release".to_string(),
+        config: json!({ "method": "POST", "path": "/api/missions/:id/release" }),
+        metadata: None,
+    })?;
+    iii.register_trigger(RegisterTriggerInput {
+        trigger_type: "http".to_string(),
+        function_id: "mission::transition".to_string(),
+        config: json!({ "method": "PATCH", "path": "/api/missions/:id/status" }),
+        metadata: None,
+    })?;
+    iii.register_trigger(RegisterTriggerInput {
+        trigger_type: "http".to_string(),
+        function_id: "mission::list".to_string(),
+        config: json!({ "method": "GET", "path": "/api/missions/:realmId" }),
+        metadata: None,
+    })?;
+    iii.register_trigger(RegisterTriggerInput {
+        trigger_type: "http".to_string(),
+        function_id: "mission::comment".to_string(),
+        config: json!({ "method": "POST", "path": "/api/missions/:id/comments" }),
+        metadata: None,
+    })?;
+    iii.register_trigger(RegisterTriggerInput {
+        trigger_type: "http".to_string(),
+        function_id: "mission::comments".to_string(),
+        config: json!({ "method": "GET", "path": "/api/missions/:realmId/:missionId/comments" }),
+        metadata: None,
+    })?;
 
     tracing::info!("mission worker started");
     tokio::signal::ctrl_c().await?;

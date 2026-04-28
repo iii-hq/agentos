@@ -1,128 +1,9 @@
-use iii_sdk::iii::III;
+use iii_sdk::{III, RegisterFunction, TriggerRequest};
 use iii_sdk::error::IIIError;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::collections::HashSet;
 
-#[allow(dead_code)]
-mod iii_compat {
-    use iii_sdk::{
-        III, RegisterFunction, RegisterTriggerInput, TriggerRequest, FunctionRef, Trigger,
-        Value,
-    };
-    use iii_sdk::error::IIIError;
-    use std::future::Future;
-
-    pub trait IIIExt {
-        fn register_function_with_description<F, Fut>(
-            &self,
-            id: &str,
-            desc: &str,
-            f: F,
-        ) -> FunctionRef
-        where
-            F: Fn(Value) -> Fut + Send + Sync + 'static,
-            Fut: Future<Output = Result<Value, IIIError>> + Send + 'static;
-
-        fn register_function_v0<F, Fut>(&self, id: &str, f: F) -> FunctionRef
-        where
-            F: Fn(Value) -> Fut + Send + Sync + 'static,
-            Fut: Future<Output = Result<Value, IIIError>> + Send + 'static;
-
-        fn register_trigger_v0(
-            &self,
-            kind: &str,
-            function_id: &str,
-            config: Value,
-        ) -> Result<Trigger, IIIError>;
-
-        fn trigger_v0(
-            &self,
-            function_id: &str,
-            payload: Value,
-        ) -> impl Future<Output = Result<Value, IIIError>> + Send;
-
-        fn trigger_void(
-            &self,
-            function_id: &str,
-            payload: Value,
-        ) -> Result<(), IIIError>;
-    }
-
-    impl IIIExt for III {
-        fn register_function_with_description<F, Fut>(
-            &self,
-            id: &str,
-            desc: &str,
-            f: F,
-        ) -> FunctionRef
-        where
-            F: Fn(Value) -> Fut + Send + Sync + 'static,
-            Fut: Future<Output = Result<Value, IIIError>> + Send + 'static,
-        {
-            self.register_function(
-                RegisterFunction::new_async(id.to_string(), f).description(desc.to_string()),
-            )
-        }
-
-        fn register_function_v0<F, Fut>(&self, id: &str, f: F) -> FunctionRef
-        where
-            F: Fn(Value) -> Fut + Send + Sync + 'static,
-            Fut: Future<Output = Result<Value, IIIError>> + Send + 'static,
-        {
-            self.register_function(RegisterFunction::new_async(id.to_string(), f))
-        }
-
-        fn register_trigger_v0(
-            &self,
-            kind: &str,
-            function_id: &str,
-            config: Value,
-        ) -> Result<Trigger, IIIError> {
-            self.register_trigger(RegisterTriggerInput {
-                trigger_type: kind.to_string(),
-                function_id: function_id.to_string(),
-                config,
-                metadata: None,
-            })
-        }
-
-        async fn trigger_v0(
-            &self,
-            function_id: &str,
-            payload: Value,
-        ) -> Result<Value, IIIError> {
-            self.trigger(TriggerRequest {
-                function_id: function_id.to_string(),
-                payload,
-                action: None,
-                timeout_ms: None,
-            })
-            .await
-        }
-
-        fn trigger_void(
-            &self,
-            function_id: &str,
-            payload: Value,
-        ) -> Result<(), IIIError> {
-            let iii = self.clone();
-            let fid = function_id.to_string();
-            tokio::spawn(async move {
-                let _ = iii
-                    .trigger(TriggerRequest {
-                        function_id: fid,
-                        payload,
-                        action: None,
-                        timeout_ms: None,
-                    })
-                    .await;
-            });
-            Ok(())
-        }
-    }
-}
-use iii_compat::IIIExt as _;
 
 
 
@@ -713,10 +594,8 @@ mod tests {
 
 pub fn register(iii: &III) {
     let _iii_declassify = iii.clone();
-    iii.register_function_with_description(
-        "taint::label",
-        "Apply taint labels to a value",
-        move |input: Value| async move {
+    iii.register_function(
+        RegisterFunction::new_async("taint::label", move |input: Value| async move {
             let value = input.get("value").cloned().unwrap_or(json!(null));
             let label_strs = input["labels"]
                 .as_array()
@@ -730,13 +609,12 @@ pub fn register(iii: &III) {
 
             let tainted = TaintedValue::new(value, TaintSet::from_labels(labels));
             serde_json::to_value(tainted).map_err(|e| IIIError::Handler(e.to_string()))
-        },
+        })
+        .description("Apply taint labels to a value"),
     );
 
-    iii.register_function_with_description(
-        "taint::check",
-        "Check if tainted value can flow to a sink",
-        move |input: Value| async move {
+    iii.register_function(
+        RegisterFunction::new_async("taint::check", move |input: Value| async move {
             let taint_set: TaintSet = serde_json::from_value(
                 input.get("taints").cloned().unwrap_or(json!({ "labels": [] }))
             ).map_err(|e| IIIError::Handler(e.to_string()))?;
@@ -752,19 +630,18 @@ pub fn register(iii: &III) {
                 vec![]
             };
 
-            Ok(json!({
+            Ok::<Value, IIIError>(json!({
                 "allowed": allowed,
                 "sink": sink_str,
                 "blockingLabels": blocking_labels,
             }))
-        },
+        })
+        .description("Check if tainted value can flow to a sink"),
     );
 
     let iii_for_declassify = _iii_declassify;
-    iii.register_function_with_description(
-        "taint::declassify",
-        "Remove taint labels from a value",
-        move |input: Value| {
+    iii.register_function(
+        RegisterFunction::new_async("taint::declassify", move |input: Value| {
             let iii = iii_for_declassify.clone();
             async move {
                 let mut taint_set: TaintSet = serde_json::from_value(
@@ -782,15 +659,27 @@ pub fn register(iii: &III) {
                     }
                 }
 
-                let _ = iii.trigger_void("security::audit", json!({
+                let _ = {
+                    let _iii = iii.clone();
+                    let _payload = json!({
                     "type": "taint_declassified",
                     "detail": { "removedLabels": &remove_strs },
-                }));
+                });
+                    tokio::spawn(async move {
+                        let _ = _iii.trigger(TriggerRequest {
+                            function_id: "security::audit".to_string(),
+                            payload: _payload,
+                            action: None,
+                            timeout_ms: None,
+                        }).await;
+                    });
+                };
 
                 let value = input.get("value").cloned().unwrap_or(json!(null));
                 let result = TaintedValue::new(value, taint_set);
                 serde_json::to_value(result).map_err(|e| IIIError::Handler(e.to_string()))
             }
-        },
+        })
+        .description("Remove taint labels from a value"),
     );
 }

@@ -1,129 +1,10 @@
-use iii_sdk::{III, InitOptions, register_worker};
+use iii_sdk::{III, InitOptions, RegisterFunction, RegisterTriggerInput, TriggerRequest, register_worker};
 use iii_sdk::error::IIIError;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 
-#[allow(dead_code)]
-mod iii_compat {
-    use iii_sdk::{
-        III, RegisterFunction, RegisterTriggerInput, TriggerRequest, FunctionRef, Trigger,
-        Value,
-    };
-    use iii_sdk::error::IIIError;
-    use std::future::Future;
-
-    pub trait IIIExt {
-        fn register_function_with_description<F, Fut>(
-            &self,
-            id: &str,
-            desc: &str,
-            f: F,
-        ) -> FunctionRef
-        where
-            F: Fn(Value) -> Fut + Send + Sync + 'static,
-            Fut: Future<Output = Result<Value, IIIError>> + Send + 'static;
-
-        fn register_function_v0<F, Fut>(&self, id: &str, f: F) -> FunctionRef
-        where
-            F: Fn(Value) -> Fut + Send + Sync + 'static,
-            Fut: Future<Output = Result<Value, IIIError>> + Send + 'static;
-
-        fn register_trigger_v0(
-            &self,
-            kind: &str,
-            function_id: &str,
-            config: Value,
-        ) -> Result<Trigger, IIIError>;
-
-        fn trigger_v0(
-            &self,
-            function_id: &str,
-            payload: Value,
-        ) -> impl Future<Output = Result<Value, IIIError>> + Send;
-
-        fn trigger_void(
-            &self,
-            function_id: &str,
-            payload: Value,
-        ) -> Result<(), IIIError>;
-    }
-
-    impl IIIExt for III {
-        fn register_function_with_description<F, Fut>(
-            &self,
-            id: &str,
-            desc: &str,
-            f: F,
-        ) -> FunctionRef
-        where
-            F: Fn(Value) -> Fut + Send + Sync + 'static,
-            Fut: Future<Output = Result<Value, IIIError>> + Send + 'static,
-        {
-            self.register_function(
-                RegisterFunction::new_async(id.to_string(), f).description(desc.to_string()),
-            )
-        }
-
-        fn register_function_v0<F, Fut>(&self, id: &str, f: F) -> FunctionRef
-        where
-            F: Fn(Value) -> Fut + Send + Sync + 'static,
-            Fut: Future<Output = Result<Value, IIIError>> + Send + 'static,
-        {
-            self.register_function(RegisterFunction::new_async(id.to_string(), f))
-        }
-
-        fn register_trigger_v0(
-            &self,
-            kind: &str,
-            function_id: &str,
-            config: Value,
-        ) -> Result<Trigger, IIIError> {
-            self.register_trigger(RegisterTriggerInput {
-                trigger_type: kind.to_string(),
-                function_id: function_id.to_string(),
-                config,
-                metadata: None,
-            })
-        }
-
-        async fn trigger_v0(
-            &self,
-            function_id: &str,
-            payload: Value,
-        ) -> Result<Value, IIIError> {
-            self.trigger(TriggerRequest {
-                function_id: function_id.to_string(),
-                payload,
-                action: None,
-                timeout_ms: None,
-            })
-            .await
-        }
-
-        fn trigger_void(
-            &self,
-            function_id: &str,
-            payload: Value,
-        ) -> Result<(), IIIError> {
-            let iii = self.clone();
-            let fid = function_id.to_string();
-            tokio::spawn(async move {
-                let _ = iii
-                    .trigger(TriggerRequest {
-                        function_id: fid,
-                        payload,
-                        action: None,
-                        timeout_ms: None,
-                    })
-                    .await;
-            });
-            Ok(())
-        }
-    }
-}
-use iii_compat::IIIExt as _;
 
 
 
@@ -151,103 +32,109 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let iii = register_worker("ws://localhost:49134", InitOptions::default());
 
     let iii_ref = iii.clone();
-    iii.register_function_with_description(
-        "memory::store",
-        "Store a memory entry with dedup",
-        move |input: Value| {
+    iii.register_function(
+        RegisterFunction::new_async("memory::store", move |input: Value| {
             let iii = iii_ref.clone();
             async move { store_memory(&iii, input).await }
-        },
+        })
+        .description("Store a memory entry with dedup"),
     );
 
     let iii_ref = iii.clone();
-    iii.register_function_with_description(
-        "memory::recall",
-        "Hybrid semantic + keyword + recency search",
-        move |input: Value| {
+    iii.register_function(
+        RegisterFunction::new_async("memory::recall", move |input: Value| {
             let iii = iii_ref.clone();
             async move { recall_memory(&iii, input).await }
-        },
+        })
+        .description("Hybrid semantic + keyword + recency search"),
     );
 
     let iii_ref = iii.clone();
-    iii.register_function_with_description(
-        "memory::kg::add",
-        "Add knowledge graph entity with bidirectional relations",
-        move |input: Value| {
+    iii.register_function(
+        RegisterFunction::new_async("memory::kg::add", move |input: Value| {
             let iii = iii_ref.clone();
             async move { kg_add(&iii, input).await }
-        },
+        })
+        .description("Add knowledge graph entity with bidirectional relations"),
     );
 
     let iii_ref = iii.clone();
-    iii.register_function_with_description(
-        "memory::kg::query",
-        "Traverse knowledge graph from entity",
-        move |input: Value| {
+    iii.register_function(
+        RegisterFunction::new_async("memory::kg::query", move |input: Value| {
             let iii = iii_ref.clone();
             async move { kg_query(&iii, input).await }
-        },
+        })
+        .description("Traverse knowledge graph from entity"),
     );
 
     let iii_ref = iii.clone();
-    iii.register_function_with_description(
-        "memory::evict",
-        "Evict stale and low-importance memories",
-        move |input: Value| {
+    iii.register_function(
+        RegisterFunction::new_async("memory::evict", move |input: Value| {
             let iii = iii_ref.clone();
             async move { evict_memories(&iii, input).await }
-        },
+        })
+        .description("Evict stale and low-importance memories"),
     );
 
     let iii_ref = iii.clone();
-    iii.register_function_with_description(
-        "memory::consolidate",
-        "Decay confidence on unaccessed memories",
-        move |input: Value| {
+    iii.register_function(
+        RegisterFunction::new_async("memory::consolidate", move |input: Value| {
             let iii = iii_ref.clone();
             async move { consolidate(&iii, input).await }
-        },
+        })
+        .description("Decay confidence on unaccessed memories"),
     );
 
     let iii_ref = iii.clone();
-    iii.register_function_with_description(
-        "memory::session::list",
-        "List sessions for an agent",
-        move |input: Value| {
+    iii.register_function(
+        RegisterFunction::new_async("memory::session::list", move |input: Value| {
             let iii = iii_ref.clone();
             async move {
                 let agent_id = input["agentId"].as_str().unwrap_or("default");
-                iii.trigger_v0("state::list", json!({ "scope": format!("sessions:{}", agent_id) }))
+                iii.trigger(TriggerRequest {
+                    function_id: "state::list".to_string(),
+                    payload: json!({ "scope": format!("sessions:{}", agent_id) }),
+                    action: None,
+                    timeout_ms: None,
+                })
                     .await
                     .map_err(|e| IIIError::Handler(e.to_string()))
             }
-        },
+        })
+        .description("List sessions for an agent"),
     );
 
     let iii_ref = iii.clone();
-    iii.register_function_with_description(
-        "memory::session::compact",
-        "Compact session via LLM summarization",
-        move |input: Value| {
+    iii.register_function(
+        RegisterFunction::new_async("memory::session::compact", move |input: Value| {
             let iii = iii_ref.clone();
             async move { compact_session(&iii, input).await }
-        },
+        })
+        .description("Compact session via LLM summarization"),
     );
 
     let iii_ref = iii.clone();
-    iii.register_function_with_description(
-        "memory::session::repair",
-        "7-phase session validation and repair",
-        move |input: Value| {
+    iii.register_function(
+        RegisterFunction::new_async("memory::session::repair", move |input: Value| {
             let iii = iii_ref.clone();
             async move { repair_session(&iii, input).await }
-        },
+        })
+        .description("7-phase session validation and repair"),
     );
 
-    iii.register_trigger_v0("cron", "memory::consolidate", json!({ "expression": "0 */6 * * *" }))?;
+    iii.register_trigger(RegisterTriggerInput {
+        trigger_type: "cron".to_string(),
+        function_id: "memory::consolidate".to_string(),
+        config: json!({ "expression": "0 */6 * * *" }),
+        metadata: None,
+    })?;
 
-    iii.register_trigger_v0("cron", "memory::evict", json!({ "expression": "0 3 * * *" }))?;
+    iii.register_trigger(RegisterTriggerInput {
+        trigger_type: "cron".to_string(),
+        function_id: "memory::evict".to_string(),
+        config: json!({ "expression": "0 3 * * *" }),
+        metadata: None,
+    })?;
 
     tracing::info!("memory worker started");
     tokio::signal::ctrl_c().await?;
@@ -268,10 +155,15 @@ async fn store_memory(iii: &III, input: Value) -> Result<Value, IIIError> {
     };
 
     let existing: Option<Value> = iii
-        .trigger_v0("state::get", json!({
+        .trigger(TriggerRequest {
+            function_id: "state::get".to_string(),
+            payload: json!({
             "scope": format!("memory:{}", agent_id),
             "key": &hash,
-        }))
+        }),
+            action: None,
+            timeout_ms: None,
+        })
         .await
         .ok();
 
@@ -283,7 +175,12 @@ async fn store_memory(iii: &III, input: Value) -> Result<Value, IIIError> {
     let now = now_ms();
 
     let embedding: Option<Vec<f64>> = iii
-        .trigger_v0("embedding::generate", json!({ "text": content }))
+        .trigger(TriggerRequest {
+            function_id: "embedding::generate".to_string(),
+            payload: json!({ "text": content }),
+            action: None,
+            timeout_ms: None,
+        })
         .await
         .ok()
         .and_then(|v| {
@@ -308,27 +205,42 @@ async fn store_memory(iii: &III, input: Value) -> Result<Value, IIIError> {
         "lastAccessed": now,
     });
 
-    iii.trigger_v0("state::set", json!({
+    iii.trigger(TriggerRequest {
+        function_id: "state::set".to_string(),
+        payload: json!({
         "scope": format!("memory:{}", agent_id),
         "key": &id,
         "value": &entry,
-    })).await.map_err(|e| IIIError::Handler(e.to_string()))?;
+    }),
+        action: None,
+        timeout_ms: None,
+    }).await.map_err(|e| IIIError::Handler(e.to_string()))?;
 
-    iii.trigger_v0("state::set", json!({
+    iii.trigger(TriggerRequest {
+        function_id: "state::set".to_string(),
+        payload: json!({
         "scope": format!("memory:{}", agent_id),
         "key": &hash,
         "value": { "id": &id, "timestamp": now },
-    })).await.map_err(|e| IIIError::Handler(e.to_string()))?;
+    }),
+        action: None,
+        timeout_ms: None,
+    }).await.map_err(|e| IIIError::Handler(e.to_string()))?;
 
     if let Some(sid) = &session_id {
-        let _ = iii.trigger_v0("state::update", json!({
+        let _ = iii.trigger(TriggerRequest {
+            function_id: "state::update".to_string(),
+            payload: json!({
             "scope": format!("sessions:{}", agent_id),
             "key": sid,
             "operations": [
                 { "type": "merge", "path": "messages", "value": [{ "id": &id, "role": role, "timestamp": now }] },
                 { "type": "set", "path": "updatedAt", "value": now },
             ],
-        })).await;
+        }),
+            action: None,
+            timeout_ms: None,
+        }).await;
     }
 
     Ok(json!({ "id": id, "stored": true }))
@@ -340,7 +252,12 @@ async fn recall_memory(iii: &III, input: Value) -> Result<Value, IIIError> {
     let limit = input["limit"].as_u64().unwrap_or(10) as usize;
 
     let entries: Value = iii
-        .trigger_v0("state::list", json!({ "scope": format!("memory:{}", agent_id) }))
+        .trigger(TriggerRequest {
+            function_id: "state::list".to_string(),
+            payload: json!({ "scope": format!("memory:{}", agent_id) }),
+            action: None,
+            timeout_ms: None,
+        })
         .await
         .unwrap_or(json!([]));
 
@@ -362,7 +279,12 @@ async fn recall_memory(iii: &III, input: Value) -> Result<Value, IIIError> {
     }
 
     let query_embedding: Option<Vec<f64>> = iii
-        .trigger_v0("embedding::generate", json!({ "text": query }))
+        .trigger(TriggerRequest {
+            function_id: "embedding::generate".to_string(),
+            payload: json!({ "text": query }),
+            action: None,
+            timeout_ms: None,
+        })
         .await
         .ok()
         .and_then(|v| {
@@ -409,14 +331,25 @@ async fn recall_memory(iii: &III, input: Value) -> Result<Value, IIIError> {
         .into_iter()
         .take(limit)
         .map(|(score, m)| {
-            let _ = iii.trigger_void("state::update", json!({
+            let _ = {
+                let _iii = iii.clone();
+                let _payload = json!({
                 "scope": format!("memory:{}", m.agent_id),
                 "key": &m.id,
                 "operations": [
                     { "type": "increment", "path": "accessCount", "value": 1 },
                     { "type": "set", "path": "lastAccessed", "value": now_ms() },
                 ],
-            }));
+            });
+                tokio::spawn(async move {
+                    let _ = _iii.trigger(TriggerRequest {
+                        function_id: "state::update".to_string(),
+                        payload: _payload,
+                        action: None,
+                        timeout_ms: None,
+                    }).await;
+                });
+            };
 
             json!({
                 "role": m.role,
@@ -436,21 +369,31 @@ async fn kg_add(iii: &III, input: Value) -> Result<Value, IIIError> {
     let entity = &input["entity"];
     let entity_id = entity["id"].as_str().unwrap_or("");
 
-    iii.trigger_v0("state::set", json!({
+    iii.trigger(TriggerRequest {
+        function_id: "state::set".to_string(),
+        payload: json!({
         "scope": format!("kg:{}", agent_id),
         "key": entity_id,
         "value": entity,
-    })).await.map_err(|e| IIIError::Handler(e.to_string()))?;
+    }),
+        action: None,
+        timeout_ms: None,
+    }).await.map_err(|e| IIIError::Handler(e.to_string()))?;
 
     if let Some(relations) = entity["relations"].as_array() {
         for rel in relations {
             let target_id = rel["target"].as_str().unwrap_or("");
             let rel_type = rel["type"].as_str().unwrap_or("");
 
-            if let Ok(target) = iii.trigger_v0("state::get", json!({
+            if let Ok(target) = iii.trigger(TriggerRequest {
+                function_id: "state::get".to_string(),
+                payload: json!({
                 "scope": format!("kg:{}", agent_id),
                 "key": target_id,
-            })).await {
+            }),
+                action: None,
+                timeout_ms: None,
+            }).await {
                 let mut back_refs: Vec<Value> = target["relations"]
                     .as_array()
                     .cloned()
@@ -462,11 +405,16 @@ async fn kg_add(iii: &III, input: Value) -> Result<Value, IIIError> {
 
                 if !already {
                     back_refs.push(json!({ "target": entity_id, "type": format!("inverse:{}", rel_type) }));
-                    let _ = iii.trigger_v0("state::update", json!({
+                    let _ = iii.trigger(TriggerRequest {
+                        function_id: "state::update".to_string(),
+                        payload: json!({
                         "scope": format!("kg:{}", agent_id),
                         "key": target_id,
                         "operations": [{ "type": "set", "path": "relations", "value": back_refs }],
-                    })).await;
+                    }),
+                        action: None,
+                        timeout_ms: None,
+                    }).await;
                 }
             }
         }
@@ -490,10 +438,15 @@ async fn kg_query(iii: &III, input: Value) -> Result<Value, IIIError> {
         }
         visited.insert(id.clone());
 
-        if let Ok(entity) = iii.trigger_v0("state::get", json!({
+        if let Ok(entity) = iii.trigger(TriggerRequest {
+            function_id: "state::get".to_string(),
+            payload: json!({
             "scope": format!("kg:{}", agent_id),
             "key": &id,
-        })).await {
+        }),
+            action: None,
+            timeout_ms: None,
+        }).await {
             if let Some(relations) = entity["relations"].as_array() {
                 for rel in relations {
                     if let Some(target) = rel["target"].as_str() {
@@ -514,7 +467,12 @@ async fn evict_memories(iii: &III, input: Value) -> Result<Value, IIIError> {
     let cap = input["cap"].as_u64().unwrap_or(10_000) as usize;
 
     let scopes: Value = iii
-        .trigger_v0("state::list_groups", json!({}))
+        .trigger(TriggerRequest {
+            function_id: "state::list_groups".to_string(),
+            payload: json!({}),
+            action: None,
+            timeout_ms: None,
+        })
         .await
         .unwrap_or(json!([]));
 
@@ -532,7 +490,12 @@ async fn evict_memories(iii: &III, input: Value) -> Result<Value, IIIError> {
 
     for scope in &memory_scopes {
         let entries: Value = iii
-            .trigger_v0("state::list", json!({ "scope": scope }))
+            .trigger(TriggerRequest {
+                function_id: "state::list".to_string(),
+                payload: json!({ "scope": scope }),
+                action: None,
+                timeout_ms: None,
+            })
             .await
             .unwrap_or(json!([]));
 
@@ -555,8 +518,18 @@ async fn evict_memories(iii: &III, input: Value) -> Result<Value, IIIError> {
             let is_low_confidence = m.confidence < 0.1;
 
             if (is_stale && is_low_value) || is_low_confidence {
-                let _ = iii.trigger_v0("state::delete", json!({ "scope": scope, "key": &m.id })).await;
-                let _ = iii.trigger_v0("state::delete", json!({ "scope": scope, "key": &m.hash })).await;
+                let _ = iii.trigger(TriggerRequest {
+                    function_id: "state::delete".to_string(),
+                    payload: json!({ "scope": scope, "key": &m.id }),
+                    action: None,
+                    timeout_ms: None,
+                }).await;
+                let _ = iii.trigger(TriggerRequest {
+                    function_id: "state::delete".to_string(),
+                    payload: json!({ "scope": scope, "key": &m.hash }),
+                    action: None,
+                    timeout_ms: None,
+                }).await;
                 scope_evicted += 1;
             }
         }
@@ -568,7 +541,12 @@ async fn evict_memories(iii: &III, input: Value) -> Result<Value, IIIError> {
 
             let overflow = (remaining - cap as u64) as usize;
             for m in sorted.into_iter().take(overflow) {
-                let _ = iii.trigger_v0("state::delete", json!({ "scope": scope, "key": &m.id })).await;
+                let _ = iii.trigger(TriggerRequest {
+                    function_id: "state::delete".to_string(),
+                    payload: json!({ "scope": scope, "key": &m.id }),
+                    action: None,
+                    timeout_ms: None,
+                }).await;
                 scope_evicted += 1;
             }
         }
@@ -584,7 +562,12 @@ async fn consolidate(iii: &III, input: Value) -> Result<Value, IIIError> {
     let start = std::time::Instant::now();
 
     let scopes: Value = iii
-        .trigger_v0("state::list_groups", json!({}))
+        .trigger(TriggerRequest {
+            function_id: "state::list_groups".to_string(),
+            payload: json!({}),
+            action: None,
+            timeout_ms: None,
+        })
         .await
         .unwrap_or(json!([]));
 
@@ -603,7 +586,12 @@ async fn consolidate(iii: &III, input: Value) -> Result<Value, IIIError> {
 
     for scope in &memory_scopes {
         let entries: Value = iii
-            .trigger_v0("state::list", json!({ "scope": scope }))
+            .trigger(TriggerRequest {
+                function_id: "state::list".to_string(),
+                payload: json!({ "scope": scope }),
+                action: None,
+                timeout_ms: None,
+            })
             .await
             .unwrap_or(json!([]));
 
@@ -622,13 +610,18 @@ async fn consolidate(iii: &III, input: Value) -> Result<Value, IIIError> {
 
             if now.saturating_sub(last_accessed) > seven_days_ms && confidence > 0.1 {
                 let new_confidence = (confidence * (1.0 - decay_rate)).max(0.1);
-                let _ = iii.trigger_v0("state::update", json!({
+                let _ = iii.trigger(TriggerRequest {
+                    function_id: "state::update".to_string(),
+                    payload: json!({
                     "scope": scope,
                     "key": id,
                     "operations": [
                         { "type": "set", "path": "confidence", "value": new_confidence },
                     ],
-                })).await;
+                }),
+                    action: None,
+                    timeout_ms: None,
+                }).await;
                 decayed += 1;
             }
         }
@@ -648,10 +641,15 @@ async fn compact_session(iii: &III, input: Value) -> Result<Value, IIIError> {
     let keep_recent = input["keepRecent"].as_u64().unwrap_or(10) as usize;
 
     let session: Value = iii
-        .trigger_v0("state::get", json!({
+        .trigger(TriggerRequest {
+            function_id: "state::get".to_string(),
+            payload: json!({
             "scope": format!("sessions:{}", agent_id),
             "key": session_id,
-        }))
+        }),
+            action: None,
+            timeout_ms: None,
+        })
         .await
         .unwrap_or(json!({}));
 
@@ -667,10 +665,15 @@ async fn compact_session(iii: &III, input: Value) -> Result<Value, IIIError> {
     let mut full_messages = Vec::new();
     for msg_ref in to_summarize {
         let msg_id = msg_ref["id"].as_str().unwrap_or("");
-        if let Ok(entry) = iii.trigger_v0("state::get", json!({
+        if let Ok(entry) = iii.trigger(TriggerRequest {
+            function_id: "state::get".to_string(),
+            payload: json!({
             "scope": format!("memory:{}", agent_id),
             "key": msg_id,
-        })).await {
+        }),
+            action: None,
+            timeout_ms: None,
+        }).await {
             full_messages.push(format!(
                 "{}: {}",
                 entry["role"].as_str().unwrap_or("unknown"),
@@ -684,11 +687,16 @@ async fn compact_session(iii: &III, input: Value) -> Result<Value, IIIError> {
     let mut summaries = Vec::new();
 
     for chunk in &chunks {
-        let summary = iii.trigger_v0("llm::complete", json!({
+        let summary = iii.trigger(TriggerRequest {
+            function_id: "llm::complete".to_string(),
+            payload: json!({
             "model": { "provider": "anthropic", "model": "claude-haiku-4-5", "maxTokens": 1024 },
             "systemPrompt": "Summarize this conversation concisely. Preserve key facts, decisions, and context. Be brief.",
             "messages": [{ "role": "user", "content": chunk }],
-        })).await;
+        }),
+            action: None,
+            timeout_ms: None,
+        }).await;
 
         if let Ok(resp) = summary {
             summaries.push(resp["content"].as_str().unwrap_or("").to_string());
@@ -700,7 +708,9 @@ async fn compact_session(iii: &III, input: Value) -> Result<Value, IIIError> {
     let summary_id = uuid::Uuid::new_v4().to_string();
     let now = now_ms();
 
-    iii.trigger_v0("state::set", json!({
+    iii.trigger(TriggerRequest {
+        function_id: "state::set".to_string(),
+        payload: json!({
         "scope": format!("memory:{}", agent_id),
         "key": &summary_id,
         "value": {
@@ -716,19 +726,27 @@ async fn compact_session(iii: &III, input: Value) -> Result<Value, IIIError> {
             "accessCount": 0_u64,
             "lastAccessed": now,
         },
-    })).await.map_err(|e| IIIError::Handler(e.to_string()))?;
+    }),
+        action: None,
+        timeout_ms: None,
+    }).await.map_err(|e| IIIError::Handler(e.to_string()))?;
 
     let mut new_messages = vec![json!({ "id": summary_id, "role": "system", "timestamp": now })];
     new_messages.extend(to_keep.iter().cloned());
 
-    iii.trigger_v0("state::update", json!({
+    iii.trigger(TriggerRequest {
+        function_id: "state::update".to_string(),
+        payload: json!({
         "scope": format!("sessions:{}", agent_id),
         "key": session_id,
         "operations": [
             { "type": "set", "path": "messages", "value": new_messages },
             { "type": "set", "path": "compactedAt", "value": now },
         ],
-    })).await.map_err(|e| IIIError::Handler(e.to_string()))?;
+    }),
+        action: None,
+        timeout_ms: None,
+    }).await.map_err(|e| IIIError::Handler(e.to_string()))?;
 
     Ok(json!({
         "compacted": true,
@@ -743,10 +761,15 @@ async fn repair_session(iii: &III, input: Value) -> Result<Value, IIIError> {
     let session_id = input["sessionId"].as_str().unwrap_or("default");
 
     let session: Value = iii
-        .trigger_v0("state::get", json!({
+        .trigger(TriggerRequest {
+            function_id: "state::get".to_string(),
+            payload: json!({
             "scope": format!("sessions:{}", agent_id),
             "key": session_id,
-        }))
+        }),
+            action: None,
+            timeout_ms: None,
+        })
         .await
         .unwrap_or(json!({}));
 
@@ -790,10 +813,15 @@ async fn repair_session(iii: &III, input: Value) -> Result<Value, IIIError> {
     let mut orphaned = 0_u64;
     for msg in &repaired {
         let msg_id = msg["id"].as_str().unwrap_or("");
-        let exists = iii.trigger_v0("state::get", json!({
+        let exists = iii.trigger(TriggerRequest {
+            function_id: "state::get".to_string(),
+            payload: json!({
             "scope": format!("memory:{}", agent_id),
             "key": msg_id,
-        })).await;
+        }),
+            action: None,
+            timeout_ms: None,
+        }).await;
         if exists.is_err() {
             orphaned += 1;
         }
@@ -817,10 +845,15 @@ async fn repair_session(iii: &III, input: Value) -> Result<Value, IIIError> {
     let mut truncated = 0_u64;
     for msg in &repaired {
         let msg_id = msg["id"].as_str().unwrap_or("");
-        if let Ok(entry) = iii.trigger_v0("state::get", json!({
+        if let Ok(entry) = iii.trigger(TriggerRequest {
+            function_id: "state::get".to_string(),
+            payload: json!({
             "scope": format!("memory:{}", agent_id),
             "key": msg_id,
-        })).await {
+        }),
+            action: None,
+            timeout_ms: None,
+        }).await {
             let content_len = entry["content"].as_str().map(|s| s.len()).unwrap_or(0);
             if content_len > 500_000 {
                 truncated += 1;
@@ -831,7 +864,9 @@ async fn repair_session(iii: &III, input: Value) -> Result<Value, IIIError> {
 
     let total_repairs: u64 = stats.values().sum();
     if total_repairs > 0 {
-        iii.trigger_v0("state::update", json!({
+        iii.trigger(TriggerRequest {
+            function_id: "state::update".to_string(),
+            payload: json!({
             "scope": format!("sessions:{}", agent_id),
             "key": session_id,
             "operations": [
@@ -839,7 +874,10 @@ async fn repair_session(iii: &III, input: Value) -> Result<Value, IIIError> {
                 { "type": "set", "path": "repairedAt", "value": now_ms() },
                 { "type": "set", "path": "repairStats", "value": stats },
             ],
-        })).await.map_err(|e| IIIError::Handler(e.to_string()))?;
+        }),
+            action: None,
+            timeout_ms: None,
+        }).await.map_err(|e| IIIError::Handler(e.to_string()))?;
     }
 
     Ok(json!({

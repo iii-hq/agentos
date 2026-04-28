@@ -1,4 +1,4 @@
-use iii_sdk::{III, InitOptions, register_worker};
+use iii_sdk::{III, InitOptions, RegisterFunction, RegisterTriggerInput, TriggerRequest, register_worker};
 use iii_sdk::error::IIIError;
 use hmac::{Hmac, Mac};
 use serde::{Deserialize, Serialize};
@@ -6,125 +6,6 @@ use serde_json::{json, Value};
 use sha2::Sha256;
 use std::sync::OnceLock;
 
-#[allow(dead_code)]
-mod iii_compat {
-    use iii_sdk::{
-        III, RegisterFunction, RegisterTriggerInput, TriggerRequest, FunctionRef, Trigger,
-        Value,
-    };
-    use iii_sdk::error::IIIError;
-    use std::future::Future;
-
-    pub trait IIIExt {
-        fn register_function_with_description<F, Fut>(
-            &self,
-            id: &str,
-            desc: &str,
-            f: F,
-        ) -> FunctionRef
-        where
-            F: Fn(Value) -> Fut + Send + Sync + 'static,
-            Fut: Future<Output = Result<Value, IIIError>> + Send + 'static;
-
-        fn register_function_v0<F, Fut>(&self, id: &str, f: F) -> FunctionRef
-        where
-            F: Fn(Value) -> Fut + Send + Sync + 'static,
-            Fut: Future<Output = Result<Value, IIIError>> + Send + 'static;
-
-        fn register_trigger_v0(
-            &self,
-            kind: &str,
-            function_id: &str,
-            config: Value,
-        ) -> Result<Trigger, IIIError>;
-
-        fn trigger_v0(
-            &self,
-            function_id: &str,
-            payload: Value,
-        ) -> impl Future<Output = Result<Value, IIIError>> + Send;
-
-        fn trigger_void(
-            &self,
-            function_id: &str,
-            payload: Value,
-        ) -> Result<(), IIIError>;
-    }
-
-    impl IIIExt for III {
-        fn register_function_with_description<F, Fut>(
-            &self,
-            id: &str,
-            desc: &str,
-            f: F,
-        ) -> FunctionRef
-        where
-            F: Fn(Value) -> Fut + Send + Sync + 'static,
-            Fut: Future<Output = Result<Value, IIIError>> + Send + 'static,
-        {
-            self.register_function(
-                RegisterFunction::new_async(id.to_string(), f).description(desc.to_string()),
-            )
-        }
-
-        fn register_function_v0<F, Fut>(&self, id: &str, f: F) -> FunctionRef
-        where
-            F: Fn(Value) -> Fut + Send + Sync + 'static,
-            Fut: Future<Output = Result<Value, IIIError>> + Send + 'static,
-        {
-            self.register_function(RegisterFunction::new_async(id.to_string(), f))
-        }
-
-        fn register_trigger_v0(
-            &self,
-            kind: &str,
-            function_id: &str,
-            config: Value,
-        ) -> Result<Trigger, IIIError> {
-            self.register_trigger(RegisterTriggerInput {
-                trigger_type: kind.to_string(),
-                function_id: function_id.to_string(),
-                config,
-                metadata: None,
-            })
-        }
-
-        async fn trigger_v0(
-            &self,
-            function_id: &str,
-            payload: Value,
-        ) -> Result<Value, IIIError> {
-            self.trigger(TriggerRequest {
-                function_id: function_id.to_string(),
-                payload,
-                action: None,
-                timeout_ms: None,
-            })
-            .await
-        }
-
-        fn trigger_void(
-            &self,
-            function_id: &str,
-            payload: Value,
-        ) -> Result<(), IIIError> {
-            let iii = self.clone();
-            let fid = function_id.to_string();
-            tokio::spawn(async move {
-                let _ = iii
-                    .trigger(TriggerRequest {
-                        function_id: fid,
-                        payload,
-                        action: None,
-                        timeout_ms: None,
-                    })
-                    .await;
-            });
-            Ok(())
-        }
-    }
-}
-use iii_compat::IIIExt as _;
 
 
 
@@ -187,84 +68,110 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let iii = register_worker("ws://localhost:49134", InitOptions::default());
 
     let iii_ref = iii.clone();
-    iii.register_function_with_description(
-        "security::check_capability",
-        "RBAC capability enforcement",
-        move |input: Value| {
+    iii.register_function(
+        RegisterFunction::new_async("security::check_capability", move |input: Value| {
             let iii = iii_ref.clone();
             async move { check_capability(&iii, input).await }
-        },
+        })
+        .description("RBAC capability enforcement"),
     );
 
     let iii_ref = iii.clone();
-    iii.register_function_with_description(
-        "security::set_capabilities",
-        "Set agent capabilities",
-        move |input: Value| {
+    iii.register_function(
+        RegisterFunction::new_async("security::set_capabilities", move |input: Value| {
             let iii = iii_ref.clone();
             async move {
                 let agent_id = input["agentId"].as_str().unwrap_or("");
                 let caps = &input["capabilities"];
 
-                iii.trigger_v0("state::set", json!({
+                iii.trigger(TriggerRequest {
+                    function_id: "state::set".to_string(),
+                    payload: json!({
                     "scope": "capabilities",
                     "key": agent_id,
                     "value": caps,
-                })).await.map_err(|e| IIIError::Handler(e.to_string()))?;
+                }),
+                    action: None,
+                    timeout_ms: None,
+                }).await.map_err(|e| IIIError::Handler(e.to_string()))?;
 
-                iii.trigger_void("security::audit", json!({
+                {
+                    let _iii = iii.clone();
+                    let _payload = json!({
                     "type": "capabilities_updated",
                     "agentId": agent_id,
                     "detail": { "tools": caps["tools"].as_array().map(|a| a.len()).unwrap_or(0) },
-                }))?;
+                });
+                    tokio::spawn(async move {
+                        let _ = _iii.trigger(TriggerRequest {
+                            function_id: "security::audit".to_string(),
+                            payload: _payload,
+                            action: None,
+                            timeout_ms: None,
+                        }).await;
+                    });
+                };
 
-                Ok(json!({ "updated": true }))
+                Ok::<Value, IIIError>(json!({ "updated": true }))
             }
-        },
+        })
+        .description("Set agent capabilities"),
     );
 
     let iii_ref = iii.clone();
-    iii.register_function_with_description(
-        "security::audit",
-        "Append to merkle audit chain",
-        move |input: Value| {
+    iii.register_function(
+        RegisterFunction::new_async("security::audit", move |input: Value| {
             let iii = iii_ref.clone();
             async move { append_audit(&iii, input).await }
-        },
+        })
+        .description("Append to merkle audit chain"),
     );
 
     let iii_ref = iii.clone();
-    iii.register_function_with_description(
-        "security::verify_audit",
-        "Verify audit chain integrity",
-        move |_: Value| {
+    iii.register_function(
+        RegisterFunction::new_async("security::verify_audit", move |_: Value| {
             let iii = iii_ref.clone();
             async move { verify_audit(&iii).await }
-        },
+        })
+        .description("Verify audit chain integrity"),
     );
 
-    iii.register_function_with_description(
-        "security::scan_injection",
-        "Scan text for prompt injection patterns",
-        move |input: Value| async move {
+    iii.register_function(
+        RegisterFunction::new_async("security::scan_injection", move |input: Value| async move {
             let text = input["text"].as_str().unwrap_or("");
             scan_injection(text)
-        },
+        })
+        .description("Scan text for prompt injection patterns"),
     );
 
-    iii.register_trigger_v0("subscribe", "security::audit", json!({
+    iii.register_trigger(RegisterTriggerInput {
+        trigger_type: "subscribe".to_string(),
+        function_id: "security::audit".to_string(),
+        config: json!({
         "topic": "audit",
-    }))?;
+    }),
+        metadata: None,
+    })?;
 
-    iii.register_trigger_v0("http", "security::verify_audit", json!({
+    iii.register_trigger(RegisterTriggerInput {
+        trigger_type: "http".to_string(),
+        function_id: "security::verify_audit".to_string(),
+        config: json!({
         "api_path": "security/audit/verify",
         "http_method": "GET",
-    }))?;
+    }),
+        metadata: None,
+    })?;
 
-    iii.register_trigger_v0("http", "security::scan_injection", json!({
+    iii.register_trigger(RegisterTriggerInput {
+        trigger_type: "http".to_string(),
+        function_id: "security::scan_injection".to_string(),
+        config: json!({
         "api_path": "security/scan",
         "http_method": "POST",
-    }))?;
+    }),
+        metadata: None,
+    })?;
 
     taint::register(&iii);
     signing::register(&iii);
@@ -289,10 +196,15 @@ async fn check_capability(iii: &III, input: Value) -> Result<Value, IIIError> {
     }
 
     let caps: Value = iii
-        .trigger_v0("state::get", json!({
+        .trigger(TriggerRequest {
+            function_id: "state::get".to_string(),
+            payload: json!({
             "scope": "capabilities",
             "key": agent_id,
-        }))
+        }),
+            action: None,
+            timeout_ms: None,
+        })
         .await
         .map_err(|_| IIIError::Handler(format!("Agent {} has no capabilities defined", agent_id)))?;
 
@@ -304,28 +216,55 @@ async fn check_capability(iii: &III, input: Value) -> Result<Value, IIIError> {
     let allowed = tools.iter().any(|t| *t == "*" || resource.starts_with(t));
 
     if !allowed {
-        iii.trigger_void("security::audit", json!({
+        {
+            let _iii = iii.clone();
+            let _payload = json!({
             "type": "capability_denied",
             "agentId": agent_id,
             "detail": { "resource": resource, "reason": "tool_not_allowed" },
-        }))?;
+        });
+            tokio::spawn(async move {
+                let _ = _iii.trigger(TriggerRequest {
+                    function_id: "security::audit".to_string(),
+                    payload: _payload,
+                    action: None,
+                    timeout_ms: None,
+                }).await;
+            });
+        };
         return Err(IIIError::Handler(format!("Agent {} denied: {}", agent_id, resource)));
     }
 
     let max_tokens = caps["max_tokens_per_hour"].as_u64().unwrap_or(0);
     if max_tokens > 0 {
         let usage: Value = iii
-            .trigger_v0("state::get", json!({ "scope": "metering", "key": agent_id }))
+            .trigger(TriggerRequest {
+                function_id: "state::get".to_string(),
+                payload: json!({ "scope": "metering", "key": agent_id }),
+                action: None,
+                timeout_ms: None,
+            })
             .await
             .unwrap_or(json!({}));
 
         let used = usage["totalTokens"].as_u64().unwrap_or(0);
         if used > max_tokens {
-            iii.trigger_void("security::audit", json!({
+            {
+                let _iii = iii.clone();
+                let _payload = json!({
                 "type": "quota_exceeded",
                 "agentId": agent_id,
                 "detail": { "used": used, "limit": max_tokens },
-            }))?;
+            });
+                tokio::spawn(async move {
+                    let _ = _iii.trigger(TriggerRequest {
+                        function_id: "security::audit".to_string(),
+                        payload: _payload,
+                        action: None,
+                        timeout_ms: None,
+                    }).await;
+                });
+            };
             return Err(IIIError::Handler(format!("Agent {} exceeded token quota", agent_id)));
         }
     }
@@ -335,7 +274,12 @@ async fn check_capability(iii: &III, input: Value) -> Result<Value, IIIError> {
 
 async fn append_audit(iii: &III, input: Value) -> Result<Value, IIIError> {
     let prev: Value = iii
-        .trigger_v0("state::get", json!({ "scope": "audit", "key": "__latest" }))
+        .trigger(TriggerRequest {
+            function_id: "state::get".to_string(),
+            payload: json!({ "scope": "audit", "key": "__latest" }),
+            action: None,
+            timeout_ms: None,
+        })
         .await
         .unwrap_or(json!({ "hash": "0".repeat(64) }));
 
@@ -371,24 +315,39 @@ async fn append_audit(iii: &III, input: Value) -> Result<Value, IIIError> {
         "prevHash": &prev_hash,
     });
 
-    iii.trigger_v0("state::set", json!({
+    iii.trigger(TriggerRequest {
+        function_id: "state::set".to_string(),
+        payload: json!({
         "scope": "audit",
         "key": &id,
         "value": &full_entry,
-    })).await.map_err(|e| IIIError::Handler(e.to_string()))?;
+    }),
+        action: None,
+        timeout_ms: None,
+    }).await.map_err(|e| IIIError::Handler(e.to_string()))?;
 
-    iii.trigger_v0("state::set", json!({
+    iii.trigger(TriggerRequest {
+        function_id: "state::set".to_string(),
+        payload: json!({
         "scope": "audit",
         "key": "__latest",
         "value": { "hash": &hash, "id": &id, "timestamp": timestamp },
-    })).await.map_err(|e| IIIError::Handler(e.to_string()))?;
+    }),
+        action: None,
+        timeout_ms: None,
+    }).await.map_err(|e| IIIError::Handler(e.to_string()))?;
 
     Ok(json!({ "id": id, "hash": hash }))
 }
 
 async fn verify_audit(iii: &III) -> Result<Value, IIIError> {
     let entries: Value = iii
-        .trigger_v0("state::list", json!({ "scope": "audit" }))
+        .trigger(TriggerRequest {
+            function_id: "state::list".to_string(),
+            payload: json!({ "scope": "audit" }),
+            action: None,
+            timeout_ms: None,
+        })
         .await
         .map_err(|e| IIIError::Handler(e.to_string()))?;
 

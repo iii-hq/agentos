@@ -1,128 +1,9 @@
-use iii_sdk::{III, InitOptions, register_worker};
+use iii_sdk::{III, InitOptions, RegisterFunction, RegisterTriggerInput, TriggerRequest, register_worker};
 use iii_sdk::error::IIIError;
 use serde_json::{json, Value};
 use dashmap::DashMap;
 use std::sync::Arc;
 
-#[allow(dead_code)]
-mod iii_compat {
-    use iii_sdk::{
-        III, RegisterFunction, RegisterTriggerInput, TriggerRequest, FunctionRef, Trigger,
-        Value,
-    };
-    use iii_sdk::error::IIIError;
-    use std::future::Future;
-
-    pub trait IIIExt {
-        fn register_function_with_description<F, Fut>(
-            &self,
-            id: &str,
-            desc: &str,
-            f: F,
-        ) -> FunctionRef
-        where
-            F: Fn(Value) -> Fut + Send + Sync + 'static,
-            Fut: Future<Output = Result<Value, IIIError>> + Send + 'static;
-
-        fn register_function_v0<F, Fut>(&self, id: &str, f: F) -> FunctionRef
-        where
-            F: Fn(Value) -> Fut + Send + Sync + 'static,
-            Fut: Future<Output = Result<Value, IIIError>> + Send + 'static;
-
-        fn register_trigger_v0(
-            &self,
-            kind: &str,
-            function_id: &str,
-            config: Value,
-        ) -> Result<Trigger, IIIError>;
-
-        fn trigger_v0(
-            &self,
-            function_id: &str,
-            payload: Value,
-        ) -> impl Future<Output = Result<Value, IIIError>> + Send;
-
-        fn trigger_void(
-            &self,
-            function_id: &str,
-            payload: Value,
-        ) -> Result<(), IIIError>;
-    }
-
-    impl IIIExt for III {
-        fn register_function_with_description<F, Fut>(
-            &self,
-            id: &str,
-            desc: &str,
-            f: F,
-        ) -> FunctionRef
-        where
-            F: Fn(Value) -> Fut + Send + Sync + 'static,
-            Fut: Future<Output = Result<Value, IIIError>> + Send + 'static,
-        {
-            self.register_function(
-                RegisterFunction::new_async(id.to_string(), f).description(desc.to_string()),
-            )
-        }
-
-        fn register_function_v0<F, Fut>(&self, id: &str, f: F) -> FunctionRef
-        where
-            F: Fn(Value) -> Fut + Send + Sync + 'static,
-            Fut: Future<Output = Result<Value, IIIError>> + Send + 'static,
-        {
-            self.register_function(RegisterFunction::new_async(id.to_string(), f))
-        }
-
-        fn register_trigger_v0(
-            &self,
-            kind: &str,
-            function_id: &str,
-            config: Value,
-        ) -> Result<Trigger, IIIError> {
-            self.register_trigger(RegisterTriggerInput {
-                trigger_type: kind.to_string(),
-                function_id: function_id.to_string(),
-                config,
-                metadata: None,
-            })
-        }
-
-        async fn trigger_v0(
-            &self,
-            function_id: &str,
-            payload: Value,
-        ) -> Result<Value, IIIError> {
-            self.trigger(TriggerRequest {
-                function_id: function_id.to_string(),
-                payload,
-                action: None,
-                timeout_ms: None,
-            })
-            .await
-        }
-
-        fn trigger_void(
-            &self,
-            function_id: &str,
-            payload: Value,
-        ) -> Result<(), IIIError> {
-            let iii = self.clone();
-            let fid = function_id.to_string();
-            tokio::spawn(async move {
-                let _ = iii
-                    .trigger(TriggerRequest {
-                        function_id: fid,
-                        payload,
-                        action: None,
-                        timeout_ms: None,
-                    })
-                    .await;
-            });
-            Ok(())
-        }
-    }
-}
-use iii_compat::IIIExt as _;
 
 
 
@@ -173,11 +54,16 @@ async fn register_runtime(iii: &III, req: RegisterRuntimeRequest) -> Result<Valu
 
     let value = serde_json::to_value(&config).map_err(|e| IIIError::Handler(e.to_string()))?;
 
-    iii.trigger_v0("state::set", json!({
+    iii.trigger(TriggerRequest {
+        function_id: "state::set".to_string(),
+        payload: json!({
         "scope": runtimes_scope(),
         "key": &id,
         "value": value,
-    }))
+    }),
+        action: None,
+        timeout_ms: None,
+    })
     .await
     .map_err(|e| IIIError::Handler(e.to_string()))?;
 
@@ -190,10 +76,15 @@ async fn invoke_runtime(
     active_runs: &Arc<DashMap<String, tokio::task::JoinHandle<()>>>,
 ) -> Result<Value, IIIError> {
     let config_val = iii
-        .trigger_v0("state::get", json!({
+        .trigger(TriggerRequest {
+            function_id: "state::get".to_string(),
+            payload: json!({
             "scope": runtimes_scope(),
             "key": &req.runtime_id,
-        }))
+        }),
+            action: None,
+            timeout_ms: None,
+        })
         .await
         .map_err(|e| IIIError::Handler(e.to_string()))?;
 
@@ -216,11 +107,16 @@ async fn invoke_runtime(
     };
 
     let run_val = serde_json::to_value(&run).map_err(|e| IIIError::Handler(e.to_string()))?;
-    iii.trigger_v0("state::set", json!({
+    iii.trigger(TriggerRequest {
+        function_id: "state::set".to_string(),
+        payload: json!({
         "scope": runs_scope(),
         "key": &run_id,
         "value": run_val,
-    }))
+    }),
+        action: None,
+        timeout_ms: None,
+    })
     .await
     .map_err(|e| IIIError::Handler(e.to_string()))?;
 
@@ -249,17 +145,33 @@ async fn invoke_runtime(
         };
 
         let val = serde_json::to_value(&finished_run).unwrap();
-        let _ = iii_bg.trigger_v0("state::set", json!({
+        let _ = iii_bg.trigger(TriggerRequest {
+            function_id: "state::set".to_string(),
+            payload: json!({
             "scope": runs_scope(),
             "key": &run_id_bg,
             "value": val,
-        }))
+        }),
+            action: None,
+            timeout_ms: None,
+        })
         .await;
 
-        let _ = iii_bg.trigger_void("publish", json!({
+        let _ = {
+            let _iii = iii_bg.clone();
+            let _payload = json!({
             "topic": "bridge.run.completed",
             "data": { "runId": run_id_bg, "status": format!("{:?}", finished_run.status).to_lowercase() },
-        }));
+        });
+            tokio::spawn(async move {
+                let _ = _iii.trigger(TriggerRequest {
+                    function_id: "publish".to_string(),
+                    payload: _payload,
+                    action: None,
+                    timeout_ms: None,
+                }).await;
+            });
+        };
     });
 
     active_runs.insert(run_id.clone(), handle);
@@ -278,12 +190,17 @@ async fn execute_runtime(iii: &III, config: &RuntimeConfig, context: &Value, tim
             let url = config.url.as_deref().ok_or_else(|| IIIError::Handler("missing url".into()))?;
 
             let result = iii
-                .trigger_v0("http::post", json!({
+                .trigger(TriggerRequest {
+                    function_id: "http::post".to_string(),
+                    payload: json!({
                     "url": url,
                     "body": context,
                     "headers": config.headers,
                     "timeoutMs": timeout_secs * 1000,
-                }))
+                }),
+                    action: None,
+                    timeout_ms: None,
+                })
                 .await
                 .map_err(|e| IIIError::Handler(format!("http invoke failed: {e}")))?;
 
@@ -353,12 +270,17 @@ async fn cancel_run(
     if let Some((_, handle)) = active_runs.remove(&req.run_id) {
         handle.abort();
 
-        let _ = iii.trigger_v0("state::update", json!({
+        let _ = iii.trigger(TriggerRequest {
+            function_id: "state::update".to_string(),
+            payload: json!({
             "scope": runs_scope(),
             "key": &req.run_id,
             "path": "status",
             "value": "cancelled",
-        }))
+        }),
+            action: None,
+            timeout_ms: None,
+        })
         .await;
 
         Ok(json!({ "cancelled": true, "runId": req.run_id }))
@@ -368,16 +290,26 @@ async fn cancel_run(
 }
 
 async fn list_runtimes(iii: &III) -> Result<Value, IIIError> {
-    iii.trigger_v0("state::list", json!({ "scope": runtimes_scope() }))
+    iii.trigger(TriggerRequest {
+        function_id: "state::list".to_string(),
+        payload: json!({ "scope": runtimes_scope() }),
+        action: None,
+        timeout_ms: None,
+    })
         .await
         .map_err(|e| IIIError::Handler(e.to_string()))
 }
 
 async fn get_run(iii: &III, run_id: &str) -> Result<Value, IIIError> {
-    iii.trigger_v0("state::get", json!({
+    iii.trigger(TriggerRequest {
+        function_id: "state::get".to_string(),
+        payload: json!({
         "scope": runs_scope(),
         "key": run_id,
-    }))
+    }),
+        action: None,
+        timeout_ms: None,
+    })
     .await
     .map_err(|e| IIIError::Handler(e.to_string()))
 }
@@ -390,25 +322,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let active_runs: Arc<DashMap<String, tokio::task::JoinHandle<()>>> = Arc::new(DashMap::new());
 
     let iii_clone = iii.clone();
-    iii.register_function_with_description(
-        "bridge::register",
-        "Register an external agent runtime",
-        move |input: Value| {
+    iii.register_function(
+        RegisterFunction::new_async("bridge::register", move |input: Value| {
             let iii = iii_clone.clone();
             async move {
                 let req: RegisterRuntimeRequest =
                     serde_json::from_value(input).map_err(|e| IIIError::Handler(e.to_string()))?;
                 register_runtime(&iii, req).await
             }
-        },
+        })
+        .description("Register an external agent runtime"),
     );
 
     let iii_clone = iii.clone();
     let runs_clone = active_runs.clone();
-    iii.register_function_with_description(
-        "bridge::invoke",
-        "Invoke an agent through its runtime bridge",
-        move |input: Value| {
+    iii.register_function(
+        RegisterFunction::new_async("bridge::invoke", move |input: Value| {
             let iii = iii_clone.clone();
             let runs = runs_clone.clone();
             async move {
@@ -416,15 +345,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     serde_json::from_value(input).map_err(|e| IIIError::Handler(e.to_string()))?;
                 invoke_runtime(&iii, req, &runs).await
             }
-        },
+        })
+        .description("Invoke an agent through its runtime bridge"),
     );
 
     let iii_clone = iii.clone();
     let runs_clone = active_runs.clone();
-    iii.register_function_with_description(
-        "bridge::cancel",
-        "Cancel a running bridge invocation",
-        move |input: Value| {
+    iii.register_function(
+        RegisterFunction::new_async("bridge::cancel", move |input: Value| {
             let iii = iii_clone.clone();
             let runs = runs_clone.clone();
             async move {
@@ -432,24 +360,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     serde_json::from_value(input).map_err(|e| IIIError::Handler(e.to_string()))?;
                 cancel_run(&runs, &iii, req).await
             }
-        },
+        })
+        .description("Cancel a running bridge invocation"),
     );
 
     let iii_clone = iii.clone();
-    iii.register_function_with_description(
-        "bridge::list",
-        "List registered runtimes",
-        move |_: Value| {
+    iii.register_function(
+        RegisterFunction::new_async("bridge::list", move |_: Value| {
             let iii = iii_clone.clone();
             async move { list_runtimes(&iii).await }
-        },
+        })
+        .description("List registered runtimes"),
     );
 
     let iii_clone = iii.clone();
-    iii.register_function_with_description(
-        "bridge::run",
-        "Get status of a bridge run",
-        move |input: Value| {
+    iii.register_function(
+        RegisterFunction::new_async("bridge::run", move |input: Value| {
             let iii = iii_clone.clone();
             async move {
                 let run_id = input["runId"]
@@ -457,14 +383,40 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     .ok_or_else(|| IIIError::Handler("missing runId".into()))?;
                 get_run(&iii, run_id).await
             }
-        },
+        })
+        .description("Get status of a bridge run"),
     );
 
-    iii.register_trigger_v0("http", "bridge::register", json!({ "method": "POST", "path": "/api/bridge/runtimes" }))?;
-    iii.register_trigger_v0("http", "bridge::invoke", json!({ "method": "POST", "path": "/api/bridge/invoke" }))?;
-    iii.register_trigger_v0("http", "bridge::cancel", json!({ "method": "POST", "path": "/api/bridge/cancel" }))?;
-    iii.register_trigger_v0("http", "bridge::list", json!({ "method": "GET", "path": "/api/bridge/runtimes" }))?;
-    iii.register_trigger_v0("http", "bridge::run", json!({ "method": "GET", "path": "/api/bridge/runs/:runId" }))?;
+    iii.register_trigger(RegisterTriggerInput {
+        trigger_type: "http".to_string(),
+        function_id: "bridge::register".to_string(),
+        config: json!({ "method": "POST", "path": "/api/bridge/runtimes" }),
+        metadata: None,
+    })?;
+    iii.register_trigger(RegisterTriggerInput {
+        trigger_type: "http".to_string(),
+        function_id: "bridge::invoke".to_string(),
+        config: json!({ "method": "POST", "path": "/api/bridge/invoke" }),
+        metadata: None,
+    })?;
+    iii.register_trigger(RegisterTriggerInput {
+        trigger_type: "http".to_string(),
+        function_id: "bridge::cancel".to_string(),
+        config: json!({ "method": "POST", "path": "/api/bridge/cancel" }),
+        metadata: None,
+    })?;
+    iii.register_trigger(RegisterTriggerInput {
+        trigger_type: "http".to_string(),
+        function_id: "bridge::list".to_string(),
+        config: json!({ "method": "GET", "path": "/api/bridge/runtimes" }),
+        metadata: None,
+    })?;
+    iii.register_trigger(RegisterTriggerInput {
+        trigger_type: "http".to_string(),
+        function_id: "bridge::run".to_string(),
+        config: json!({ "method": "GET", "path": "/api/bridge/runs/:runId" }),
+        metadata: None,
+    })?;
 
     tracing::info!("bridge worker started");
     tokio::signal::ctrl_c().await?;

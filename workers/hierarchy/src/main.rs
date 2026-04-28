@@ -1,4 +1,4 @@
-use iii_sdk::{III, InitOptions, register_worker};
+use iii_sdk::{III, InitOptions, RegisterFunction, RegisterTriggerInput, TriggerRequest, register_worker};
 use iii_sdk::error::IIIError;
 use serde_json::{json, Value};
 use std::collections::{HashMap, HashSet};
@@ -7,125 +7,6 @@ mod types;
 
 use types::{ChainRequest, FindByCapabilityRequest, HierarchyNode, SetHierarchyRequest, TreeNode, TreeRequest};
 
-#[allow(dead_code)]
-mod iii_compat {
-    use iii_sdk::{
-        III, RegisterFunction, RegisterTriggerInput, TriggerRequest, FunctionRef, Trigger,
-        Value,
-    };
-    use iii_sdk::error::IIIError;
-    use std::future::Future;
-
-    pub trait IIIExt {
-        fn register_function_with_description<F, Fut>(
-            &self,
-            id: &str,
-            desc: &str,
-            f: F,
-        ) -> FunctionRef
-        where
-            F: Fn(Value) -> Fut + Send + Sync + 'static,
-            Fut: Future<Output = Result<Value, IIIError>> + Send + 'static;
-
-        fn register_function_v0<F, Fut>(&self, id: &str, f: F) -> FunctionRef
-        where
-            F: Fn(Value) -> Fut + Send + Sync + 'static,
-            Fut: Future<Output = Result<Value, IIIError>> + Send + 'static;
-
-        fn register_trigger_v0(
-            &self,
-            kind: &str,
-            function_id: &str,
-            config: Value,
-        ) -> Result<Trigger, IIIError>;
-
-        fn trigger_v0(
-            &self,
-            function_id: &str,
-            payload: Value,
-        ) -> impl Future<Output = Result<Value, IIIError>> + Send;
-
-        fn trigger_void(
-            &self,
-            function_id: &str,
-            payload: Value,
-        ) -> Result<(), IIIError>;
-    }
-
-    impl IIIExt for III {
-        fn register_function_with_description<F, Fut>(
-            &self,
-            id: &str,
-            desc: &str,
-            f: F,
-        ) -> FunctionRef
-        where
-            F: Fn(Value) -> Fut + Send + Sync + 'static,
-            Fut: Future<Output = Result<Value, IIIError>> + Send + 'static,
-        {
-            self.register_function(
-                RegisterFunction::new_async(id.to_string(), f).description(desc.to_string()),
-            )
-        }
-
-        fn register_function_v0<F, Fut>(&self, id: &str, f: F) -> FunctionRef
-        where
-            F: Fn(Value) -> Fut + Send + Sync + 'static,
-            Fut: Future<Output = Result<Value, IIIError>> + Send + 'static,
-        {
-            self.register_function(RegisterFunction::new_async(id.to_string(), f))
-        }
-
-        fn register_trigger_v0(
-            &self,
-            kind: &str,
-            function_id: &str,
-            config: Value,
-        ) -> Result<Trigger, IIIError> {
-            self.register_trigger(RegisterTriggerInput {
-                trigger_type: kind.to_string(),
-                function_id: function_id.to_string(),
-                config,
-                metadata: None,
-            })
-        }
-
-        async fn trigger_v0(
-            &self,
-            function_id: &str,
-            payload: Value,
-        ) -> Result<Value, IIIError> {
-            self.trigger(TriggerRequest {
-                function_id: function_id.to_string(),
-                payload,
-                action: None,
-                timeout_ms: None,
-            })
-            .await
-        }
-
-        fn trigger_void(
-            &self,
-            function_id: &str,
-            payload: Value,
-        ) -> Result<(), IIIError> {
-            let iii = self.clone();
-            let fid = function_id.to_string();
-            tokio::spawn(async move {
-                let _ = iii
-                    .trigger(TriggerRequest {
-                        function_id: fid,
-                        payload,
-                        action: None,
-                        timeout_ms: None,
-                    })
-                    .await;
-            });
-            Ok(())
-        }
-    }
-}
-use iii_compat::IIIExt as _;
 
 
 
@@ -156,11 +37,16 @@ async fn set_node(iii: &III, req: SetHierarchyRequest) -> Result<Value, IIIError
 
     let value = serde_json::to_value(&node).map_err(|e| IIIError::Handler(e.to_string()))?;
 
-    iii.trigger_v0("state::set", json!({
+    iii.trigger(TriggerRequest {
+        function_id: "state::set".to_string(),
+        payload: json!({
         "scope": scope(&req.realm_id),
         "key": node.agent_id,
         "value": value,
-    }))
+    }),
+        action: None,
+        timeout_ms: None,
+    })
     .await
     .map_err(|e| IIIError::Handler(e.to_string()))?;
 
@@ -192,7 +78,12 @@ fn would_create_cycle(nodes: &[HierarchyNode], agent_id: &str, new_parent: &str)
 
 async fn load_all(iii: &III, realm_id: &str) -> Result<Vec<HierarchyNode>, IIIError> {
     let result = iii
-        .trigger_v0("state::list", json!({ "scope": scope(realm_id) }))
+        .trigger(TriggerRequest {
+            function_id: "state::list".to_string(),
+            payload: json!({ "scope": scope(realm_id) }),
+            action: None,
+            timeout_ms: None,
+        })
         .await
         .map_err(|e| IIIError::Handler(e.to_string()))?;
 
@@ -317,10 +208,15 @@ async fn get_chain(iii: &III, req: ChainRequest) -> Result<Value, IIIError> {
 }
 
 async fn remove_node(iii: &III, realm_id: &str, agent_id: &str) -> Result<Value, IIIError> {
-    iii.trigger_v0("state::delete", json!({
+    iii.trigger(TriggerRequest {
+        function_id: "state::delete".to_string(),
+        payload: json!({
         "scope": scope(realm_id),
         "key": agent_id,
-    }))
+    }),
+        action: None,
+        timeout_ms: None,
+    })
     .await
     .map_err(|e| IIIError::Handler(e.to_string()))?;
 
@@ -334,66 +230,60 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let iii = register_worker("ws://localhost:49134", InitOptions::default());
 
     let iii_clone = iii.clone();
-    iii.register_function_with_description(
-        "hierarchy::set",
-        "Set agent position in hierarchy",
-        move |input: Value| {
+    iii.register_function(
+        RegisterFunction::new_async("hierarchy::set", move |input: Value| {
             let iii = iii_clone.clone();
             async move {
                 let req: SetHierarchyRequest =
                     serde_json::from_value(input).map_err(|e| IIIError::Handler(e.to_string()))?;
                 set_node(&iii, req).await
             }
-        },
+        })
+        .description("Set agent position in hierarchy"),
     );
 
     let iii_clone = iii.clone();
-    iii.register_function_with_description(
-        "hierarchy::tree",
-        "Get full org tree for a realm",
-        move |input: Value| {
+    iii.register_function(
+        RegisterFunction::new_async("hierarchy::tree", move |input: Value| {
             let iii = iii_clone.clone();
             async move {
                 let req: TreeRequest =
                     serde_json::from_value(input).map_err(|e| IIIError::Handler(e.to_string()))?;
                 get_tree(&iii, req).await
             }
-        },
+        })
+        .description("Get full org tree for a realm"),
     );
 
     let iii_clone = iii.clone();
-    iii.register_function_with_description(
-        "hierarchy::find",
-        "Find agents by capability",
-        move |input: Value| {
+    iii.register_function(
+        RegisterFunction::new_async("hierarchy::find", move |input: Value| {
             let iii = iii_clone.clone();
             async move {
                 let req: FindByCapabilityRequest =
                     serde_json::from_value(input).map_err(|e| IIIError::Handler(e.to_string()))?;
                 find_by_capability(&iii, req).await
             }
-        },
+        })
+        .description("Find agents by capability"),
     );
 
     let iii_clone = iii.clone();
-    iii.register_function_with_description(
-        "hierarchy::chain",
-        "Get chain of command for an agent",
-        move |input: Value| {
+    iii.register_function(
+        RegisterFunction::new_async("hierarchy::chain", move |input: Value| {
             let iii = iii_clone.clone();
             async move {
                 let req: ChainRequest =
                     serde_json::from_value(input).map_err(|e| IIIError::Handler(e.to_string()))?;
                 get_chain(&iii, req).await
             }
-        },
+        })
+        .description("Get chain of command for an agent"),
     );
 
     let iii_clone = iii.clone();
-    iii.register_function_with_description(
-        "hierarchy::remove",
-        "Remove agent from hierarchy",
-        move |input: Value| {
+    iii.register_function(
+        RegisterFunction::new_async("hierarchy::remove", move |input: Value| {
             let iii = iii_clone.clone();
             async move {
                 let realm_id = input["realmId"]
@@ -404,14 +294,40 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     .ok_or_else(|| IIIError::Handler("missing agentId".into()))?;
                 remove_node(&iii, realm_id, agent_id).await
             }
-        },
+        })
+        .description("Remove agent from hierarchy"),
     );
 
-    iii.register_trigger_v0("http", "hierarchy::set", json!({ "method": "POST", "path": "/api/hierarchy" }))?;
-    iii.register_trigger_v0("http", "hierarchy::tree", json!({ "method": "GET", "path": "/api/hierarchy/:realmId/tree" }))?;
-    iii.register_trigger_v0("http", "hierarchy::find", json!({ "method": "GET", "path": "/api/hierarchy/:realmId/find" }))?;
-    iii.register_trigger_v0("http", "hierarchy::chain", json!({ "method": "GET", "path": "/api/hierarchy/:realmId/chain/:agentId" }))?;
-    iii.register_trigger_v0("http", "hierarchy::remove", json!({ "method": "DELETE", "path": "/api/hierarchy/:realmId/:agentId" }))?;
+    iii.register_trigger(RegisterTriggerInput {
+        trigger_type: "http".to_string(),
+        function_id: "hierarchy::set".to_string(),
+        config: json!({ "method": "POST", "path": "/api/hierarchy" }),
+        metadata: None,
+    })?;
+    iii.register_trigger(RegisterTriggerInput {
+        trigger_type: "http".to_string(),
+        function_id: "hierarchy::tree".to_string(),
+        config: json!({ "method": "GET", "path": "/api/hierarchy/:realmId/tree" }),
+        metadata: None,
+    })?;
+    iii.register_trigger(RegisterTriggerInput {
+        trigger_type: "http".to_string(),
+        function_id: "hierarchy::find".to_string(),
+        config: json!({ "method": "GET", "path": "/api/hierarchy/:realmId/find" }),
+        metadata: None,
+    })?;
+    iii.register_trigger(RegisterTriggerInput {
+        trigger_type: "http".to_string(),
+        function_id: "hierarchy::chain".to_string(),
+        config: json!({ "method": "GET", "path": "/api/hierarchy/:realmId/chain/:agentId" }),
+        metadata: None,
+    })?;
+    iii.register_trigger(RegisterTriggerInput {
+        trigger_type: "http".to_string(),
+        function_id: "hierarchy::remove".to_string(),
+        config: json!({ "method": "DELETE", "path": "/api/hierarchy/:realmId/:agentId" }),
+        metadata: None,
+    })?;
 
     tracing::info!("hierarchy worker started");
     tokio::signal::ctrl_c().await?;

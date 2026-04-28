@@ -1,4 +1,4 @@
-use iii_sdk::{III, InitOptions, register_worker};
+use iii_sdk::{III, InitOptions, RegisterFunction, RegisterTriggerInput, TriggerRequest, register_worker};
 use iii_sdk::error::IIIError;
 use serde_json::{json, Value};
 
@@ -6,125 +6,6 @@ mod types;
 
 use types::{CreateRealmRequest, ExportRequest, ImportRequest, Realm, RealmStatus, UpdateRealmRequest};
 
-#[allow(dead_code)]
-mod iii_compat {
-    use iii_sdk::{
-        III, RegisterFunction, RegisterTriggerInput, TriggerRequest, FunctionRef, Trigger,
-        Value,
-    };
-    use iii_sdk::error::IIIError;
-    use std::future::Future;
-
-    pub trait IIIExt {
-        fn register_function_with_description<F, Fut>(
-            &self,
-            id: &str,
-            desc: &str,
-            f: F,
-        ) -> FunctionRef
-        where
-            F: Fn(Value) -> Fut + Send + Sync + 'static,
-            Fut: Future<Output = Result<Value, IIIError>> + Send + 'static;
-
-        fn register_function_v0<F, Fut>(&self, id: &str, f: F) -> FunctionRef
-        where
-            F: Fn(Value) -> Fut + Send + Sync + 'static,
-            Fut: Future<Output = Result<Value, IIIError>> + Send + 'static;
-
-        fn register_trigger_v0(
-            &self,
-            kind: &str,
-            function_id: &str,
-            config: Value,
-        ) -> Result<Trigger, IIIError>;
-
-        fn trigger_v0(
-            &self,
-            function_id: &str,
-            payload: Value,
-        ) -> impl Future<Output = Result<Value, IIIError>> + Send;
-
-        fn trigger_void(
-            &self,
-            function_id: &str,
-            payload: Value,
-        ) -> Result<(), IIIError>;
-    }
-
-    impl IIIExt for III {
-        fn register_function_with_description<F, Fut>(
-            &self,
-            id: &str,
-            desc: &str,
-            f: F,
-        ) -> FunctionRef
-        where
-            F: Fn(Value) -> Fut + Send + Sync + 'static,
-            Fut: Future<Output = Result<Value, IIIError>> + Send + 'static,
-        {
-            self.register_function(
-                RegisterFunction::new_async(id.to_string(), f).description(desc.to_string()),
-            )
-        }
-
-        fn register_function_v0<F, Fut>(&self, id: &str, f: F) -> FunctionRef
-        where
-            F: Fn(Value) -> Fut + Send + Sync + 'static,
-            Fut: Future<Output = Result<Value, IIIError>> + Send + 'static,
-        {
-            self.register_function(RegisterFunction::new_async(id.to_string(), f))
-        }
-
-        fn register_trigger_v0(
-            &self,
-            kind: &str,
-            function_id: &str,
-            config: Value,
-        ) -> Result<Trigger, IIIError> {
-            self.register_trigger(RegisterTriggerInput {
-                trigger_type: kind.to_string(),
-                function_id: function_id.to_string(),
-                config,
-                metadata: None,
-            })
-        }
-
-        async fn trigger_v0(
-            &self,
-            function_id: &str,
-            payload: Value,
-        ) -> Result<Value, IIIError> {
-            self.trigger(TriggerRequest {
-                function_id: function_id.to_string(),
-                payload,
-                action: None,
-                timeout_ms: None,
-            })
-            .await
-        }
-
-        fn trigger_void(
-            &self,
-            function_id: &str,
-            payload: Value,
-        ) -> Result<(), IIIError> {
-            let iii = self.clone();
-            let fid = function_id.to_string();
-            tokio::spawn(async move {
-                let _ = iii
-                    .trigger(TriggerRequest {
-                        function_id: fid,
-                        payload,
-                        action: None,
-                        timeout_ms: None,
-                    })
-                    .await;
-            });
-            Ok(())
-        }
-    }
-}
-use iii_compat::IIIExt as _;
 
 
 
@@ -147,33 +28,59 @@ async fn create_realm(iii: &III, req: CreateRealmRequest) -> Result<Value, IIIEr
 
     let value = serde_json::to_value(&realm).map_err(|e| IIIError::Handler(e.to_string()))?;
 
-    iii.trigger_v0("state::set", json!({
+    iii.trigger(TriggerRequest {
+        function_id: "state::set".to_string(),
+        payload: json!({
         "scope": "realms",
         "key": id,
         "value": value,
-    }))
+    }),
+        action: None,
+        timeout_ms: None,
+    })
     .await
     .map_err(|e| IIIError::Handler(e.to_string()))?;
 
-    let _ = iii.trigger_void("publish", json!({
+    let _ = {
+        let _iii = iii.clone();
+        let _payload = json!({
         "topic": "realm.lifecycle",
         "data": { "type": "created", "realmId": realm.id },
-    }));
+    });
+        tokio::spawn(async move {
+            let _ = _iii.trigger(TriggerRequest {
+                function_id: "publish".to_string(),
+                payload: _payload,
+                action: None,
+                timeout_ms: None,
+            }).await;
+        });
+    };
 
     Ok(serde_json::to_value(&realm).unwrap())
 }
 
 async fn get_realm(iii: &III, id: &str) -> Result<Value, IIIError> {
-    iii.trigger_v0("state::get", json!({
+    iii.trigger(TriggerRequest {
+        function_id: "state::get".to_string(),
+        payload: json!({
         "scope": "realms",
         "key": id,
-    }))
+    }),
+        action: None,
+        timeout_ms: None,
+    })
     .await
     .map_err(|e| IIIError::Handler(e.to_string()))
 }
 
 async fn list_realms(iii: &III) -> Result<Value, IIIError> {
-    iii.trigger_v0("state::list", json!({ "scope": "realms" }))
+    iii.trigger(TriggerRequest {
+        function_id: "state::list".to_string(),
+        payload: json!({ "scope": "realms" }),
+        action: None,
+        timeout_ms: None,
+    })
         .await
         .map_err(|e| IIIError::Handler(e.to_string()))
 }
@@ -205,34 +112,66 @@ async fn update_realm(iii: &III, req: UpdateRealmRequest) -> Result<Value, IIIEr
 
     let value = serde_json::to_value(&realm).map_err(|e| IIIError::Handler(e.to_string()))?;
 
-    iii.trigger_v0("state::set", json!({
+    iii.trigger(TriggerRequest {
+        function_id: "state::set".to_string(),
+        payload: json!({
         "scope": "realms",
         "key": realm.id,
         "value": value,
-    }))
+    }),
+        action: None,
+        timeout_ms: None,
+    })
     .await
     .map_err(|e| IIIError::Handler(e.to_string()))?;
 
-    let _ = iii.trigger_void("publish", json!({
+    let _ = {
+        let _iii = iii.clone();
+        let _payload = json!({
         "topic": "realm.lifecycle",
         "data": { "type": "updated", "realmId": realm.id },
-    }));
+    });
+        tokio::spawn(async move {
+            let _ = _iii.trigger(TriggerRequest {
+                function_id: "publish".to_string(),
+                payload: _payload,
+                action: None,
+                timeout_ms: None,
+            }).await;
+        });
+    };
 
     Ok(serde_json::to_value(&realm).unwrap())
 }
 
 async fn delete_realm(iii: &III, id: &str) -> Result<Value, IIIError> {
-    iii.trigger_v0("state::delete", json!({
+    iii.trigger(TriggerRequest {
+        function_id: "state::delete".to_string(),
+        payload: json!({
         "scope": "realms",
         "key": id,
-    }))
+    }),
+        action: None,
+        timeout_ms: None,
+    })
     .await
     .map_err(|e| IIIError::Handler(e.to_string()))?;
 
-    let _ = iii.trigger_void("publish", json!({
+    let _ = {
+        let _iii = iii.clone();
+        let _payload = json!({
         "topic": "realm.lifecycle",
         "data": { "type": "deleted", "realmId": id },
-    }));
+    });
+        tokio::spawn(async move {
+            let _ = _iii.trigger(TriggerRequest {
+                function_id: "publish".to_string(),
+                payload: _payload,
+                action: None,
+                timeout_ms: None,
+            }).await;
+        });
+    };
 
     Ok(json!({ "deleted": true }))
 }
@@ -242,17 +181,32 @@ async fn export_realm(iii: &III, req: ExportRequest) -> Result<Value, IIIError> 
     let scrub = req.scrub_secrets.unwrap_or(true);
 
     let agents = iii
-        .trigger_v0("state::list", json!({ "scope": format!("realm:{}:agents", req.id) }))
+        .trigger(TriggerRequest {
+            function_id: "state::list".to_string(),
+            payload: json!({ "scope": format!("realm:{}:agents", req.id) }),
+            action: None,
+            timeout_ms: None,
+        })
         .await
         .unwrap_or(json!([]));
 
     let directives = iii
-        .trigger_v0("state::list", json!({ "scope": format!("realm:{}:directives", req.id) }))
+        .trigger(TriggerRequest {
+            function_id: "state::list".to_string(),
+            payload: json!({ "scope": format!("realm:{}:directives", req.id) }),
+            action: None,
+            timeout_ms: None,
+        })
         .await
         .unwrap_or(json!([]));
 
     let hierarchy = iii
-        .trigger_v0("state::list", json!({ "scope": format!("realm:{}:hierarchy", req.id) }))
+        .trigger(TriggerRequest {
+            function_id: "state::list".to_string(),
+            payload: json!({ "scope": format!("realm:{}:hierarchy", req.id) }),
+            action: None,
+            timeout_ms: None,
+        })
         .await
         .unwrap_or(json!([]));
 
@@ -301,11 +255,16 @@ async fn import_realm(iii: &III, req: ImportRequest) -> Result<Value, IIIError> 
             let mut agent = agent.clone();
             agent["realmId"] = json!(realm_id);
             let _ = iii
-                .trigger_v0("state::set", json!({
+                .trigger(TriggerRequest {
+                    function_id: "state::set".to_string(),
+                    payload: json!({
                     "scope": format!("realm:{realm_id}:agents"),
                     "key": agent["id"].as_str().unwrap_or("unknown"),
                     "value": agent,
-                }))
+                }),
+                    action: None,
+                    timeout_ms: None,
+                })
                 .await;
         }
     }
@@ -323,24 +282,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let iii = register_worker("ws://localhost:49134", InitOptions::default());
 
     let iii_clone = iii.clone();
-    iii.register_function_with_description(
-        "realm::create",
-        "Create a new isolated realm",
-        move |input: Value| {
+    iii.register_function(
+        RegisterFunction::new_async("realm::create", move |input: Value| {
             let iii = iii_clone.clone();
             async move {
                 let req: CreateRealmRequest =
                     serde_json::from_value(input).map_err(|e| IIIError::Handler(e.to_string()))?;
                 create_realm(&iii, req).await
             }
-        },
+        })
+        .description("Create a new isolated realm"),
     );
 
     let iii_clone = iii.clone();
-    iii.register_function_with_description(
-        "realm::get",
-        "Get realm by ID",
-        move |input: Value| {
+    iii.register_function(
+        RegisterFunction::new_async("realm::get", move |input: Value| {
             let iii = iii_clone.clone();
             async move {
                 let id = input["id"]
@@ -348,38 +304,35 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     .ok_or_else(|| IIIError::Handler("missing id".into()))?;
                 get_realm(&iii, id).await
             }
-        },
+        })
+        .description("Get realm by ID"),
     );
 
     let iii_clone = iii.clone();
-    iii.register_function_with_description(
-        "realm::list",
-        "List all realms",
-        move |_: Value| {
+    iii.register_function(
+        RegisterFunction::new_async("realm::list", move |_: Value| {
             let iii = iii_clone.clone();
             async move { list_realms(&iii).await }
-        },
+        })
+        .description("List all realms"),
     );
 
     let iii_clone = iii.clone();
-    iii.register_function_with_description(
-        "realm::update",
-        "Update realm configuration",
-        move |input: Value| {
+    iii.register_function(
+        RegisterFunction::new_async("realm::update", move |input: Value| {
             let iii = iii_clone.clone();
             async move {
                 let req: UpdateRealmRequest =
                     serde_json::from_value(input).map_err(|e| IIIError::Handler(e.to_string()))?;
                 update_realm(&iii, req).await
             }
-        },
+        })
+        .description("Update realm configuration"),
     );
 
     let iii_clone = iii.clone();
-    iii.register_function_with_description(
-        "realm::delete",
-        "Delete a realm and all its data",
-        move |input: Value| {
+    iii.register_function(
+        RegisterFunction::new_async("realm::delete", move |input: Value| {
             let iii = iii_clone.clone();
             async move {
                 let id = input["id"]
@@ -387,44 +340,78 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     .ok_or_else(|| IIIError::Handler("missing id".into()))?;
                 delete_realm(&iii, id).await
             }
-        },
+        })
+        .description("Delete a realm and all its data"),
     );
 
     let iii_clone = iii.clone();
-    iii.register_function_with_description(
-        "realm::export",
-        "Export realm as portable template",
-        move |input: Value| {
+    iii.register_function(
+        RegisterFunction::new_async("realm::export", move |input: Value| {
             let iii = iii_clone.clone();
             async move {
                 let req: ExportRequest =
                     serde_json::from_value(input).map_err(|e| IIIError::Handler(e.to_string()))?;
                 export_realm(&iii, req).await
             }
-        },
+        })
+        .description("Export realm as portable template"),
     );
 
     let iii_clone = iii.clone();
-    iii.register_function_with_description(
-        "realm::import",
-        "Import realm from template",
-        move |input: Value| {
+    iii.register_function(
+        RegisterFunction::new_async("realm::import", move |input: Value| {
             let iii = iii_clone.clone();
             async move {
                 let req: ImportRequest =
                     serde_json::from_value(input).map_err(|e| IIIError::Handler(e.to_string()))?;
                 import_realm(&iii, req).await
             }
-        },
+        })
+        .description("Import realm from template"),
     );
 
-    iii.register_trigger_v0("http", "realm::create", json!({ "method": "POST", "path": "/api/realms" }))?;
-    iii.register_trigger_v0("http", "realm::list", json!({ "method": "GET", "path": "/api/realms" }))?;
-    iii.register_trigger_v0("http", "realm::get", json!({ "method": "GET", "path": "/api/realms/:id" }))?;
-    iii.register_trigger_v0("http", "realm::update", json!({ "method": "PATCH", "path": "/api/realms/:id" }))?;
-    iii.register_trigger_v0("http", "realm::delete", json!({ "method": "DELETE", "path": "/api/realms/:id" }))?;
-    iii.register_trigger_v0("http", "realm::export", json!({ "method": "POST", "path": "/api/realms/:id/export" }))?;
-    iii.register_trigger_v0("http", "realm::import", json!({ "method": "POST", "path": "/api/realms/import" }))?;
+    iii.register_trigger(RegisterTriggerInput {
+        trigger_type: "http".to_string(),
+        function_id: "realm::create".to_string(),
+        config: json!({ "method": "POST", "path": "/api/realms" }),
+        metadata: None,
+    })?;
+    iii.register_trigger(RegisterTriggerInput {
+        trigger_type: "http".to_string(),
+        function_id: "realm::list".to_string(),
+        config: json!({ "method": "GET", "path": "/api/realms" }),
+        metadata: None,
+    })?;
+    iii.register_trigger(RegisterTriggerInput {
+        trigger_type: "http".to_string(),
+        function_id: "realm::get".to_string(),
+        config: json!({ "method": "GET", "path": "/api/realms/:id" }),
+        metadata: None,
+    })?;
+    iii.register_trigger(RegisterTriggerInput {
+        trigger_type: "http".to_string(),
+        function_id: "realm::update".to_string(),
+        config: json!({ "method": "PATCH", "path": "/api/realms/:id" }),
+        metadata: None,
+    })?;
+    iii.register_trigger(RegisterTriggerInput {
+        trigger_type: "http".to_string(),
+        function_id: "realm::delete".to_string(),
+        config: json!({ "method": "DELETE", "path": "/api/realms/:id" }),
+        metadata: None,
+    })?;
+    iii.register_trigger(RegisterTriggerInput {
+        trigger_type: "http".to_string(),
+        function_id: "realm::export".to_string(),
+        config: json!({ "method": "POST", "path": "/api/realms/:id/export" }),
+        metadata: None,
+    })?;
+    iii.register_trigger(RegisterTriggerInput {
+        trigger_type: "http".to_string(),
+        function_id: "realm::import".to_string(),
+        config: json!({ "method": "POST", "path": "/api/realms/import" }),
+        metadata: None,
+    })?;
 
     tracing::info!("realm worker started");
     tokio::signal::ctrl_c().await?;

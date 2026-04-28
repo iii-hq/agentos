@@ -1,5 +1,5 @@
 use dashmap::DashMap;
-use iii_sdk::{III, InitOptions, register_worker};
+use iii_sdk::{III, InitOptions, RegisterFunction, RegisterTriggerInput, TriggerRequest, register_worker};
 use iii_sdk::error::IIIError;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -7,125 +7,6 @@ use std::sync::Arc;
 use std::time::Duration;
 use wasmtime::*;
 
-#[allow(dead_code)]
-mod iii_compat {
-    use iii_sdk::{
-        III, RegisterFunction, RegisterTriggerInput, TriggerRequest, FunctionRef, Trigger,
-        Value,
-    };
-    use iii_sdk::error::IIIError;
-    use std::future::Future;
-
-    pub trait IIIExt {
-        fn register_function_with_description<F, Fut>(
-            &self,
-            id: &str,
-            desc: &str,
-            f: F,
-        ) -> FunctionRef
-        where
-            F: Fn(Value) -> Fut + Send + Sync + 'static,
-            Fut: Future<Output = Result<Value, IIIError>> + Send + 'static;
-
-        fn register_function_v0<F, Fut>(&self, id: &str, f: F) -> FunctionRef
-        where
-            F: Fn(Value) -> Fut + Send + Sync + 'static,
-            Fut: Future<Output = Result<Value, IIIError>> + Send + 'static;
-
-        fn register_trigger_v0(
-            &self,
-            kind: &str,
-            function_id: &str,
-            config: Value,
-        ) -> Result<Trigger, IIIError>;
-
-        fn trigger_v0(
-            &self,
-            function_id: &str,
-            payload: Value,
-        ) -> impl Future<Output = Result<Value, IIIError>> + Send;
-
-        fn trigger_void(
-            &self,
-            function_id: &str,
-            payload: Value,
-        ) -> Result<(), IIIError>;
-    }
-
-    impl IIIExt for III {
-        fn register_function_with_description<F, Fut>(
-            &self,
-            id: &str,
-            desc: &str,
-            f: F,
-        ) -> FunctionRef
-        where
-            F: Fn(Value) -> Fut + Send + Sync + 'static,
-            Fut: Future<Output = Result<Value, IIIError>> + Send + 'static,
-        {
-            self.register_function(
-                RegisterFunction::new_async(id.to_string(), f).description(desc.to_string()),
-            )
-        }
-
-        fn register_function_v0<F, Fut>(&self, id: &str, f: F) -> FunctionRef
-        where
-            F: Fn(Value) -> Fut + Send + Sync + 'static,
-            Fut: Future<Output = Result<Value, IIIError>> + Send + 'static,
-        {
-            self.register_function(RegisterFunction::new_async(id.to_string(), f))
-        }
-
-        fn register_trigger_v0(
-            &self,
-            kind: &str,
-            function_id: &str,
-            config: Value,
-        ) -> Result<Trigger, IIIError> {
-            self.register_trigger(RegisterTriggerInput {
-                trigger_type: kind.to_string(),
-                function_id: function_id.to_string(),
-                config,
-                metadata: None,
-            })
-        }
-
-        async fn trigger_v0(
-            &self,
-            function_id: &str,
-            payload: Value,
-        ) -> Result<Value, IIIError> {
-            self.trigger(TriggerRequest {
-                function_id: function_id.to_string(),
-                payload,
-                action: None,
-                timeout_ms: None,
-            })
-            .await
-        }
-
-        fn trigger_void(
-            &self,
-            function_id: &str,
-            payload: Value,
-        ) -> Result<(), IIIError> {
-            let iii = self.clone();
-            let fid = function_id.to_string();
-            tokio::spawn(async move {
-                let _ = iii
-                    .trigger(TriggerRequest {
-                        function_id: fid,
-                        payload,
-                        action: None,
-                        timeout_ms: None,
-                    })
-                    .await;
-            });
-            Ok(())
-        }
-    }
-}
-use iii_compat::IIIExt as _;
 
 
 
@@ -258,42 +139,54 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let cache_ref = cache.clone();
     let iii_ref = iii.clone();
-    iii.register_function_with_description(
-        "wasm::execute",
-        "Execute WASM module in sandboxed environment",
-        move |input: Value| {
+    iii.register_function(
+        RegisterFunction::new_async("wasm::execute", move |input: Value| {
             let cache = cache_ref.clone();
             let iii = iii_ref.clone();
             async move { execute_wasm(&iii, &cache, input).await }
-        },
+        })
+        .description("Execute WASM module in sandboxed environment"),
     );
 
     let cache_ref = cache.clone();
-    iii.register_function_with_description(
-        "wasm::validate",
-        "Validate and cache a WASM module",
-        move |input: Value| {
+    iii.register_function(
+        RegisterFunction::new_async("wasm::validate", move |input: Value| {
             let cache = cache_ref.clone();
             async move { validate_wasm(&cache, input).await }
-        },
+        })
+        .description("Validate and cache a WASM module"),
     );
 
     let cache_ref = cache.clone();
-    iii.register_function_with_description(
-        "wasm::list_modules",
-        "List cached WASM modules",
-        move |_: Value| {
+    iii.register_function(
+        RegisterFunction::new_async("wasm::list_modules", move |_: Value| {
             let cache = cache_ref.clone();
             async move {
                 let ids: Vec<String> = cache.modules.iter().map(|e| e.key().clone()).collect();
-                Ok(json!({ "modules": ids, "count": ids.len() }))
+                Ok::<Value, IIIError>(json!({ "modules": ids, "count": ids.len() }))
             }
-        },
+        })
+        .description("List cached WASM modules"),
     );
 
-    iii.register_trigger_v0("http", "wasm::execute", json!({ "api_path": "wasm/execute", "http_method": "POST" }))?;
-    iii.register_trigger_v0("http", "wasm::validate", json!({ "api_path": "wasm/validate", "http_method": "POST" }))?;
-    iii.register_trigger_v0("http", "wasm::list_modules", json!({ "api_path": "wasm/modules", "http_method": "GET" }))?;
+    iii.register_trigger(RegisterTriggerInput {
+        trigger_type: "http".to_string(),
+        function_id: "wasm::execute".to_string(),
+        config: json!({ "api_path": "wasm/execute", "http_method": "POST" }),
+        metadata: None,
+    })?;
+    iii.register_trigger(RegisterTriggerInput {
+        trigger_type: "http".to_string(),
+        function_id: "wasm::validate".to_string(),
+        config: json!({ "api_path": "wasm/validate", "http_method": "POST" }),
+        metadata: None,
+    })?;
+    iii.register_trigger(RegisterTriggerInput {
+        trigger_type: "http".to_string(),
+        function_id: "wasm::list_modules".to_string(),
+        config: json!({ "api_path": "wasm/modules", "http_method": "GET" }),
+        metadata: None,
+    })?;
 
     tracing::info!("wasm-sandbox worker started");
     tokio::signal::ctrl_c().await?;
@@ -402,17 +295,27 @@ async fn execute_wasm(iii: &III, cache: &ModuleCache, input: Value) -> Result<Va
                 .build()
                 .unwrap();
             rt.block_on(async {
-                let cap_check = iii_inner.trigger_v0("security::check_capability", json!({
+                let cap_check = iii_inner.trigger(TriggerRequest {
+                    function_id: "security::check_capability".to_string(),
+                    payload: json!({
                     "agentId": &agent,
                     "capability": func_id.split("::").next().unwrap_or(""),
                     "resource": &func_id,
-                })).await;
+                }),
+                    action: None,
+                    timeout_ms: None,
+                }).await;
 
                 if cap_check.is_err() {
                     return json!({ "error": "capability denied" }).to_string();
                 }
 
-                match iii_inner.trigger_v0(&func_id, args).await {
+                match iii_inner.trigger(TriggerRequest {
+                    function_id: func_id.to_string(),
+                    payload: args,
+                    action: None,
+                    timeout_ms: None,
+                }).await {
                     Ok(v) => v.to_string(),
                     Err(e) => json!({ "error": e.to_string() }).to_string(),
                 }

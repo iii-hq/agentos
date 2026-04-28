@@ -1,4 +1,4 @@
-use iii_sdk::{III, InitOptions, register_worker};
+use iii_sdk::{III, InitOptions, RegisterFunction, RegisterTriggerInput, TriggerRequest, register_worker};
 use iii_sdk::error::IIIError;
 use serde_json::{json, Value};
 use std::time::Instant;
@@ -7,125 +7,6 @@ mod types;
 
 use types::{AgentConfig, ChatRequest, ToolCall};
 
-#[allow(dead_code)]
-mod iii_compat {
-    use iii_sdk::{
-        III, RegisterFunction, RegisterTriggerInput, TriggerRequest, FunctionRef, Trigger,
-        Value,
-    };
-    use iii_sdk::error::IIIError;
-    use std::future::Future;
-
-    pub trait IIIExt {
-        fn register_function_with_description<F, Fut>(
-            &self,
-            id: &str,
-            desc: &str,
-            f: F,
-        ) -> FunctionRef
-        where
-            F: Fn(Value) -> Fut + Send + Sync + 'static,
-            Fut: Future<Output = Result<Value, IIIError>> + Send + 'static;
-
-        fn register_function_v0<F, Fut>(&self, id: &str, f: F) -> FunctionRef
-        where
-            F: Fn(Value) -> Fut + Send + Sync + 'static,
-            Fut: Future<Output = Result<Value, IIIError>> + Send + 'static;
-
-        fn register_trigger_v0(
-            &self,
-            kind: &str,
-            function_id: &str,
-            config: Value,
-        ) -> Result<Trigger, IIIError>;
-
-        fn trigger_v0(
-            &self,
-            function_id: &str,
-            payload: Value,
-        ) -> impl Future<Output = Result<Value, IIIError>> + Send;
-
-        fn trigger_void(
-            &self,
-            function_id: &str,
-            payload: Value,
-        ) -> Result<(), IIIError>;
-    }
-
-    impl IIIExt for III {
-        fn register_function_with_description<F, Fut>(
-            &self,
-            id: &str,
-            desc: &str,
-            f: F,
-        ) -> FunctionRef
-        where
-            F: Fn(Value) -> Fut + Send + Sync + 'static,
-            Fut: Future<Output = Result<Value, IIIError>> + Send + 'static,
-        {
-            self.register_function(
-                RegisterFunction::new_async(id.to_string(), f).description(desc.to_string()),
-            )
-        }
-
-        fn register_function_v0<F, Fut>(&self, id: &str, f: F) -> FunctionRef
-        where
-            F: Fn(Value) -> Fut + Send + Sync + 'static,
-            Fut: Future<Output = Result<Value, IIIError>> + Send + 'static,
-        {
-            self.register_function(RegisterFunction::new_async(id.to_string(), f))
-        }
-
-        fn register_trigger_v0(
-            &self,
-            kind: &str,
-            function_id: &str,
-            config: Value,
-        ) -> Result<Trigger, IIIError> {
-            self.register_trigger(RegisterTriggerInput {
-                trigger_type: kind.to_string(),
-                function_id: function_id.to_string(),
-                config,
-                metadata: None,
-            })
-        }
-
-        async fn trigger_v0(
-            &self,
-            function_id: &str,
-            payload: Value,
-        ) -> Result<Value, IIIError> {
-            self.trigger(TriggerRequest {
-                function_id: function_id.to_string(),
-                payload,
-                action: None,
-                timeout_ms: None,
-            })
-            .await
-        }
-
-        fn trigger_void(
-            &self,
-            function_id: &str,
-            payload: Value,
-        ) -> Result<(), IIIError> {
-            let iii = self.clone();
-            let fid = function_id.to_string();
-            tokio::spawn(async move {
-                let _ = iii
-                    .trigger(TriggerRequest {
-                        function_id: fid,
-                        payload,
-                        action: None,
-                        timeout_ms: None,
-                    })
-                    .await;
-            });
-            Ok(())
-        }
-    }
-}
-use iii_compat::IIIExt as _;
 
 
 
@@ -138,83 +19,104 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let iii = register_worker("ws://localhost:49134", InitOptions::default());
 
     let iii_clone = iii.clone();
-    iii.register_function_with_description(
-        "agent::chat",
-        "Process a message through the agent loop",
-        move |input: Value| {
+    iii.register_function(
+        RegisterFunction::new_async("agent::chat", move |input: Value| {
             let iii = iii_clone.clone();
             async move {
                 let req: ChatRequest = serde_json::from_value(input)
                     .map_err(|e| IIIError::Handler(e.to_string()))?;
                 agent_chat(&iii, req).await
             }
-        },
+        })
+        .description("Process a message through the agent loop"),
     );
 
     let iii_clone = iii.clone();
-    iii.register_function_with_description(
-        "agent::list_tools",
-        "List tools available to an agent",
-        move |input: Value| {
+    iii.register_function(
+        RegisterFunction::new_async("agent::list_tools", move |input: Value| {
             let iii = iii_clone.clone();
             async move {
                 let agent_id = input["agentId"].as_str().unwrap_or("default");
                 list_tools(&iii, agent_id).await
             }
-        },
+        })
+        .description("List tools available to an agent"),
     );
 
     let iii_clone = iii.clone();
-    iii.register_function_with_description(
-        "agent::create",
-        "Register a new agent",
-        move |input: Value| {
+    iii.register_function(
+        RegisterFunction::new_async("agent::create", move |input: Value| {
             let iii = iii_clone.clone();
             async move {
                 let config: AgentConfig = serde_json::from_value(input)
                     .map_err(|e| IIIError::Handler(e.to_string()))?;
                 create_agent(&iii, config).await
             }
-        },
+        })
+        .description("Register a new agent"),
     );
 
     let iii_clone = iii.clone();
-    iii.register_function_with_description(
-        "agent::list",
-        "List all agents",
-        move |_: Value| {
+    iii.register_function(
+        RegisterFunction::new_async("agent::list", move |_: Value| {
             let iii = iii_clone.clone();
             async move {
-                iii.trigger_v0("state::list", json!({ "scope": "agents" })).await
+                iii.trigger(TriggerRequest {
+                    function_id: "state::list".to_string(),
+                    payload: json!({ "scope": "agents" }),
+                    action: None,
+                    timeout_ms: None,
+                }).await
                     .map_err(|e| IIIError::Handler(e.to_string()))
             }
-        },
+        })
+        .description("List all agents"),
     );
 
     let iii_clone = iii.clone();
-    iii.register_function_with_description(
-        "agent::delete",
-        "Remove an agent",
-        move |input: Value| {
+    iii.register_function(
+        RegisterFunction::new_async("agent::delete", move |input: Value| {
             let iii = iii_clone.clone();
             async move {
                 let agent_id = input["agentId"].as_str().unwrap_or("");
-                iii.trigger_v0("state::delete", json!({
+                iii.trigger(TriggerRequest {
+                    function_id: "state::delete".to_string(),
+                    payload: json!({
                     "scope": "agents",
                     "key": agent_id,
-                })).await.map_err(|e| IIIError::Handler(e.to_string()))?;
+                }),
+                    action: None,
+                    timeout_ms: None,
+                }).await.map_err(|e| IIIError::Handler(e.to_string()))?;
 
-                let _ = iii.trigger_void("publish", json!({
+                let _ = {
+                    let _iii = iii.clone();
+                    let _payload = json!({
                     "topic": "agent.lifecycle",
                     "data": { "type": "deleted", "agentId": agent_id },
-                }));
+                });
+                    tokio::spawn(async move {
+                        let _ = _iii.trigger(TriggerRequest {
+                            function_id: "publish".to_string(),
+                            payload: _payload,
+                            action: None,
+                            timeout_ms: None,
+                        }).await;
+                    });
+                };
 
-                Ok(json!({ "deleted": true }))
+                Ok::<Value, IIIError>(json!({ "deleted": true }))
             }
-        },
+        })
+        .description("Remove an agent"),
     );
 
-    iii.register_trigger_v0("queue", "agent::chat", json!({ "topic": "agent.inbox" }))?;
+    iii.register_trigger(RegisterTriggerInput {
+        trigger_type: "queue".to_string(),
+        function_id: "agent::chat".to_string(),
+        config: json!({ "topic": "agent.inbox" }),
+        metadata: None,
+    })?;
 
     tracing::info!("agent-core worker started");
     tokio::signal::ctrl_c().await?;
@@ -226,25 +128,40 @@ async fn agent_chat(iii: &III, req: ChatRequest) -> Result<Value, IIIError> {
     let start = Instant::now();
 
     let config: Option<AgentConfig> = iii
-        .trigger_v0("state::get", json!({
+        .trigger(TriggerRequest {
+            function_id: "state::get".to_string(),
+            payload: json!({
             "scope": "agents",
             "key": &req.agent_id,
-        }))
+        }),
+            action: None,
+            timeout_ms: None,
+        })
         .await
         .ok()
         .and_then(|v| serde_json::from_value(v).ok());
 
     let memories: Value = iii
-        .trigger_v0("memory::recall", json!({
+        .trigger(TriggerRequest {
+            function_id: "memory::recall".to_string(),
+            payload: json!({
             "agentId": &req.agent_id,
             "query": &req.message,
             "limit": 20,
-        }))
+        }),
+            action: None,
+            timeout_ms: None,
+        })
         .await
         .unwrap_or(json!([]));
 
     let tools: Value = iii
-        .trigger_v0("agent::list_tools", json!({ "agentId": &req.agent_id }))
+        .trigger(TriggerRequest {
+            function_id: "agent::list_tools".to_string(),
+            payload: json!({ "agentId": &req.agent_id }),
+            action: None,
+            timeout_ms: None,
+        })
         .await
         .unwrap_or(json!([]));
 
@@ -253,16 +170,26 @@ async fn agent_chat(iii: &III, req: ChatRequest) -> Result<Value, IIIError> {
         .unwrap_or_default();
 
     let model: Value = iii
-        .trigger_v0("llm::route", json!({
+        .trigger(TriggerRequest {
+            function_id: "llm::route".to_string(),
+            payload: json!({
             "message": &req.message,
             "toolCount": tools.as_array().map(|a| a.len()).unwrap_or(0),
             "config": config.as_ref().and_then(|c| c.model.as_ref()),
-        }))
+        }),
+            action: None,
+            timeout_ms: None,
+        })
         .await
         .map_err(|e| IIIError::Handler(e.to_string()))?;
 
     let scan_result = iii
-        .trigger_v0("security::scan_injection", json!({ "text": &req.message }))
+        .trigger(TriggerRequest {
+            function_id: "security::scan_injection".to_string(),
+            payload: json!({ "text": &req.message }),
+            action: None,
+            timeout_ms: None,
+        })
         .await
         .unwrap_or(json!({ "safe": true, "riskScore": 0.0 }));
     let risk_score = scan_result["riskScore"].as_f64().unwrap_or(0.0);
@@ -280,12 +207,17 @@ async fn agent_chat(iii: &III, req: ChatRequest) -> Result<Value, IIIError> {
     messages.push(json!({ "role": "user", "content": &req.message }));
 
     let mut response: Value = iii
-        .trigger_v0("llm::complete", json!({
+        .trigger(TriggerRequest {
+            function_id: "llm::complete".to_string(),
+            payload: json!({
             "model": model,
             "systemPrompt": system_prompt,
             "messages": messages,
             "tools": tools,
-        }))
+        }),
+            action: None,
+            timeout_ms: None,
+        })
         .await
         .map_err(|e| IIIError::Handler(e.to_string()))?;
 
@@ -304,11 +236,16 @@ async fn agent_chat(iii: &III, req: ChatRequest) -> Result<Value, IIIError> {
 
         let mut tool_results = Vec::new();
         for tc in &calls {
-            let cap_check = iii.trigger_v0("security::check_capability", json!({
+            let cap_check = iii.trigger(TriggerRequest {
+                function_id: "security::check_capability".to_string(),
+                payload: json!({
                 "agentId": &req.agent_id,
                 "capability": tc.id.split("::").next().unwrap_or(""),
                 "resource": &tc.id,
-            })).await;
+            }),
+                action: None,
+                timeout_ms: None,
+            }).await;
 
             if cap_check.is_err() {
                 tool_results.push(json!({
@@ -318,7 +255,12 @@ async fn agent_chat(iii: &III, req: ChatRequest) -> Result<Value, IIIError> {
                 continue;
             }
 
-            match iii.trigger_v0(&tc.id, tc.arguments.clone()).await {
+            match iii.trigger(TriggerRequest {
+                function_id: tc.id.to_string(),
+                payload: tc.arguments.clone(),
+                action: None,
+                timeout_ms: None,
+            }).await {
                 Ok(result) => {
                     tool_results.push(json!({
                         "toolCallId": tc.call_id,
@@ -340,12 +282,17 @@ async fn agent_chat(iii: &III, req: ChatRequest) -> Result<Value, IIIError> {
         }
 
         response = iii
-            .trigger_v0("llm::complete", json!({
+            .trigger(TriggerRequest {
+                function_id: "llm::complete".to_string(),
+                payload: json!({
                 "model": model,
                 "systemPrompt": system_prompt,
                 "messages": messages,
                 "tools": tools,
-            }))
+            }),
+                action: None,
+                timeout_ms: None,
+            })
             .await
             .map_err(|e| IIIError::Handler(e.to_string()))?;
     }
@@ -353,29 +300,62 @@ async fn agent_chat(iii: &III, req: ChatRequest) -> Result<Value, IIIError> {
     let session_id = req.session_id
         .unwrap_or_else(|| format!("default:{}", req.agent_id));
 
-    let _ = iii.trigger_void("memory::store", json!({
+    let _ = {
+        let _iii = iii.clone();
+        let _payload = json!({
         "agentId": &req.agent_id,
         "sessionId": &session_id,
         "role": "user",
         "content": &req.message,
-    }));
+    });
+        tokio::spawn(async move {
+            let _ = _iii.trigger(TriggerRequest {
+                function_id: "memory::store".to_string(),
+                payload: _payload,
+                action: None,
+                timeout_ms: None,
+            }).await;
+        });
+    };
 
-    let _ = iii.trigger_void("memory::store", json!({
+    let _ = {
+        let _iii = iii.clone();
+        let _payload = json!({
         "agentId": &req.agent_id,
         "sessionId": &session_id,
         "role": "assistant",
         "content": response.get("content").and_then(|v| v.as_str()).unwrap_or(""),
         "tokenUsage": response.get("usage"),
-    }));
+    });
+        tokio::spawn(async move {
+            let _ = _iii.trigger(TriggerRequest {
+                function_id: "memory::store".to_string(),
+                payload: _payload,
+                action: None,
+                timeout_ms: None,
+            }).await;
+        });
+    };
 
-    let _ = iii.trigger_void("state::update", json!({
+    let _ = {
+        let _iii = iii.clone();
+        let _payload = json!({
         "scope": "metering",
         "key": &req.agent_id,
         "operations": [
             { "type": "increment", "path": "totalTokens", "value": response["usage"]["total"] },
             { "type": "increment", "path": "invocations", "value": 1 },
         ],
-    }));
+    });
+        tokio::spawn(async move {
+            let _ = _iii.trigger(TriggerRequest {
+                function_id: "state::update".to_string(),
+                payload: _payload,
+                action: None,
+                timeout_ms: None,
+            }).await;
+        });
+    };
 
     Ok(json!({
         "content": response.get("content").and_then(|v| v.as_str()).unwrap_or(""),
@@ -388,7 +368,12 @@ async fn agent_chat(iii: &III, req: ChatRequest) -> Result<Value, IIIError> {
 
 async fn list_tools(iii: &III, agent_id: &str) -> Result<Value, IIIError> {
     let config: Option<AgentConfig> = iii
-        .trigger_v0("state::get", json!({ "scope": "agents", "key": agent_id }))
+        .trigger(TriggerRequest {
+            function_id: "state::get".to_string(),
+            payload: json!({ "scope": "agents", "key": agent_id }),
+            action: None,
+            timeout_ms: None,
+        })
         .await
         .ok()
         .and_then(|v| serde_json::from_value(v).ok());
@@ -406,7 +391,12 @@ async fn list_tools(iii: &III, agent_id: &str) -> Result<Value, IIIError> {
         .collect();
 
     let all_functions: Value = iii
-        .trigger_v0("engine::functions::list", json!({}))
+        .trigger(TriggerRequest {
+            function_id: "engine::functions::list".to_string(),
+            payload: json!({}),
+            action: None,
+            timeout_ms: None,
+        })
         .await
         .unwrap_or(json!([]));
 
@@ -1311,7 +1301,9 @@ mod tests {
 async fn create_agent(iii: &III, config: AgentConfig) -> Result<Value, IIIError> {
     let agent_id = config.id.clone().unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
 
-    iii.trigger_v0("state::set", json!({
+    iii.trigger(TriggerRequest {
+        function_id: "state::set".to_string(),
+        payload: json!({
         "scope": "agents",
         "key": &agent_id,
         "value": {
@@ -1325,14 +1317,28 @@ async fn create_agent(iii: &III, config: AgentConfig) -> Result<Value, IIIError>
             "tags": &config.tags,
             "createdAt": std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis(),
         },
-    }))
+    }),
+        action: None,
+        timeout_ms: None,
+    })
     .await
     .map_err(|e| IIIError::Handler(e.to_string()))?;
 
-    let _ = iii.trigger_void("publish", json!({
+    let _ = {
+        let _iii = iii.clone();
+        let _payload = json!({
         "topic": "agent.lifecycle",
         "data": { "type": "created", "agentId": &agent_id },
-    }));
+    });
+        tokio::spawn(async move {
+            let _ = _iii.trigger(TriggerRequest {
+                function_id: "publish".to_string(),
+                payload: _payload,
+                action: None,
+                timeout_ms: None,
+            }).await;
+        });
+    };
 
     Ok(json!({ "agentId": agent_id }))
 }
