@@ -8,6 +8,7 @@ members = [
     "workers/agent-core",
     "workers/bridge",
     "workers/channel-discord",
+    "workers/channel-telegram",
     "workers/council",
     "workers/cron",
     "workers/directive",
