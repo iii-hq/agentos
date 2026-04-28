@@ -1,129 +1,10 @@
 use dashmap::DashMap;
-use iii_sdk::{InitOptions, register_worker};
+use iii_sdk::{InitOptions, RegisterFunction, register_worker};
 use iii_sdk::error::IIIError;
 use serde_json::{json, Value};
 use std::sync::Arc;
 use std::time::Instant;
 
-#[allow(dead_code)]
-mod iii_compat {
-    use iii_sdk::{
-        III, RegisterFunction, RegisterTriggerInput, TriggerRequest, FunctionRef, Trigger,
-        Value,
-    };
-    use iii_sdk::error::IIIError;
-    use std::future::Future;
-
-    pub trait IIIExt {
-        fn register_function_with_description<F, Fut>(
-            &self,
-            id: &str,
-            desc: &str,
-            f: F,
-        ) -> FunctionRef
-        where
-            F: Fn(Value) -> Fut + Send + Sync + 'static,
-            Fut: Future<Output = Result<Value, IIIError>> + Send + 'static;
-
-        fn register_function_v0<F, Fut>(&self, id: &str, f: F) -> FunctionRef
-        where
-            F: Fn(Value) -> Fut + Send + Sync + 'static,
-            Fut: Future<Output = Result<Value, IIIError>> + Send + 'static;
-
-        fn register_trigger_v0(
-            &self,
-            kind: &str,
-            function_id: &str,
-            config: Value,
-        ) -> Result<Trigger, IIIError>;
-
-        fn trigger_v0(
-            &self,
-            function_id: &str,
-            payload: Value,
-        ) -> impl Future<Output = Result<Value, IIIError>> + Send;
-
-        fn trigger_void(
-            &self,
-            function_id: &str,
-            payload: Value,
-        ) -> Result<(), IIIError>;
-    }
-
-    impl IIIExt for III {
-        fn register_function_with_description<F, Fut>(
-            &self,
-            id: &str,
-            desc: &str,
-            f: F,
-        ) -> FunctionRef
-        where
-            F: Fn(Value) -> Fut + Send + Sync + 'static,
-            Fut: Future<Output = Result<Value, IIIError>> + Send + 'static,
-        {
-            self.register_function(
-                RegisterFunction::new_async(id.to_string(), f).description(desc.to_string()),
-            )
-        }
-
-        fn register_function_v0<F, Fut>(&self, id: &str, f: F) -> FunctionRef
-        where
-            F: Fn(Value) -> Fut + Send + Sync + 'static,
-            Fut: Future<Output = Result<Value, IIIError>> + Send + 'static,
-        {
-            self.register_function(RegisterFunction::new_async(id.to_string(), f))
-        }
-
-        fn register_trigger_v0(
-            &self,
-            kind: &str,
-            function_id: &str,
-            config: Value,
-        ) -> Result<Trigger, IIIError> {
-            self.register_trigger(RegisterTriggerInput {
-                trigger_type: kind.to_string(),
-                function_id: function_id.to_string(),
-                config,
-                metadata: None,
-            })
-        }
-
-        async fn trigger_v0(
-            &self,
-            function_id: &str,
-            payload: Value,
-        ) -> Result<Value, IIIError> {
-            self.trigger(TriggerRequest {
-                function_id: function_id.to_string(),
-                payload,
-                action: None,
-                timeout_ms: None,
-            })
-            .await
-        }
-
-        fn trigger_void(
-            &self,
-            function_id: &str,
-            payload: Value,
-        ) -> Result<(), IIIError> {
-            let iii = self.clone();
-            let fid = function_id.to_string();
-            tokio::spawn(async move {
-                let _ = iii
-                    .trigger(TriggerRequest {
-                        function_id: fid,
-                        payload,
-                        action: None,
-                        timeout_ms: None,
-                    })
-                    .await;
-            });
-            Ok(())
-        }
-    }
-}
-use iii_compat::IIIExt as _;
 
 
 
@@ -281,6 +162,126 @@ async fn call_openai_compat(
     Ok(resp)
 }
 
+async fn route_handler(_state: Arc<RouterState>, input: Value) -> Result<Value, IIIError> {
+    let messages = input["messages"].as_array().cloned().unwrap_or_default();
+    let tools = input["tools"].as_array().cloned().unwrap_or_default();
+    let preferred = input["model"].as_str();
+    let complexity = score_complexity(&messages, &tools);
+    let (provider, model) = select_model(complexity, preferred);
+    Ok(json!({
+        "provider": provider,
+        "model": model,
+        "complexity": complexity,
+    }))
+}
+
+async fn complete_handler(
+    state: Arc<RouterState>,
+    client: reqwest::Client,
+    input: Value,
+) -> Result<Value, IIIError> {
+    let provider_name = input["provider"].as_str().unwrap_or("anthropic");
+    let model = input["model"].as_str().unwrap_or("claude-sonnet-4-20250514");
+    let messages = input["messages"].as_array().cloned().unwrap_or_default();
+    let tools = input["tools"].as_array().cloned().unwrap_or_default();
+    let max_tokens = input["max_tokens"].as_u64().unwrap_or(4096);
+
+    let provider = state.providers.get(provider_name)
+        .ok_or_else(|| IIIError::Handler(format!("unknown provider: {}", provider_name)))?;
+
+    let api_key = if provider.env_key.is_empty() {
+        String::new()
+    } else {
+        std::env::var(&provider.env_key).unwrap_or_default()
+    };
+
+    let start = Instant::now();
+
+    let result = match provider.driver {
+        Driver::Anthropic => {
+            call_anthropic(&client, &api_key, model, &messages, &tools, max_tokens).await?
+        }
+        Driver::OpenAiCompat | Driver::Gemini | Driver::Bedrock => {
+            call_openai_compat(&client, &provider.base_url, &api_key, model, &messages, &tools, max_tokens).await?
+        }
+    };
+
+    let _elapsed_ms = start.elapsed().as_millis() as u64;
+
+    let input_tokens = result["usage"]["input_tokens"].as_u64()
+        .or(result["usage"]["prompt_tokens"].as_u64())
+        .unwrap_or(0);
+    let output_tokens = result["usage"]["output_tokens"].as_u64()
+        .or(result["usage"]["completion_tokens"].as_u64())
+        .unwrap_or(0);
+
+    let key = format!("{}:{}", provider_name, model);
+    let mut usage = state.usage.entry(key).or_insert(Usage {
+        input_tokens: 0,
+        output_tokens: 0,
+        requests: 0,
+    });
+    usage.input_tokens += input_tokens;
+    usage.output_tokens += output_tokens;
+    usage.requests += 1;
+
+    let content = result["content"].as_array()
+        .and_then(|blocks| blocks.first())
+        .and_then(|b| b["text"].as_str())
+        .or_else(|| result["choices"].as_array()
+            .and_then(|c| c.first())
+            .and_then(|c| c["message"]["content"].as_str()))
+        .unwrap_or("");
+
+    let tool_calls = result["content"].as_array()
+        .map(|blocks| blocks.iter().filter(|b| b["type"].as_str() == Some("tool_use")).cloned().collect::<Vec<_>>())
+        .or_else(|| result["choices"].as_array()
+            .and_then(|c| c.first())
+            .and_then(|c| c["message"]["tool_calls"].as_array().cloned()))
+        .unwrap_or_default();
+
+    Ok(json!({
+        "content": content,
+        "model": model,
+        "toolCalls": tool_calls,
+        "usage": {
+            "input": input_tokens,
+            "output": output_tokens,
+            "total": input_tokens + output_tokens,
+        }
+    }))
+}
+
+async fn usage_handler(state: Arc<RouterState>, _input: Value) -> Result<Value, IIIError> {
+    let mut stats = Vec::new();
+    for entry in state.usage.iter() {
+        let parts: Vec<&str> = entry.key().splitn(2, ':').collect();
+        stats.push(json!({
+            "provider": parts.first().unwrap_or(&""),
+            "model": parts.get(1).unwrap_or(&""),
+            "input_tokens": entry.value().input_tokens,
+            "output_tokens": entry.value().output_tokens,
+            "requests": entry.value().requests,
+        }));
+    }
+    Ok(json!({ "stats": stats }))
+}
+
+async fn providers_handler(state: Arc<RouterState>, _input: Value) -> Result<Value, IIIError> {
+    let list: Vec<Value> = state.providers.iter().map(|entry| {
+        let name = entry.key();
+        let provider = entry.value();
+        json!({
+            "name": name,
+            "base_url": &provider.base_url,
+            "env_key": &provider.env_key,
+            "models": &provider.models,
+            "configured": if provider.env_key.is_empty() { true } else { std::env::var(&provider.env_key).is_ok() },
+        })
+    }).collect();
+    Ok(json!({ "providers": list }))
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing_subscriber::fmt::init();
@@ -301,158 +302,53 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         });
     }
 
-    let s = state.clone();
-    iii.register_function_with_description(
-        "llm::route",
-        "Route to optimal model based on complexity",
-        move |input: Value| {
-            let _state = s.clone();
-            async move {
-                let messages = input["messages"].as_array().cloned().unwrap_or_default();
-                let tools = input["tools"].as_array().cloned().unwrap_or_default();
-                let preferred = input["model"].as_str();
-                let complexity = score_complexity(&messages, &tools);
-                let (provider, model) = select_model(complexity, preferred);
-
-                Ok(json!({
-                    "provider": provider,
-                    "model": model,
-                    "complexity": complexity,
-                }))
-            }
-        },
-    );
-
     let shared_client = reqwest::Client::new();
 
-    let s = state.clone();
-    let client_for_complete = shared_client.clone();
-    iii.register_function_with_description(
-        "llm::complete",
-        "Send completion request to routed provider",
-        move |input: Value| {
-            let state = s.clone();
-            let client = client_for_complete.clone();
-            async move {
-                let provider_name = input["provider"].as_str().unwrap_or("anthropic");
-                let model = input["model"].as_str().unwrap_or("claude-sonnet-4-20250514");
-                let messages = input["messages"].as_array().cloned().unwrap_or_default();
-                let tools = input["tools"].as_array().cloned().unwrap_or_default();
-                let max_tokens = input["max_tokens"].as_u64().unwrap_or(4096);
+    {
+        let state = state.clone();
+        iii.register_function(
+            RegisterFunction::new_async("llm::route", move |input: Value| {
+                let state = state.clone();
+                async move { route_handler(state, input).await }
+            })
+            .description("Route to optimal model based on complexity"),
+        );
+    }
 
-                let provider = state.providers.get(provider_name)
-                    .ok_or_else(|| IIIError::Handler(format!("unknown provider: {}", provider_name)))?;
+    {
+        let state = state.clone();
+        let client = shared_client.clone();
+        iii.register_function(
+            RegisterFunction::new_async("llm::complete", move |input: Value| {
+                let state = state.clone();
+                let client = client.clone();
+                async move { complete_handler(state, client, input).await }
+            })
+            .description("Send completion request to routed provider"),
+        );
+    }
 
-                let api_key = if provider.env_key.is_empty() {
-                    String::new()
-                } else {
-                    std::env::var(&provider.env_key).unwrap_or_default()
-                };
+    {
+        let state = state.clone();
+        iii.register_function(
+            RegisterFunction::new_async("llm::usage", move |input: Value| {
+                let state = state.clone();
+                async move { usage_handler(state, input).await }
+            })
+            .description("Get usage stats across all providers"),
+        );
+    }
 
-                let start = Instant::now();
-
-                let result = match provider.driver {
-                    Driver::Anthropic => {
-                        call_anthropic(&client, &api_key, model, &messages, &tools, max_tokens).await?
-                    }
-                    Driver::OpenAiCompat | Driver::Gemini | Driver::Bedrock => {
-                        call_openai_compat(&client, &provider.base_url, &api_key, model, &messages, &tools, max_tokens).await?
-                    }
-                };
-
-                let _elapsed_ms = start.elapsed().as_millis() as u64;
-
-                let input_tokens = result["usage"]["input_tokens"].as_u64()
-                    .or(result["usage"]["prompt_tokens"].as_u64())
-                    .unwrap_or(0);
-                let output_tokens = result["usage"]["output_tokens"].as_u64()
-                    .or(result["usage"]["completion_tokens"].as_u64())
-                    .unwrap_or(0);
-
-                let key = format!("{}:{}", provider_name, model);
-                let mut usage = state.usage.entry(key).or_insert(Usage {
-                    input_tokens: 0,
-                    output_tokens: 0,
-                    requests: 0,
-                });
-                usage.input_tokens += input_tokens;
-                usage.output_tokens += output_tokens;
-                usage.requests += 1;
-
-                let content = result["content"].as_array()
-                    .and_then(|blocks| blocks.first())
-                    .and_then(|b| b["text"].as_str())
-                    .or_else(|| result["choices"].as_array()
-                        .and_then(|c| c.first())
-                        .and_then(|c| c["message"]["content"].as_str()))
-                    .unwrap_or("");
-
-                let tool_calls = result["content"].as_array()
-                    .map(|blocks| blocks.iter().filter(|b| b["type"].as_str() == Some("tool_use")).cloned().collect::<Vec<_>>())
-                    .or_else(|| result["choices"].as_array()
-                        .and_then(|c| c.first())
-                        .and_then(|c| c["message"]["tool_calls"].as_array().cloned()))
-                    .unwrap_or_default();
-
-                Ok(json!({
-                    "content": content,
-                    "model": model,
-                    "toolCalls": tool_calls,
-                    "usage": {
-                        "input": input_tokens,
-                        "output": output_tokens,
-                        "total": input_tokens + output_tokens,
-                    }
-                }))
-            }
-        },
-    );
-
-    let s = state.clone();
-    iii.register_function_with_description(
-        "llm::usage",
-        "Get usage stats across all providers",
-        move |_input: Value| {
-            let state = s.clone();
-            async move {
-                let mut stats = Vec::new();
-                for entry in state.usage.iter() {
-                    let parts: Vec<&str> = entry.key().splitn(2, ':').collect();
-                    stats.push(json!({
-                        "provider": parts.first().unwrap_or(&""),
-                        "model": parts.get(1).unwrap_or(&""),
-                        "input_tokens": entry.value().input_tokens,
-                        "output_tokens": entry.value().output_tokens,
-                        "requests": entry.value().requests,
-                    }));
-                }
-                Ok(json!({ "stats": stats }))
-            }
-        },
-    );
-
-    let s = state.clone();
-    iii.register_function_with_description(
-        "llm::providers",
-        "List available providers and models",
-        move |_input: Value| {
-            let state = s.clone();
-            async move {
-                let list: Vec<Value> = state.providers.iter().map(|entry| {
-                    let name = entry.key();
-                    let provider = entry.value();
-                    json!({
-                        "name": name,
-                        "base_url": &provider.base_url,
-                        "env_key": &provider.env_key,
-                        "models": &provider.models,
-                        "configured": if provider.env_key.is_empty() { true } else { std::env::var(&provider.env_key).is_ok() },
-                    })
-                }).collect();
-                Ok(json!({ "providers": list }))
-            }
-        },
-    );
+    {
+        let state = state.clone();
+        iii.register_function(
+            RegisterFunction::new_async("llm::providers", move |input: Value| {
+                let state = state.clone();
+                async move { providers_handler(state, input).await }
+            })
+            .description("List available providers and models"),
+        );
+    }
 
     tracing::info!("llm-router worker ready with {} providers", default_providers().len());
     tokio::signal::ctrl_c().await?;
