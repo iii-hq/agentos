@@ -124,8 +124,8 @@ jobs:
       - name: install iii CLI
         run: |
           set -e
-          curl -fsSL install.iii.dev/iii/main/install.sh | sh -s -- --version 0.11.4-next.4 || \
-            curl -fsSL install.iii.dev/iii/main/install.sh | sh
+          curl -fsSL https://install.iii.dev/iii/main/install.sh | sh -s -- --version 0.11.4-next.4 || \
+            curl -fsSL https://install.iii.dev/iii/main/install.sh | sh
           echo "$HOME/.iii/bin" >> $GITHUB_PATH
 
       - name: verify iii version
@@ -230,16 +230,18 @@ jobs:
 
       - name: install iii CLI
         run: |
-          curl -fsSL install.iii.dev/iii/main/install.sh | sh -s -- --version 0.11.4-next.4 || \
-            curl -fsSL install.iii.dev/iii/main/install.sh | sh
+          curl -fsSL https://install.iii.dev/iii/main/install.sh | sh -s -- --version 0.11.4-next.4 || \
+            curl -fsSL https://install.iii.dev/iii/main/install.sh | sh
           echo "$HOME/.iii/bin" >> $GITHUB_PATH
 
       - name: skip if no api key
         id: gate
+        env:
+          AGENTOS_API_KEY: ${{ secrets.AGENTOS_API_KEY }}
         run: |
-          if [ -z "${{ secrets.AGENTOS_API_KEY }}" ]; then
+          if [ -z "${AGENTOS_API_KEY:-}" ]; then
             echo "::warning::AGENTOS_API_KEY not set; skipping e2e-full"
-            echo "skip=true" >> $GITHUB_OUTPUT
+            echo "skip=true" >> "$GITHUB_OUTPUT"
           fi
 
       - name: start engine + workers
@@ -247,10 +249,13 @@ jobs:
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: |
+          set -e
           mkdir -p data
           iii --config config.yaml > engine.log 2>&1 &
+          ENGINE_PID=$!
+          echo "ENGINE_PID=$ENGINE_PID" >> "$GITHUB_ENV"
           for i in {1..30}; do
-            curl -fs http://127.0.0.1:3111/api/health > /dev/null 2>&1 && break
+            timeout 1 bash -c "echo > /dev/tcp/127.0.0.1/3111" 2>/dev/null && break
             sleep 1
           done
           for w in agentos-core agentos-llm-router agentos-memory agentos-security; do
@@ -274,3 +279,9 @@ jobs:
             echo "=== $f ==="
             tail -200 "$f" || true
           done
+
+      - name: stop
+        if: always()
+        run: |
+          pkill -f 'agentos-' || true
+          [ -n "${ENGINE_PID:-}" ] && kill "$ENGINE_PID" || true
