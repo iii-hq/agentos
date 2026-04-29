@@ -1,0 +1,7 @@
+iii: v1
+name: channel-matrix
+language: rust
+deploy: binary
+manifest: Cargo.toml
+bin: agentos-channel-matrix
+description: "Matrix channel adapter — webhook receive + send via client-server API"

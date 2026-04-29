@@ -1,0 +1,7 @@
+iii: v1
+name: channel-mastodon
+language: rust
+deploy: binary
+manifest: Cargo.toml
+bin: agentos-channel-mastodon
+description: "Mastodon channel adapter — webhook receive + post statuses via API"

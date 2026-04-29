@@ -1,0 +1,7 @@
+iii: v1
+name: channel-discord
+language: rust
+deploy: binary
+manifest: Cargo.toml
+bin: agentos-channel-discord
+description: "Discord channel adapter — webhook receive + send via Bot API"

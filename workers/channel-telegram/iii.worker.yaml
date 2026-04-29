@@ -1,0 +1,7 @@
+iii: v1
+name: channel-telegram
+language: rust
+deploy: binary
+manifest: Cargo.toml
+bin: agentos-channel-telegram
+description: "Telegram channel adapter — webhook receive + send via Bot API"

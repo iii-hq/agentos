@@ -1,0 +1,7 @@
+iii: v1
+name: channel-bluesky
+language: rust
+deploy: binary
+manifest: Cargo.toml
+bin: agentos-channel-bluesky
+description: "Bluesky/AT Protocol channel adapter — webhook receive + post via XRPC"
