@@ -1,0 +1,7 @@
+iii: v1
+name: context-manager
+language: rust
+deploy: binary
+manifest: Cargo.toml
+bin: agentos-context-manager
+description: Token budgeting, conversation trimming, multi-stage overflow recovery, and prompt assembly

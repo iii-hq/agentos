@@ -1,0 +1,7 @@
+iii: v1
+name: context-cache
+language: rust
+deploy: binary
+manifest: Cargo.toml
+bin: agentos-context-cache
+description: TTL-based memoized context fetch with per-agent hit/miss stats

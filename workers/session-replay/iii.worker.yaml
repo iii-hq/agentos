@@ -1,0 +1,7 @@
+iii: v1
+name: session-replay
+language: rust
+deploy: binary
+manifest: Cargo.toml
+bin: agentos-session-replay
+description: Session replay log — record, fetch, search, and summarize agent action traces

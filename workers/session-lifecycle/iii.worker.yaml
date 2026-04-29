@@ -1,0 +1,7 @@
+iii: v1
+name: session-lifecycle
+language: rust
+deploy: binary
+manifest: Cargo.toml
+bin: agentos-session-lifecycle
+description: Session lifecycle state machine — transitions, reactions, and cron-driven health checks

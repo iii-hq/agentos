@@ -1,0 +1,7 @@
+iii: v1
+name: streaming
+language: rust
+deploy: binary
+manifest: Cargo.toml
+bin: agentos-streaming
+description: Chat streaming endpoints — synchronous chat and SSE markdown-aware chunking

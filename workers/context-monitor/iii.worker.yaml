@@ -1,0 +1,7 @@
+iii: v1
+name: context-monitor
+language: rust
+deploy: binary
+manifest: Cargo.toml
+bin: agentos-context-monitor
+description: Context health scoring and proactive compression — health, compress, trim, prune, auto_optimize, stats
