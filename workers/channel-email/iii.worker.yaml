@@ -1,0 +1,7 @@
+iii: v1
+name: channel-email
+language: rust
+deploy: binary
+manifest: Cargo.toml
+bin: agentos-channel-email
+description: "Email channel adapter — inbound webhook + outbound SMTP via lettre"
