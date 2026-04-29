@@ -1,4 +1,5 @@
 use iii_sdk::error::IIIError;
+use iii_sdk::protocol::TriggerAction;
 use iii_sdk::{III, InitOptions, RegisterFunction, RegisterTriggerInput, TriggerRequest, register_worker};
 use serde_json::{Value, json};
 
@@ -90,7 +91,12 @@ async fn send_message(
             .post(&url)
             .header("Authorization", format!("Bot {bot_token}"))
             .header("Content-Type", "application/json")
-            .json(&json!({ "content": chunk }))
+            // Suppress all mentions so prompt-injected `@everyone`/role/user
+            // pings in model output never reach Discord.
+            .json(&json!({
+                "content": chunk,
+                "allowed_mentions": { "parse": [] },
+            }))
             .send()
             .await
             .map_err(|e| IIIError::Handler(e.to_string()))?;
@@ -135,6 +141,12 @@ async fn webhook_handler(
             .unwrap_or("")
             .to_string();
 
+        // Skip MESSAGE_CREATE events with no text (attachments, stickers,
+        // system events) to avoid generating an LLM reply to nothing.
+        if content.trim().is_empty() {
+            return Ok(json!({ "status_code": 200, "body": { "ok": true } }));
+        }
+
         let agent_id = resolve_agent(iii, "discord", &channel_id).await;
 
         let chat_response = iii
@@ -160,6 +172,21 @@ async fn webhook_handler(
         if !channel_id.is_empty() && !reply.is_empty() {
             send_message(iii, client, &channel_id, &reply).await?;
         }
+
+        // Emit channel_message audit event so Discord traffic is captured by
+        // the same monitoring pipeline as the other channel adapters.
+        let _ = iii
+            .trigger(TriggerRequest {
+                function_id: "security::audit".to_string(),
+                payload: json!({
+                    "type": "channel_message",
+                    "agentId": agent_id,
+                    "detail": { "channel": "discord", "channelId": channel_id },
+                }),
+                action: Some(TriggerAction::Void),
+                timeout_ms: None,
+            })
+            .await;
     }
 
     Ok(json!({ "status_code": 200, "body": { "ok": true } }))
