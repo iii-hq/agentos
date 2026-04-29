@@ -1,0 +1,7 @@
+iii: v1
+name: swarm
+language: rust
+deploy: binary
+manifest: Cargo.toml
+bin: agentos-swarm
+description: Multi-agent swarm orchestration — create, broadcast, collect, consensus, dissolve

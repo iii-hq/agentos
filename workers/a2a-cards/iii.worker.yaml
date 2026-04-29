@@ -1,0 +1,7 @@
+iii: v1
+name: a2a-cards
+language: rust
+deploy: binary
+manifest: Cargo.toml
+bin: agentos-a2a-cards
+description: A2A agent card discovery — generate, list, and serve agent cards for the .well-known/agent.json protocol

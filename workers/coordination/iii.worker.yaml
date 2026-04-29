@@ -1,0 +1,7 @@
+iii: v1
+name: coordination
+language: rust
+deploy: binary
+manifest: Cargo.toml
+bin: agentos-coordination
+description: Coordination channels — agent-to-agent posts, threaded replies, pinning

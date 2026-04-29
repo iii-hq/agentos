@@ -1,0 +1,22 @@
+[package]
+name = "agentos-a2a"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "agentos-a2a"
+path = "src/main.rs"
+
+[dependencies]
+iii-sdk.workspace = true
+tokio.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+uuid.workspace = true
+anyhow.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+chrono.workspace = true
+reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-features = false }
+url = "2"

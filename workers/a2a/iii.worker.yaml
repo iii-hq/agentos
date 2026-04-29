@@ -1,0 +1,7 @@
+iii: v1
+name: a2a
+language: rust
+deploy: binary
+manifest: Cargo.toml
+bin: agentos-a2a
+description: Agent-to-agent messaging — JSON-RPC tasks/send/get/cancel, agent card, discovery

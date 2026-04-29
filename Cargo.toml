@@ -3,9 +3,12 @@ resolver = "2"
 members = [
     "crates/cli",
     "crates/tui",
+    "workers/a2a",
+    "workers/a2a-cards",
     "workers/agent-core",
     "workers/bridge",
     "workers/channel-slack",
+    "workers/coordination",
     "workers/council",
     "workers/cron",
     "workers/directive",
@@ -20,6 +23,7 @@ members = [
     "workers/security",
     "workers/telemetry",
     "workers/vault",
+    "workers/swarm",
     "workers/wasm-sandbox",
 ]
 
