@@ -1,0 +1,7 @@
+iii: v1
+name: rate-limiter
+language: rust
+deploy: binary
+manifest: Cargo.toml
+bin: agentos-rate-limiter
+description: GCRA token-bucket rate limiter — per-IP, per-agent, per-function, plus concurrency slots

@@ -146,10 +146,39 @@ dependencies = [
 ]
 
 [[package]]
+name = "agentos-hashline"
+version = "0.0.1"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "iii-sdk",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "agentos-hierarchy"
 version = "0.0.1"
 dependencies = [
  "anyhow",
+ "iii-sdk",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+ "uuid",
+]
+
+[[package]]
+name = "agentos-hooks"
+version = "0.0.1"
+dependencies = [
+ "anyhow",
+ "chrono",
  "iii-sdk",
  "serde",
  "serde_json",
@@ -184,6 +213,22 @@ dependencies = [
  "reqwest",
  "serde",
  "serde_json",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
+name = "agentos-loop-guard"
+version = "0.0.1"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "hex",
+ "iii-sdk",
+ "serde",
+ "serde_json",
+ "sha2",
  "tokio",
  "tracing",
  "tracing-subscriber",
@@ -234,6 +279,20 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "uuid",
+]
+
+[[package]]
+name = "agentos-rate-limiter"
+version = "0.0.1"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "iii-sdk",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]
