@@ -116,10 +116,12 @@ async fn send_message(
         let res = client
             .post(&url)
             .header("Content-Type", "application/json")
+            // Send as plain text. Telegram Markdown would need every `_`,
+            // `*`, `[`, `]`, and backtick in unescaped model output to be
+            // escaped, otherwise the API rejects the message.
             .json(&json!({
                 "chat_id": chat_id,
                 "text": chunk,
-                "parse_mode": "Markdown",
             }))
             .timeout(Duration::from_secs(10))
             .send()
