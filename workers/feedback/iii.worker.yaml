@@ -1,0 +1,7 @@
+iii: v1
+name: feedback
+language: rust
+deploy: binary
+manifest: Cargo.toml
+bin: agentos-feedback
+description: Feedback synthesis + promotion rules — review/improve/promote/demote evolved functions, signal injection

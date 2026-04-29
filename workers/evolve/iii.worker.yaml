@@ -1,0 +1,7 @@
+iii: v1
+name: evolve
+language: rust
+deploy: binary
+manifest: Cargo.toml
+bin: agentos-evolve
+description: Agent rollout lifecycle — generate, register, fork, lineage, leaves for evolved functions

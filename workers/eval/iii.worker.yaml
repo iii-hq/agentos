@@ -1,0 +1,7 @@
+iii: v1
+name: eval
+language: rust
+deploy: binary
+manifest: Cargo.toml
+bin: agentos-eval
+description: Evaluation harness — invoke functions, score correctness/latency/cost/safety, suite aggregation

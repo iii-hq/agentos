@@ -298,6 +298,51 @@ dependencies = [
 ]
 
 [[package]]
+name = "agentos-eval"
+version = "0.0.1"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "iii-sdk",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+ "uuid",
+]
+
+[[package]]
+name = "agentos-evolve"
+version = "0.0.1"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "iii-sdk",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+ "uuid",
+]
+
+[[package]]
+name = "agentos-feedback"
+version = "0.0.1"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "iii-sdk",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+ "uuid",
+]
+
+[[package]]
 name = "agentos-hand-runner"
 version = "0.0.1"
 dependencies = [
