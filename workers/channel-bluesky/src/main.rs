@@ -174,9 +174,18 @@ async fn send_message(
             .await
             .map_err(|e| IIIError::Handler(e.to_string()))?;
         if !res.status().is_success() {
+            let status = res.status();
+            // 401/403 mean the cached accessJwt has expired or been revoked.
+            // Drop the cached session so the next call reauthenticates instead
+            // of failing every subsequent webhook until restart.
+            if status == reqwest::StatusCode::UNAUTHORIZED
+                || status == reqwest::StatusCode::FORBIDDEN
+            {
+                let mut write = session_lock.write().await;
+                *write = None;
+            }
             return Err(IIIError::Handler(format!(
-                "Bluesky createRecord failed: {}",
-                res.status()
+                "Bluesky createRecord failed: {status}"
             )));
         }
     }
@@ -291,6 +300,23 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         config: json!({ "http_method": "POST", "api_path": "webhook/bluesky" }),
         metadata: None,
     })?;
+
+    // Eager-authenticate at startup so the session DID is known before the
+    // first webhook arrives. Without this, self-reply suppression
+    // (`session_did == sender`) cannot match on cold start and the bot can
+    // process its own posts. Failures are logged but non-fatal — credentials
+    // may not yet be in the vault, in which case ensure_session will retry
+    // on the first inbound webhook.
+    {
+        let iii_init = iii.clone();
+        let client_init = client.clone();
+        let lock_init = session_lock.clone();
+        tokio::spawn(async move {
+            if let Err(e) = ensure_session(&iii_init, &client_init, &lock_init).await {
+                tracing::warn!("bluesky cold-start session resolve failed: {e}");
+            }
+        });
+    }
 
     tracing::info!("channel-bluesky worker started");
     tokio::signal::ctrl_c().await?;
