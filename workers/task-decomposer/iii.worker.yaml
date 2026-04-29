@@ -1,0 +1,7 @@
+iii: v1
+name: task-decomposer
+language: rust
+deploy: binary
+manifest: Cargo.toml
+bin: agentos-task-decomposer
+description: "Recursively decompose complex tasks into subtasks with hierarchical IDs"

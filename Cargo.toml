@@ -6,6 +6,8 @@ members = [
     "workers/a2a",
     "workers/a2a-cards",
     "workers/agent-core",
+    "workers/approval",
+    "workers/approval-tiers",
     "workers/bridge",
     "workers/channel-slack",
     "workers/coordination",
@@ -28,7 +30,9 @@ members = [
     "workers/telemetry",
     "workers/vault",
     "workers/swarm",
+    "workers/task-decomposer",
     "workers/wasm-sandbox",
+    "workers/workflow",
 ]
 
 [workspace.package]
