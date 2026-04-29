@@ -98,10 +98,10 @@ pub struct DissolveRequest {
 
 pub fn sanitize_id(id: &str) -> Result<String, String> {
     if id.is_empty() || id.len() > 256 {
-        return Err(format!("Invalid ID format: {id}"));
+        return Err("Invalid ID format".to_string());
     }
     if !id.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-' | ':' | '.')) {
-        return Err(format!("Invalid ID format: {id}"));
+        return Err("Invalid ID format".to_string());
     }
     Ok(id.to_string())
 }

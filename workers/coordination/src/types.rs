@@ -25,8 +25,12 @@ pub struct Post {
     pub parent_id: Option<String>,
     #[serde(rename = "createdAt")]
     pub created_at: i64,
-    #[serde(default)]
+    #[serde(default = "default_metadata")]
     pub metadata: serde_json::Value,
+}
+
+fn default_metadata() -> serde_json::Value {
+    serde_json::json!({})
 }
 
 #[derive(Debug, Deserialize)]
@@ -79,10 +83,10 @@ pub struct PinRequest {
 
 pub fn sanitize_id(id: &str) -> Result<String, String> {
     if id.is_empty() || id.len() > 256 {
-        return Err(format!("Invalid ID format: {id}"));
+        return Err("Invalid ID format".to_string());
     }
     if !id.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-' | ':' | '.')) {
-        return Err(format!("Invalid ID format: {id}"));
+        return Err("Invalid ID format".to_string());
     }
     Ok(id.to_string())
 }

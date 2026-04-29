@@ -1,6 +1,7 @@
 use iii_sdk::error::IIIError;
 use iii_sdk::{III, InitOptions, RegisterFunction, RegisterTriggerInput, TriggerRequest, register_worker};
 use serde_json::{Value, json};
+use std::net::IpAddr;
 use std::time::Duration;
 
 mod types;
@@ -16,20 +17,22 @@ const VERSION: &str = "0.0.1";
 fn http_client() -> reqwest::Client {
     reqwest::Client::builder()
         .timeout(Duration::from_secs(60))
+        .redirect(reqwest::redirect::Policy::none())
         .build()
         .unwrap_or_else(|_| reqwest::Client::new())
 }
 
-async fn state_get(iii: &III, scope: &str, key: &str) -> Option<Value> {
-    iii.trigger(TriggerRequest {
-        function_id: "state::get".to_string(),
-        payload: json!({ "scope": scope, "key": key }),
-        action: None,
-        timeout_ms: None,
-    })
-    .await
-    .ok()
-    .filter(|v| !v.is_null())
+async fn state_get(iii: &III, scope: &str, key: &str) -> Result<Option<Value>, IIIError> {
+    let v = iii
+        .trigger(TriggerRequest {
+            function_id: "state::get".to_string(),
+            payload: json!({ "scope": scope, "key": key }),
+            action: None,
+            timeout_ms: None,
+        })
+        .await
+        .map_err(|e| IIIError::Handler(e.to_string()))?;
+    Ok(if v.is_null() { None } else { Some(v) })
 }
 
 async fn state_set(iii: &III, scope: &str, key: &str, value: Value) -> Result<(), IIIError> {
@@ -56,35 +59,81 @@ async fn state_delete(iii: &III, scope: &str, key: &str) -> Result<(), IIIError>
     .map_err(|e| IIIError::Handler(e.to_string()))
 }
 
-async fn get_task_order(iii: &III) -> Vec<String> {
-    state_get(iii, "a2a_tasks", "_order")
-        .await
+async fn get_task_order(iii: &III) -> Result<Vec<String>, IIIError> {
+    Ok(state_get(iii, "a2a_tasks", "_order")
+        .await?
         .and_then(|v| v.as_array().cloned())
         .map(|arr| {
             arr.into_iter()
                 .filter_map(|v| v.as_str().map(String::from))
                 .collect()
         })
-        .unwrap_or_default()
+        .unwrap_or_default())
 }
 
-async fn set_task_order(iii: &III, order: &[String]) -> Result<(), IIIError> {
-    state_set(iii, "a2a_tasks", "_order", json!(order)).await
+/// Atomically append a task id to the `_order` index using `state::update`.
+/// Falls back to read-modify-write if the engine rejects the operation.
+async fn append_task_to_order(iii: &III, task_id: &str) -> Result<(), IIIError> {
+    let result = iii
+        .trigger(TriggerRequest {
+            function_id: "state::update".to_string(),
+            payload: json!({
+                "scope": "a2a_tasks",
+                "key": "_order",
+                "operations": [
+                    { "type": "append", "path": "", "value": task_id },
+                ],
+            }),
+            action: None,
+            timeout_ms: None,
+        })
+        .await;
+    match result {
+        Ok(_) => Ok(()),
+        Err(_) => {
+            let mut order = get_task_order(iii).await?;
+            order.push(task_id.to_string());
+            state_set(iii, "a2a_tasks", "_order", json!(order)).await
+        }
+    }
 }
 
 async fn evict_old_tasks(iii: &III) -> Result<(), IIIError> {
-    let mut order = get_task_order(iii).await;
+    let mut order = get_task_order(iii).await?;
     while order.len() >= MAX_TASKS {
         let oldest = order.remove(0);
         state_set(iii, "a2a_tasks", &oldest, Value::Null).await?;
     }
-    set_task_order(iii, &order).await
+    state_set(iii, "a2a_tasks", "_order", json!(order)).await
 }
 
-async fn append_task_to_order(iii: &III, task_id: &str) -> Result<(), IIIError> {
-    let mut order = get_task_order(iii).await;
-    order.push(task_id.to_string());
-    set_task_order(iii, &order).await
+fn is_blocked_ip(ip: &IpAddr) -> bool {
+    match ip {
+        IpAddr::V4(v4) => {
+            let o = v4.octets();
+            v4.is_loopback()
+                || v4.is_private()
+                || v4.is_link_local()
+                || v4.is_broadcast()
+                || v4.is_unspecified()
+                || v4.is_documentation()
+                || o[0] == 0
+                || (o[0] == 100 && (64..=127).contains(&o[1]))
+                || o[0] >= 224
+        }
+        IpAddr::V6(v6) => {
+            let seg = v6.segments();
+            v6.is_loopback()
+                || v6.is_unspecified()
+                || (seg[0] & 0xffc0) == 0xfe80
+                || (seg[0] & 0xfe00) == 0xfc00
+                || seg[0] == 0xff00
+                || (seg[0] == 0x2001 && seg[1] == 0xdb8)
+                || v6.to_ipv4_mapped()
+                    .map(|v4| is_blocked_ip(&IpAddr::V4(v4)))
+                    .unwrap_or(false)
+        }
+    }
 }
 
 fn ssrf_check(url: &str) -> Result<(), IIIError> {
@@ -95,11 +144,24 @@ fn ssrf_check(url: &str) -> Result<(), IIIError> {
             parsed.scheme()
         )));
     }
-    if let Some(host) = parsed.host_str() {
-        let lower = host.to_lowercase();
-        if lower == "metadata.google.internal" || lower == "169.254.169.254" {
-            return Err(IIIError::Handler("blocked metadata host".into()));
-        }
+    let host = parsed
+        .host_str()
+        .ok_or_else(|| IIIError::Handler("blocked: missing host".into()))?;
+    let lower = host.to_lowercase();
+
+    if lower == "localhost"
+        || lower.ends_with(".localhost")
+        || lower.ends_with(".local")
+        || lower == "metadata.google.internal"
+        || lower == "metadata"
+    {
+        return Err(IIIError::Handler("blocked host".into()));
+    }
+
+    if let Ok(ip) = host.parse::<IpAddr>()
+        && is_blocked_ip(&ip)
+    {
+        return Err(IIIError::Handler("blocked private IP".into()));
     }
     Ok(())
 }
@@ -120,6 +182,7 @@ async fn rpc_call(
     });
     let client = reqwest::Client::builder()
         .timeout(Duration::from_millis(timeout_ms))
+        .redirect(reqwest::redirect::Policy::none())
         .build()
         .map_err(|e| IIIError::Handler(e.to_string()))?;
     let resp = client
@@ -176,8 +239,9 @@ async fn agent_card(iii: &III, input: Value) -> Result<Value, IIIError> {
                 timeout_ms: None,
             })
             .await
-            .ok()
-            .and_then(|v| v.as_array().cloned())
+            .map_err(|e| IIIError::Handler(e.to_string()))?
+            .as_array()
+            .cloned()
             .unwrap_or_default();
         listed
             .into_iter()
@@ -341,6 +405,12 @@ async fn get_task(iii: &III, input: Value) -> Result<Value, IIIError> {
     let agent_url = input
         .get("agentUrl")
         .and_then(|v| v.as_str())
+        .or_else(|| {
+            input
+                .get("query")
+                .and_then(|q| q.get("agentUrl"))
+                .and_then(|v| v.as_str())
+        })
         .map(String::from);
 
     if let Some(url) = agent_url {
@@ -348,7 +418,7 @@ async fn get_task(iii: &III, input: Value) -> Result<Value, IIIError> {
     }
 
     state_get(iii, "a2a_tasks", &task_id)
-        .await
+        .await?
         .ok_or_else(|| IIIError::Handler(format!("Task not found: {task_id}")))
 }
 
@@ -369,7 +439,7 @@ async fn cancel_task(iii: &III, input: Value) -> Result<Value, IIIError> {
     }
 
     let task_val = state_get(iii, "a2a_tasks", &task_id)
-        .await
+        .await?
         .ok_or_else(|| IIIError::Handler(format!("Task not found: {task_id}")))?;
     let mut task: A2aTask =
         serde_json::from_value(task_val).map_err(|e| IIIError::Handler(e.to_string()))?;
@@ -521,7 +591,7 @@ async fn handle_task(iii: &III, input: Value) -> Result<Value, IIIError> {
         }
         "tasks/get" => {
             let task_id = params.get("id").and_then(|v| v.as_str()).unwrap_or("").to_string();
-            match state_get(iii, "a2a_tasks", &task_id).await {
+            match state_get(iii, "a2a_tasks", &task_id).await? {
                 Some(task) => Ok::<Value, IIIError>(json!({
                     "jsonrpc": "2.0",
                     "id": rpc_id,
@@ -536,10 +606,23 @@ async fn handle_task(iii: &III, input: Value) -> Result<Value, IIIError> {
         }
         "tasks/cancel" => {
             let task_id = params.get("id").and_then(|v| v.as_str()).unwrap_or("").to_string();
-            match state_get(iii, "a2a_tasks", &task_id).await {
+            match state_get(iii, "a2a_tasks", &task_id).await? {
                 Some(task_val) => {
                     let mut task: A2aTask = serde_json::from_value(task_val)
                         .map_err(|e| IIIError::Handler(e.to_string()))?;
+                    if matches!(task.status.state, TaskState::Completed | TaskState::Failed) {
+                        return Ok::<Value, IIIError>(json!({
+                            "jsonrpc": "2.0",
+                            "id": rpc_id,
+                            "error": {
+                                "code": -32002,
+                                "message": format!(
+                                    "Cannot cancel task in state: {:?}",
+                                    task.status.state
+                                ),
+                            },
+                        }));
+                    }
                     task.status = TaskStatus {
                         state: TaskState::Cancelled,
                         message: None,
@@ -582,6 +665,7 @@ async fn discover(iii: &III, input: Value) -> Result<Value, IIIError> {
 
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(15))
+        .redirect(reqwest::redirect::Policy::none())
         .build()
         .map_err(|e| IIIError::Handler(e.to_string()))?;
     let resp = client
@@ -630,7 +714,9 @@ async fn discover(iii: &III, input: Value) -> Result<Value, IIIError> {
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing_subscriber::fmt::init();
 
-    let ws_url = std::env::var("III_WS_URL").unwrap_or_else(|_| "ws://localhost:49134".to_string());
+    let ws_url = std::env::var("III_ENGINE_URL")
+        .or_else(|_| std::env::var("III_WS_URL"))
+        .unwrap_or_else(|_| "ws://localhost:49134".to_string());
     let iii = register_worker(&ws_url, InitOptions::default());
 
     let iii_clone = iii.clone();

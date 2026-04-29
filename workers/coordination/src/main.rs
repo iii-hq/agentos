@@ -31,16 +31,17 @@ fn fire_and_forget(iii: &III, function_id: &str, payload: Value) {
     });
 }
 
-async fn state_get(iii: &III, scope: &str, key: &str) -> Option<Value> {
-    iii.trigger(TriggerRequest {
-        function_id: "state::get".to_string(),
-        payload: json!({ "scope": scope, "key": key }),
-        action: None,
-        timeout_ms: None,
-    })
-    .await
-    .ok()
-    .filter(|v| !v.is_null())
+async fn state_get(iii: &III, scope: &str, key: &str) -> Result<Option<Value>, IIIError> {
+    let v = iii
+        .trigger(TriggerRequest {
+            function_id: "state::get".to_string(),
+            payload: json!({ "scope": scope, "key": key }),
+            action: None,
+            timeout_ms: None,
+        })
+        .await
+        .map_err(|e| IIIError::Handler(e.to_string()))?;
+    Ok(if v.is_null() { None } else { Some(v) })
 }
 
 async fn state_set(iii: &III, scope: &str, key: &str, value: Value) -> Result<(), IIIError> {
@@ -55,21 +56,47 @@ async fn state_set(iii: &III, scope: &str, key: &str, value: Value) -> Result<()
     .map_err(|e| IIIError::Handler(e.to_string()))
 }
 
-async fn state_list(iii: &III, scope: &str) -> Vec<Value> {
-    iii.trigger(TriggerRequest {
-        function_id: "state::list".to_string(),
-        payload: json!({ "scope": scope }),
-        action: None,
-        timeout_ms: None,
-    })
-    .await
-    .ok()
-    .and_then(|v| v.as_array().cloned())
-    .unwrap_or_default()
+async fn state_list(iii: &III, scope: &str) -> Result<Vec<Value>, IIIError> {
+    let v = iii
+        .trigger(TriggerRequest {
+            function_id: "state::list".to_string(),
+            payload: json!({ "scope": scope }),
+            action: None,
+            timeout_ms: None,
+        })
+        .await
+        .map_err(|e| IIIError::Handler(e.to_string()))?;
+    Ok(v.as_array().cloned().unwrap_or_default())
 }
 
 fn entry_value(entry: &Value) -> Value {
     entry.get("value").cloned().unwrap_or_else(|| entry.clone())
+}
+
+/// Shared per-channel quota check used by both `post` and `reply`.
+///
+/// TODO: this is a non-atomic check-then-write; concurrent callers can race
+/// past the limit. The engine does not yet expose a counter primitive that
+/// would let us increment-and-check atomically across `state::list`-backed
+/// scopes, so we accept eventual-consistency soft enforcement here.
+async fn ensure_within_post_limit(iii: &III, posts_scope: &str) -> Result<(), IIIError> {
+    let existing = state_list(iii, posts_scope).await?;
+    if existing.len() >= MAX_POSTS_PER_CHANNEL {
+        return Err(IIIError::Handler(
+            "Channel has reached the post limit".into(),
+        ));
+    }
+    Ok(())
+}
+
+fn merge_path_into_request(mut body: Value, input: &Value) -> Value {
+    if let (Some(path), Some(obj)) = (input.get("path"), body.as_object_mut())
+        && let Some(channel_id) = path.get("channelId").and_then(|v| v.as_str())
+    {
+        obj.entry("channelId".to_string())
+            .or_insert_with(|| Value::String(channel_id.to_string()));
+    }
+    body
 }
 
 async fn create_channel(iii: &III, req: CreateChannelRequest) -> Result<Value, IIIError> {
@@ -129,17 +156,12 @@ async fn post(iii: &III, req: PostRequest) -> Result<Value, IIIError> {
 
     let safe_channel_id = sanitize_id(&channel_id).map_err(IIIError::Handler)?;
 
-    if state_get(iii, "coord_channels", &safe_channel_id).await.is_none() {
+    if state_get(iii, "coord_channels", &safe_channel_id).await?.is_none() {
         return Err(IIIError::Handler("Channel not found".into()));
     }
 
     let posts_scope = format!("coord_posts:{safe_channel_id}");
-    let existing = state_list(iii, &posts_scope).await;
-    if existing.len() >= MAX_POSTS_PER_CHANNEL {
-        return Err(IIIError::Handler(
-            "Channel has reached the post limit".into(),
-        ));
-    }
+    ensure_within_post_limit(iii, &posts_scope).await?;
 
     let post_id = uuid::Uuid::new_v4().to_string();
     let safe_agent = sanitize_id(&agent_id).map_err(IIIError::Handler)?;
@@ -190,7 +212,9 @@ async fn reply(iii: &III, req: ReplyRequest) -> Result<Value, IIIError> {
     let safe_agent = sanitize_id(&agent_id).map_err(IIIError::Handler)?;
 
     let posts_scope = format!("coord_posts:{safe_channel_id}");
-    if state_get(iii, &posts_scope, &safe_parent_id).await.is_none() {
+    ensure_within_post_limit(iii, &posts_scope).await?;
+
+    if state_get(iii, &posts_scope, &safe_parent_id).await?.is_none() {
         return Err(IIIError::Handler("Parent post not found".into()));
     }
 
@@ -230,7 +254,7 @@ async fn reply(iii: &III, req: ReplyRequest) -> Result<Value, IIIError> {
 }
 
 async fn list_channels(iii: &III) -> Result<Value, IIIError> {
-    let raw = state_list(iii, "coord_channels").await;
+    let raw = state_list(iii, "coord_channels").await?;
     let mut channels: Vec<Value> = raw.iter().map(entry_value).collect();
     channels.sort_by(|a, b| {
         let ta = a.get("createdAt").and_then(|v| v.as_i64()).unwrap_or(0);
@@ -248,7 +272,7 @@ async fn read(iii: &III, req: ReadRequest) -> Result<Value, IIIError> {
     let safe_channel_id = sanitize_id(&channel_id).map_err(IIIError::Handler)?;
 
     let posts_scope = format!("coord_posts:{safe_channel_id}");
-    let raw = state_list(iii, &posts_scope).await;
+    let raw = state_list(iii, &posts_scope).await?;
 
     let mut posts: Vec<Value> = raw.iter().map(entry_value).collect();
     posts.sort_by(|a, b| {
@@ -289,13 +313,13 @@ async fn pin(iii: &III, req: PinRequest) -> Result<Value, IIIError> {
     let safe_post_id = sanitize_id(&post_id).map_err(IIIError::Handler)?;
 
     let channel_val = state_get(iii, "coord_channels", &safe_channel_id)
-        .await
+        .await?
         .ok_or_else(|| IIIError::Handler("Channel not found".into()))?;
     let mut channel: Channel =
         serde_json::from_value(channel_val).map_err(|e| IIIError::Handler(e.to_string()))?;
 
     let posts_scope = format!("coord_posts:{safe_channel_id}");
-    if state_get(iii, &posts_scope, &safe_post_id).await.is_none() {
+    if state_get(iii, &posts_scope, &safe_post_id).await?.is_none() {
         return Err(IIIError::Handler("Post not found".into()));
     }
 
@@ -329,7 +353,9 @@ async fn pin(iii: &III, req: PinRequest) -> Result<Value, IIIError> {
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing_subscriber::fmt::init();
 
-    let ws_url = std::env::var("III_WS_URL").unwrap_or_else(|_| "ws://localhost:49134".to_string());
+    let ws_url = std::env::var("III_ENGINE_URL")
+        .or_else(|_| std::env::var("III_WS_URL"))
+        .unwrap_or_else(|_| "ws://localhost:49134".to_string());
     let iii = register_worker(&ws_url, InitOptions::default());
 
     let iii_clone = iii.clone();
@@ -337,7 +363,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         RegisterFunction::new_async("coord::create_channel", move |input: Value| {
             let iii = iii_clone.clone();
             async move {
-                let body = input.get("body").cloned().unwrap_or(input);
+                let body = input.get("body").cloned().unwrap_or_else(|| input.clone());
                 let req: CreateChannelRequest =
                     serde_json::from_value(body).map_err(|e| IIIError::Handler(e.to_string()))?;
                 create_channel(&iii, req).await
@@ -351,7 +377,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         RegisterFunction::new_async("coord::post", move |input: Value| {
             let iii = iii_clone.clone();
             async move {
-                let body = input.get("body").cloned().unwrap_or(input);
+                let body = input.get("body").cloned().unwrap_or_else(|| input.clone());
+                let body = merge_path_into_request(body, &input);
                 let req: PostRequest =
                     serde_json::from_value(body).map_err(|e| IIIError::Handler(e.to_string()))?;
                 post(&iii, req).await
@@ -365,7 +392,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         RegisterFunction::new_async("coord::reply", move |input: Value| {
             let iii = iii_clone.clone();
             async move {
-                let body = input.get("body").cloned().unwrap_or(input);
+                let body = input.get("body").cloned().unwrap_or_else(|| input.clone());
+                let body = merge_path_into_request(body, &input);
                 let req: ReplyRequest =
                     serde_json::from_value(body).map_err(|e| IIIError::Handler(e.to_string()))?;
                 reply(&iii, req).await
@@ -392,7 +420,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     .get("body")
                     .cloned()
                     .or_else(|| input.get("query").cloned())
-                    .unwrap_or(input);
+                    .unwrap_or_else(|| input.clone());
+                let body = merge_path_into_request(body, &input);
                 let req: ReadRequest =
                     serde_json::from_value(body).map_err(|e| IIIError::Handler(e.to_string()))?;
                 read(&iii, req).await
@@ -406,7 +435,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         RegisterFunction::new_async("coord::pin", move |input: Value| {
             let iii = iii_clone.clone();
             async move {
-                let body = input.get("body").cloned().unwrap_or(input);
+                let body = input.get("body").cloned().unwrap_or_else(|| input.clone());
+                let body = merge_path_into_request(body, &input);
                 let req: PinRequest =
                     serde_json::from_value(body).map_err(|e| IIIError::Handler(e.to_string()))?;
                 pin(&iii, req).await
