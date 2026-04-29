@@ -5,39 +5,39 @@ import SectionHeader from "./shared/SectionHeader";
 const reasons = [
   {
     icon: Cpu,
-    title: "Rust Core, Not a Wrapper",
+    title: "Rust binaries, not wrappers",
     description:
-      "10 Rust crates handle security, memory, LLM routing, and WASM sandboxing. Not a Python script calling APIs. Real systems programming where it matters.",
+      "65 Rust workers handle reasoning, state, sandboxing, and channel I/O. Each is a single binary. The engine starts them, the SDK speaks to them, that's it.",
   },
   {
     icon: Layers,
-    title: "Three Primitives, Zero Boilerplate",
+    title: "Three primitives",
     description:
-      "Worker, Function, Trigger. That's the entire model. No DAGs, no chains, no prompt templates. Every agent composes from the same three building blocks.",
+      "Worker, Function, Trigger. That is the entire model. No DAGs, no chains, no prompt templates. Every agent composes from the same three building blocks.",
   },
   {
     icon: Shield,
-    title: "18 Security Layers, Fail-Closed",
+    title: "Security as workers",
     description:
-      "RBAC, Merkle audit trails, WASM sandboxing, encrypted vault, timing-safe HMAC. Every operation denied by default. Not bolted on after the fact.",
+      "Approval, vault, RBAC realm, WASM sandbox, hashline ledger, security-headers, security-zeroize, skill-security. Each is its own worker, swappable, deny-by-default.",
   },
   {
     icon: Network,
-    title: "40 Channels, Not Just Chat",
+    title: "Channels are workers too",
     description:
-      "Slack, Discord, GitHub, Linear, email, SMS, webhooks, and 32 more. Agents that work where your team works, not trapped in a chat window.",
+      "Slack, Discord, Email, Telegram, Matrix, Reddit, Webex, and seven more. Same Worker shape. Add one by dropping a binary into config.yaml.",
   },
   {
     icon: Plug,
-    title: "25 LLM Providers, No Lock-In",
+    title: "Provider-agnostic LLM router",
     description:
-      "Swap between Anthropic, OpenAI, Google, Mistral, Ollama, or any of 20 others. One config change. Same agent code.",
+      "One worker (`llm-router`) routes by cost, latency, or capability. Same agent code regardless of which provider answers.",
   },
   {
     icon: Gauge,
-    title: "Built on iii-engine",
+    title: "Engine handles the rest",
     description:
-      "18% overhead vs raw function calls. BullMQ has 973%. Real benchmarks, not marketing. Workers that run at infrastructure speed.",
+      "iii-engine routes Functions, dispatches Triggers, persists state, ships traces. Workers stay narrow because the engine carries the plumbing.",
   },
 ];
 
@@ -47,8 +47,8 @@ export default function Why() {
       <div className="max-w-6xl mx-auto px-6">
         <SectionHeader
           badge="WHY AGENTOS"
-          title="Not Another Agent Framework"
-          subtitle="An operating system for agents. Security, routing, memory, and channels built into the kernel."
+          title="An OS, Not a Framework"
+          subtitle="Routing, memory, sandboxing, and channels live in the kernel as workers — not in your agent code."
         />
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">

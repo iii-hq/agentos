@@ -9,3 +9,9 @@ data/
 .env
 .env.*
 !.env.example
+.claude/
+CLAUDE.md
+package-lock.json
+pnpm-lock.yaml
+yarn.lock
+

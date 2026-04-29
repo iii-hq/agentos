@@ -8,17 +8,8 @@
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
     "resolveJsonModule": true,
-    "declaration": true,
-    "declarationMap": true,
-    "sourceMap": true,
-    "outDir": "dist",
-    "lib": ["ES2022"],
-    "baseUrl": ".",
-    "paths": {
-      "@agentos/shared": ["packages/shared/src/index.ts"],
-      "@agentos/shared/*": ["packages/shared/src/*.ts"]
-    }
+    "lib": ["ES2022"]
   },
-  "include": ["src/**/*.ts", "packages/*/src/**/*.ts", "e2e/**/*.ts"],
-  "exclude": ["node_modules", "dist", "target"]
+  "include": ["e2e/**/*.ts"],
+  "exclude": ["node_modules", "target"]
 }

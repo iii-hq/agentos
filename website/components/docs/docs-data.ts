@@ -197,66 +197,45 @@ Trigger (HTTP POST /api/support)
   -> trigger("channel::slack_reply", ...)
 \`\`\`
 
-The pipeline overhead for this chain is just 18% vs direct function calls.`,
+Each step is a Function call routed by the engine. The handler stays in the worker; the engine handles dispatch, retry, and tracing.`,
   },
   {
     slug: "architecture",
     title: "Architecture",
-    desc: "10 Rust crates, 46 TypeScript workers, and how they connect",
+    desc: "65 narrow workers grouped by responsibility",
     category: "Core Concepts",
     content: `# Architecture
 
-AgentOS is a multi-language system with a Rust core, TypeScript application layer, and Python for specialized tasks.
+AgentOS is a set of narrow Rust workers (plus one Python worker for embeddings) that connect to a single iii-engine instance and register Functions and Triggers.
 
-## Rust Crates (10)
+## Worker groups
 
-| Crate | Purpose |
+| Group | Workers |
 |-------|---------|
-| \`agents-cli\` | 50+ CLI commands |
-| \`agents-tui\` | Terminal UI with 22 screens |
-| \`agents-security\` | RBAC, MAP auth, Merkle audit |
-| \`agents-vault\` | Encrypted credential storage |
-| \`agents-memory\` | Knowledge graph + vector store |
-| \`agents-llm-router\` | 25 providers, cost-aware routing |
-| \`agents-wasm\` | WASM sandbox for tool isolation |
-| \`agents-channels\` | 40 adapter implementations |
-| \`agents-core\` | Shared types and utilities |
-| \`agents-desktop\` | Tauri 2.0 native app |
+| Reasoning | agent-core, llm-router, council, swarm, directive, mission |
+| State | realm, memory, ledger, vault, context-manager, context-cache |
+| Coordination | orchestrator, workflow, hierarchy, coordination, task-decomposer |
+| Execution | wasm-sandbox, browser, code-agent, hand-runner, lsp-tools |
+| Safety | security, security-headers, security-map, security-zeroize, skill-security, approval, approval-tiers, rate-limiter, loop-guard |
+| Surfaces | a2a, a2a-cards, mcp-client, skillkit-bridge, bridge, streaming |
+| Channels | channel-bluesky, channel-discord, channel-email, channel-linkedin, channel-mastodon, channel-matrix, channel-reddit, channel-signal, channel-slack, channel-teams, channel-telegram, channel-twitch, channel-webex, channel-whatsapp |
+| Telemetry | telemetry, pulse, session-lifecycle, session-replay, feedback, eval, evolve, hashline, hooks, cron |
+| Embeddings | embedding (Python) |
 
-## TypeScript Workers (46)
-
-The application logic runs as iii-engine workers:
-
-- **Agent workers** (30): Pre-built agent templates for code review, research, ops, etc.
-- **Tool workers** (6): Browser, filesystem, shell, HTTP, MCP, A2A
-- **Evolution workers** (3): evolve, eval, feedback (self-evolving function loop)
-- **Infrastructure workers** (2): artifact-dag (DAG content exchange), coordination (inter-agent board)
-- **System workers** (4): Orchestrator, session manager, cost tracker, cron
-
-## Python Worker (1)
-
-- **Embeddings worker**: Handles vector embedding generation for the knowledge graph using sentence-transformers
-
-## Data Flow
+## Data flow
 
 \`\`\`
-Request
-  -> Rust (channel adapter receives message)
-  -> Rust (security: auth, rate limit, RBAC check)
-  -> TypeScript (worker processes request)
-  -> Rust (llm-router selects provider, tracks cost)
-  -> TypeScript (tool execution in WASM sandbox)
-  -> Rust (memory: store in knowledge graph)
-  -> Rust (channel adapter sends response)
+Trigger fires (HTTP route, cron, or pub/sub event)
+  -> engine routes to the registered Function
+  -> Function handler (in a worker) runs
+  -> handler can call other Functions via iii.trigger
+  -> handler returns Value or IIIError
+  -> engine ships traces, persists state, updates ledger
 \`\`\`
 
-## iii-engine Foundation
+## iii-engine
 
-Everything runs on iii-engine's Worker/Function/Trigger primitives:
-- **18% pipeline overhead** vs direct function calls
-- **48ms cold start** (Rust binary)
-- **12 MB idle memory** footprint
-- Built-in retry, state management, and observability`,
+Workers connect to the engine over WebSocket on port 49134 and register Functions via the iii-sdk. Triggers are declared per Function (HTTP, cron, or subscribe). The engine handles routing, retries, state, and telemetry; workers stay narrow.`,
   },
   {
     slug: "configuration",
@@ -344,11 +323,11 @@ Profiles control which tools an agent can access:
   {
     slug: "security",
     title: "Security Model",
-    desc: "18 security layers, RBAC, vault, WASM sandbox, audit trails",
+    desc: "RBAC, vault, WASM sandbox, hashline ledger, deny-by-default",
     category: "Core Concepts",
     content: `# Security Model
 
-AgentOS ships with 18 discrete security layers. Security is fail-closed by default, not opt-in.
+Safety is split across narrow workers (\`security\`, \`security-headers\`, \`security-map\`, \`security-zeroize\`, \`skill-security\`, \`approval\`, \`approval-tiers\`, \`rate-limiter\`, \`loop-guard\`, \`vault\`, \`hashline\`). Each is a single binary; each is deny-by-default.
 
 ## Core Principles
 

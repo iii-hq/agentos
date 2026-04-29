@@ -5,12 +5,12 @@ import FadeIn from "./shared/FadeIn";
 import { stats } from "../data/stats";
 
 const TERMINAL_LINES = [
-  { text: "$ curl -fsSL .../install.sh | sh", type: "command" },
-  { text: "  > iii-engine already installed (v0.7.0)", type: "success" },
-  { text: "  > agentos v0.1.0 installed to ~/.local/bin", type: "success" },
-  { text: "$ agentos start", type: "command" },
-  { text: "  18 Rust crates + 46 TS workers started", type: "info" },
-  { text: '$ agentos chat default "review PR #42"', type: "command" },
+  { text: "$ curl -fsSL https://install.iii.dev/iii/main/install.sh | sh", type: "command" },
+  { text: "  > iii v0.11.4 installed", type: "success" },
+  { text: "$ iii --config config.yaml", type: "command" },
+  { text: "  > engine listening ws://127.0.0.1:49134", type: "success" },
+  { text: "  > 65 workers connected, 257 functions registered", type: "info" },
+  { text: '$ iii trigger agent::chat \'{"message":"review PR #42"}\'', type: "command" },
   { text: "  Review complete. 3 issues found.", type: "success" },
 ];
 
@@ -112,8 +112,8 @@ export default function Hero() {
 
             <FadeIn delay={100}>
               <p className="text-muted text-base md:text-lg mb-10 max-w-lg leading-relaxed font-mono">
-                Built on iii-engine. Rust core. TypeScript workers. Python
-                embeddings.
+                Narrow workers on iii primitives. Rust binaries. One domain
+                each. Plug and play.
               </p>
             </FadeIn>
 
@@ -124,7 +124,6 @@ export default function Hero() {
                     <div className="text-2xl md:text-3xl font-mono font-bold text-primary">
                       <AnimatedCounter
                         end={stat.value}
-                        suffix={stat.suffix || ""}
                         duration={1800 + i * 100}
                       />
                     </div>

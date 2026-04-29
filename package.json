@@ -3,29 +3,15 @@
   "version": "0.0.1",
   "description": "Agent Operating System built on iii primitives",
   "type": "module",
-  "workspaces": [
-    "packages/*"
-  ],
   "scripts": {
-    "dev": "iii --config config.yaml & sleep 2 && tsx watch src/",
-    "start": "iii --config config.yaml & tsx src/",
-    "test": "vitest --run",
-    "test:watch": "vitest",
-    "test:coverage": "vitest --run --coverage",
     "test:e2e": "AGENTOS_E2E=1 vitest --run --config vitest.e2e.config.ts",
     "test:e2e:smoke": "AGENTOS_E2E=1 vitest --run --config vitest.e2e.config.ts --testNamePattern=\"health|chat_completions\""
   },
   "dependencies": {
-    "@agentos/shared": "workspace:*",
-    "@anthropic-ai/sdk": "^0.39.0",
-    "iii-sdk": "^0.11.3",
-    "nodemailer": "^8.0.1"
+    "iii-sdk": "0.11.4-next.4"
   },
   "devDependencies": {
     "@types/node": "^25.3.2",
-    "@types/nodemailer": "^7.0.11",
-    "@vitest/coverage-v8": "^3.2.4",
-    "tsx": "^4.7.0",
     "typescript": "^5.4.0",
     "vitest": "^3.2.4"
   }
