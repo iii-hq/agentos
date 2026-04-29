@@ -1,0 +1,7 @@
+iii: v1
+name: channel-signal
+language: rust
+deploy: binary
+manifest: Cargo.toml
+bin: agentos-channel-signal
+description: "Signal channel adapter — REST bridge to signal-cli-rest-api"

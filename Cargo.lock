@@ -142,6 +142,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "agentos-channel-signal"
+version = "0.0.1"
+dependencies = [
+ "anyhow",
+ "iii-sdk",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "agentos-channel-slack"
 version = "0.0.1"
 dependencies = [
