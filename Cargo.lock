@@ -156,6 +156,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "agentos-channel-whatsapp"
+version = "0.0.1"
+dependencies = [
+ "anyhow",
+ "iii-sdk",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "agentos-cli"
 version = "0.0.1"
 dependencies = [

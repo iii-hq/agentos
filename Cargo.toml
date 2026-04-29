@@ -11,6 +11,7 @@ members = [
     "workers/bridge",
     "workers/channel-email",
     "workers/channel-slack",
+    "workers/channel-whatsapp",
     "workers/coordination",
     "workers/council",
     "workers/cron",

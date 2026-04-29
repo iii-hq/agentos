@@ -1,0 +1,7 @@
+iii: v1
+name: channel-whatsapp
+language: rust
+deploy: binary
+manifest: Cargo.toml
+bin: agentos-channel-whatsapp
+description: "WhatsApp Business API channel adapter — inbound webhook + outbound Graph API"
