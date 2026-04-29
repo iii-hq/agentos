@@ -1,0 +1,7 @@
+iii: v1
+name: browser
+language: rust
+deploy: binary
+manifest: Cargo.toml
+bin: agentos-browser
+description: Headless browser sessions — navigate, click, type, screenshot, read via Python+playwright bridge

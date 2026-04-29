@@ -1,0 +1,7 @@
+iii: v1
+name: code-agent
+language: rust
+deploy: binary
+manifest: Cargo.toml
+bin: agentos-code-agent
+description: Detect and execute agent-written code — regex detect + sandboxed JS execution via QuickJS

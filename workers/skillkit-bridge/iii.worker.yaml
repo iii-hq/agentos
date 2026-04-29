@@ -1,0 +1,7 @@
+iii: v1
+name: skillkit-bridge
+language: rust
+deploy: binary
+manifest: Cargo.toml
+bin: agentos-skillkit-bridge
+description: SkillKit CLI bridge — search, install, list, recommend, scan

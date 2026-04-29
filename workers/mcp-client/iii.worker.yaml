@@ -1,0 +1,7 @@
+iii: v1
+name: mcp-client
+language: rust
+deploy: binary
+manifest: Cargo.toml
+bin: agentos-mcp-client
+description: MCP client + server bridge — connect/disconnect MCP servers via stdio, list/call tools, and serve agentos functions as MCP tools
