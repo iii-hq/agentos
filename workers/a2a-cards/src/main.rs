@@ -10,16 +10,17 @@ fn api_url() -> String {
     std::env::var("AGENTOS_API_URL").unwrap_or_else(|_| "http://localhost:3111".to_string())
 }
 
-async fn state_get(iii: &III, scope: &str, key: &str) -> Option<Value> {
-    iii.trigger(TriggerRequest {
-        function_id: "state::get".to_string(),
-        payload: json!({ "scope": scope, "key": key }),
-        action: None,
-        timeout_ms: None,
-    })
-    .await
-    .ok()
-    .filter(|v| !v.is_null())
+async fn state_get(iii: &III, scope: &str, key: &str) -> Result<Option<Value>, IIIError> {
+    let v = iii
+        .trigger(TriggerRequest {
+            function_id: "state::get".to_string(),
+            payload: json!({ "scope": scope, "key": key }),
+            action: None,
+            timeout_ms: None,
+        })
+        .await
+        .map_err(|e| IIIError::Handler(e.to_string()))?;
+    Ok(if v.is_null() { None } else { Some(v) })
 }
 
 async fn state_set(iii: &III, scope: &str, key: &str, value: Value) -> Result<(), IIIError> {
@@ -34,20 +35,20 @@ async fn state_set(iii: &III, scope: &str, key: &str, value: Value) -> Result<()
     .map_err(|e| IIIError::Handler(e.to_string()))
 }
 
-async fn state_list(iii: &III, scope: &str) -> Vec<Value> {
-    iii.trigger(TriggerRequest {
-        function_id: "state::list".to_string(),
-        payload: json!({ "scope": scope }),
-        action: None,
-        timeout_ms: None,
-    })
-    .await
-    .ok()
-    .and_then(|v| v.as_array().cloned())
-    .unwrap_or_default()
+async fn state_list(iii: &III, scope: &str) -> Result<Vec<Value>, IIIError> {
+    let v = iii
+        .trigger(TriggerRequest {
+            function_id: "state::list".to_string(),
+            payload: json!({ "scope": scope }),
+            action: None,
+            timeout_ms: None,
+        })
+        .await
+        .map_err(|e| IIIError::Handler(e.to_string()))?;
+    Ok(v.as_array().cloned().unwrap_or_default())
 }
 
-async fn list_agent_tools(iii: &III, agent_id: &str) -> Vec<String> {
+async fn list_agent_tools(iii: &III, agent_id: &str) -> Result<Vec<String>, IIIError> {
     let res = iii
         .trigger(TriggerRequest {
             function_id: "agent::list_tools".to_string(),
@@ -55,10 +56,12 @@ async fn list_agent_tools(iii: &III, agent_id: &str) -> Vec<String> {
             action: None,
             timeout_ms: None,
         })
-        .await;
+        .await
+        .map_err(|e| IIIError::Handler(e.to_string()))?;
 
-    res.ok()
-        .and_then(|v| v.as_array().cloned())
+    Ok(res
+        .as_array()
+        .cloned()
         .map(|arr| {
             arr.iter()
                 .filter_map(|t| {
@@ -69,12 +72,12 @@ async fn list_agent_tools(iii: &III, agent_id: &str) -> Vec<String> {
                 })
                 .collect::<Vec<_>>()
         })
-        .unwrap_or_default()
+        .unwrap_or_default())
 }
 
-async fn list_skill_entries(iii: &III) -> Vec<AgentSkillRef> {
-    let skills = state_list(iii, "skills").await;
-    skills
+async fn list_skill_entries(iii: &III) -> Result<Vec<AgentSkillRef>, IIIError> {
+    let skills = state_list(iii, "skills").await?;
+    Ok(skills
         .into_iter()
         .filter_map(|entry| {
             let s = entry.get("value").cloned().unwrap_or(entry);
@@ -95,16 +98,16 @@ async fn list_skill_entries(iii: &III) -> Vec<AgentSkillRef> {
             Some(AgentSkillRef { id, name, description })
         })
         .take(20)
-        .collect()
+        .collect())
 }
 
 async fn generate_card(iii: &III, req: GenerateCardRequest) -> Result<Value, IIIError> {
     let config = state_get(iii, "agents", &req.agent_id)
-        .await
+        .await?
         .ok_or_else(|| IIIError::Handler(format!("Agent not found: {}", req.agent_id)))?;
 
-    let tool_ids = list_agent_tools(iii, &req.agent_id).await;
-    let skills = list_skill_entries(iii).await;
+    let tool_ids = list_agent_tools(iii, &req.agent_id).await?;
+    let skills = list_skill_entries(iii).await?;
 
     let name = config
         .get("name")
@@ -141,7 +144,7 @@ async fn generate_card(iii: &III, req: GenerateCardRequest) -> Result<Value, III
 }
 
 async fn list_cards(iii: &III) -> Result<Value, IIIError> {
-    let agents = state_list(iii, "agents").await;
+    let agents = state_list(iii, "agents").await?;
     let mut cards: Vec<Value> = Vec::new();
 
     for entry in agents {
@@ -159,7 +162,7 @@ async fn list_cards(iii: &III) -> Result<Value, IIIError> {
 }
 
 async fn well_known(iii: &III) -> Result<Value, IIIError> {
-    if let Some(cached) = state_get(iii, "a2a_cards", "orchestrator").await {
+    if let Some(cached) = state_get(iii, "a2a_cards", "orchestrator").await? {
         return Ok::<Value, IIIError>(cached);
     }
 
@@ -180,14 +183,18 @@ async fn well_known(iii: &III) -> Result<Value, IIIError> {
         default_output_modes: vec!["text".into()],
     };
 
-    Ok::<Value, IIIError>(serde_json::to_value(&card).unwrap())
+    let value = serde_json::to_value(&card).map_err(|e| IIIError::Handler(e.to_string()))?;
+    state_set(iii, "a2a_cards", "orchestrator", value.clone()).await?;
+    Ok::<Value, IIIError>(value)
 }
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing_subscriber::fmt::init();
 
-    let ws_url = std::env::var("III_WS_URL").unwrap_or_else(|_| "ws://localhost:49134".to_string());
+    let ws_url = std::env::var("III_ENGINE_URL")
+        .or_else(|_| std::env::var("III_WS_URL"))
+        .unwrap_or_else(|_| "ws://localhost:49134".to_string());
     let iii = register_worker(&ws_url, InitOptions::default());
 
     let iii_clone = iii.clone();

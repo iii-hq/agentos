@@ -90,6 +90,12 @@ async fn create_swarm(iii: &III, req: CreateSwarmRequest) -> Result<Value, IIIEr
         )));
     }
 
+    let agent_ids: Vec<String> = agent_ids
+        .into_iter()
+        .map(|id| sanitize_id(&id))
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(IIIError::Handler)?;
+
     let swarm_id = uuid::Uuid::new_v4().to_string();
     let swarm = SwarmConfig {
         id: swarm_id.clone(),
@@ -250,19 +256,17 @@ async fn consensus(iii: &III, req: ConsensusRequest) -> Result<Value, IIIError> 
     let scope = format!("swarm_messages:{safe_swarm_id}");
     let raw = state_list(iii, &scope).await;
 
-    let needle = &req.proposal[..req.proposal.len().min(50)];
-
     let votes: Vec<SwarmMessage> = raw
         .iter()
         .filter_map(|v| serde_json::from_value::<SwarmMessage>(message_value(v)).ok())
-        .filter(|m| m.kind == MessageType::Vote && m.message.contains(needle))
+        .filter(|m| m.kind == MessageType::Vote && m.message == req.proposal)
         .collect();
 
     let mut latest: std::collections::HashMap<String, SwarmMessage> =
         std::collections::HashMap::new();
     for v in votes {
         let entry = latest.get(&v.agent_id);
-        if entry.map_or(true, |e| v.timestamp > e.timestamp) {
+        if entry.is_none_or(|e| v.timestamp > e.timestamp) {
             latest.insert(v.agent_id.clone(), v);
         }
     }
@@ -312,21 +316,21 @@ async fn dissolve(iii: &III, req: DissolveRequest) -> Result<Value, IIIError> {
 
     if let Some(agents_obj) = findings.get("agents").and_then(|v| v.as_object()) {
         for agent_id in &swarm.agent_ids {
-            if let Some(agent_findings) = agents_obj.get(agent_id).and_then(|v| v.as_array()) {
-                if !agent_findings.is_empty() {
-                    let preview: Vec<&Value> = agent_findings.iter().take(10).collect();
-                    let summary = serde_json::to_string(&preview).unwrap_or_else(|_| "[]".into());
-                    fire_and_forget(
-                        iii,
-                        "memory::store",
-                        json!({
-                            "agentId": agent_id,
-                            "sessionId": format!("swarm:{safe_swarm_id}"),
-                            "role": "system",
-                            "content": format!("Swarm {safe_swarm_id} findings: {summary}"),
-                        }),
-                    );
-                }
+            if let Some(agent_findings) = agents_obj.get(agent_id).and_then(|v| v.as_array())
+                && !agent_findings.is_empty()
+            {
+                let preview: Vec<&Value> = agent_findings.iter().take(10).collect();
+                let summary = serde_json::to_string(&preview).unwrap_or_else(|_| "[]".into());
+                fire_and_forget(
+                    iii,
+                    "memory::store",
+                    json!({
+                        "agentId": agent_id,
+                        "sessionId": format!("swarm:{safe_swarm_id}"),
+                        "role": "system",
+                        "content": format!("Swarm {safe_swarm_id} findings: {summary}"),
+                    }),
+                );
             }
         }
     }

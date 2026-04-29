@@ -70,6 +70,7 @@ mod tests {
         let val = serde_json::to_value(&card).unwrap();
         assert_eq!(val["capabilities"]["pushNotifications"], json!(false));
         assert_eq!(val["defaultInputModes"], json!(["text"]));
+        assert_eq!(val["defaultOutputModes"], json!(["text"]));
         let back: A2aAgentCard = serde_json::from_value(val).unwrap();
         assert_eq!(back.name, "agentos");
         assert_eq!(back.capabilities.tools, vec!["tool::a"]);
