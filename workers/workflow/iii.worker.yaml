@@ -1,0 +1,7 @@
+iii: v1
+name: workflow
+language: rust
+deploy: binary
+manifest: Cargo.toml
+bin: agentos-workflow
+description: "Multi-step workflow execution — sequential, fanout, collect, conditional, loop"

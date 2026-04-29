@@ -79,6 +79,36 @@ dependencies = [
 ]
 
 [[package]]
+name = "agentos-approval"
+version = "0.0.1"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "iii-sdk",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+ "uuid",
+]
+
+[[package]]
+name = "agentos-approval-tiers"
+version = "0.0.1"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "iii-sdk",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+ "uuid",
+]
+
+[[package]]
 name = "agentos-bridge"
 version = "0.0.1"
 dependencies = [
@@ -484,6 +514,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "agentos-task-decomposer"
+version = "0.0.1"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "iii-sdk",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+ "uuid",
+]
+
+[[package]]
 name = "agentos-telemetry"
 version = "0.0.1"
 dependencies = [
@@ -546,6 +591,21 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "wasmtime",
+]
+
+[[package]]
+name = "agentos-workflow"
+version = "0.0.1"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "iii-sdk",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+ "uuid",
 ]
 
 [[package]]

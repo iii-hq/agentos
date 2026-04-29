@@ -1,0 +1,7 @@
+iii: v1
+name: approval
+language: rust
+deploy: binary
+manifest: Cargo.toml
+bin: agentos-approval
+description: "Human-in-the-loop approval gates — request, decide, list, wait, set policy"

@@ -1,0 +1,7 @@
+iii: v1
+name: approval-tiers
+language: rust
+deploy: binary
+manifest: Cargo.toml
+bin: agentos-approval-tiers
+description: "Tiered approval routing — auto/async/sync classification by tool capability"
