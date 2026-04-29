@@ -30,6 +30,7 @@ members = [
     "workers/lsp-tools",
     "workers/memory",
     "workers/mission",
+    "workers/orchestrator",
     "workers/pulse",
     "workers/rate-limiter",
     "workers/realm",

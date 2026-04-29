@@ -18,7 +18,6 @@ import "./knowledge-graph.js";
 import "./memory-reflection.js";
 import "./migration.js";
 import "./model-catalog.js";
-import "./orchestrator.js";
 import "./recovery.js";
 import "./security-headers.js";
 import "./security-map.js";

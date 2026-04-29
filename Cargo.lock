@@ -469,6 +469,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "agentos-orchestrator"
+version = "0.0.1"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "iii-sdk",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+ "uuid",
+]
+
+[[package]]
 name = "agentos-pulse"
 version = "0.0.1"
 dependencies = [

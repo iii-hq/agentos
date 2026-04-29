@@ -1,0 +1,7 @@
+iii: v1
+name: orchestrator
+language: rust
+deploy: binary
+manifest: Cargo.toml
+bin: agentos-orchestrator
+description: Multi-step orchestrator — plan, execute, status, intervene, and shared workspace read/write
