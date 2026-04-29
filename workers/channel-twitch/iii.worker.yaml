@@ -1,0 +1,7 @@
+iii: v1
+name: channel-twitch
+language: rust
+deploy: binary
+manifest: Cargo.toml
+bin: agentos-channel-twitch
+description: "Twitch channel adapter — handle EventSub webhook + reply via Helix API"

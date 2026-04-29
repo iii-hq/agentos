@@ -12,6 +12,7 @@ members = [
     "workers/channel-linkedin",
     "workers/channel-reddit",
     "workers/channel-slack",
+    "workers/channel-twitch",
     "workers/coordination",
     "workers/council",
     "workers/cron",
