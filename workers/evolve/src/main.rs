@@ -193,12 +193,10 @@ async fn evolve_generate(iii: &III, input: Value) -> Result<Value, IIIError> {
         None
     };
 
-    // CR fix: spread extra_meta first so the system-managed fields cannot be overridden.
-    let mut metadata = match extra_meta {
+    let metadata = match extra_meta {
         Value::Object(map) => Value::Object(map),
         _ => json!({}),
     };
-    let _ = &mut metadata;
 
     let now = now_ms();
     let record = EvolvedFunction {

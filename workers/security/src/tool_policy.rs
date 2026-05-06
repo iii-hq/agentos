@@ -702,7 +702,7 @@ pub fn register(iii: &III) {
                 }))
             }
         })
-        .description("Check if a tool invocation is allowed by policy"),
+        .description("Check if a function call is allowed by policy"),
     );
 
     let iii_ref = iii.clone();

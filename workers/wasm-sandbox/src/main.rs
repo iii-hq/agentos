@@ -14,6 +14,13 @@ const DEFAULT_FUEL: u64 = 1_000_000;
 const DEFAULT_TIMEOUT_SECS: u64 = 30;
 const DEFAULT_MEMORY_PAGES: u64 = 256;
 
+const WASM_ALLOWED_FUNCTIONS: &[&str] = &[
+    "memory::recall",
+    "memory::store",
+    "security::scan_injection",
+    "embedding::generate",
+];
+
 #[derive(Debug)]
 enum ExecutionError {
     Timeout,
@@ -277,13 +284,6 @@ async fn execute_wasm(iii: &III, cache: &ModuleCache, input: Value) -> Result<Va
         let iii_inner = iii_host.clone();
         let agent = host_agent_id.clone();
         let func_id = function_id.to_string();
-
-        const WASM_ALLOWED_FUNCTIONS: &[&str] = &[
-            "memory::recall",
-            "memory::store",
-            "security::scan_injection",
-            "embedding::generate",
-        ];
 
         let result = if !WASM_ALLOWED_FUNCTIONS.contains(&func_id.as_str()) {
             json!({ "error": format!("function '{}' not allowed from WASM sandbox", func_id) }).to_string()
@@ -556,12 +556,6 @@ mod tests {
 
     #[test]
     fn test_wasm_allowed_functions_list() {
-        const WASM_ALLOWED_FUNCTIONS: &[&str] = &[
-            "memory::recall",
-            "memory::store",
-            "security::scan_injection",
-            "embedding::generate",
-        ];
         assert_eq!(WASM_ALLOWED_FUNCTIONS.len(), 4);
         assert!(WASM_ALLOWED_FUNCTIONS.contains(&"memory::recall"));
         assert!(WASM_ALLOWED_FUNCTIONS.contains(&"memory::store"));
@@ -833,23 +827,11 @@ mod tests {
 
     #[test]
     fn test_wasm_allowed_functions_exact_count() {
-        const WASM_ALLOWED_FUNCTIONS: &[&str] = &[
-            "memory::recall",
-            "memory::store",
-            "security::scan_injection",
-            "embedding::generate",
-        ];
         assert_eq!(WASM_ALLOWED_FUNCTIONS.len(), 4);
     }
 
     #[test]
     fn test_wasm_allowed_functions_blocked() {
-        const WASM_ALLOWED_FUNCTIONS: &[&str] = &[
-            "memory::recall",
-            "memory::store",
-            "security::scan_injection",
-            "embedding::generate",
-        ];
         let blocked = [
             "file::delete",
             "network::send",
@@ -865,12 +847,6 @@ mod tests {
 
     #[test]
     fn test_wasm_allowed_functions_all_present() {
-        const WASM_ALLOWED_FUNCTIONS: &[&str] = &[
-            "memory::recall",
-            "memory::store",
-            "security::scan_injection",
-            "embedding::generate",
-        ];
         let expected = [
             "memory::recall",
             "memory::store",
@@ -1176,28 +1152,16 @@ mod tests {
 
     #[test]
     fn test_wasm_allowed_functions_memory_recall_present() {
-        const WASM_ALLOWED_FUNCTIONS: &[&str] = &[
-            "memory::recall", "memory::store",
-            "security::scan_injection", "embedding::generate",
-        ];
         assert!(WASM_ALLOWED_FUNCTIONS.contains(&"memory::recall"));
     }
 
     #[test]
     fn test_wasm_allowed_functions_embedding_generate_present() {
-        const WASM_ALLOWED_FUNCTIONS: &[&str] = &[
-            "memory::recall", "memory::store",
-            "security::scan_injection", "embedding::generate",
-        ];
         assert!(WASM_ALLOWED_FUNCTIONS.contains(&"embedding::generate"));
     }
 
     #[test]
     fn test_wasm_allowed_functions_no_write_operations() {
-        const WASM_ALLOWED_FUNCTIONS: &[&str] = &[
-            "memory::recall", "memory::store",
-            "security::scan_injection", "embedding::generate",
-        ];
         assert!(!WASM_ALLOWED_FUNCTIONS.contains(&"fs::write"));
         assert!(!WASM_ALLOWED_FUNCTIONS.contains(&"fs::delete"));
         assert!(!WASM_ALLOWED_FUNCTIONS.contains(&"system::exec"));
