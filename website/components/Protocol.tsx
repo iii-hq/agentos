@@ -42,7 +42,7 @@ export default function Protocol() {
           </div>
 
           <div className="flex justify-center">
-            <EngineDiagram size={420} />
+            <EngineDiagram size={460} showLabels />
           </div>
         </div>
       </div>

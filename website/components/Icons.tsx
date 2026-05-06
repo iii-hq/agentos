@@ -135,31 +135,20 @@ export function IconDB(p: SVGProps<SVGSVGElement>) {
 }
 
 export function Wordmark({ size = 28 }: { size?: number }) {
-  const u = size / 28;
-  const cell = 6 * u;
-  const gap = 2 * u;
-  const dotR = 2.4 * u;
   return (
-    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} fill="none">
-      {[0, 1, 2].map((i) => (
-        <circle
-          key={`d${i}`}
-          cx={cell / 2 + i * (cell + gap)}
-          cy={cell / 2}
-          r={dotR}
-          fill="currentColor"
-        />
-      ))}
-      {[0, 1, 2].map((i) => (
-        <rect
-          key={`s${i}`}
-          x={i * (cell + gap)}
-          y={cell + gap}
-          width={cell}
-          height={size - cell - gap}
-          fill={i === 2 ? "var(--accent)" : "currentColor"}
-        />
-      ))}
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 1075.74 1075.74"
+      fill="currentColor"
+      aria-hidden="true"
+    >
+      <rect x="0" y="0.05" width="268.94" height="268.94" />
+      <rect x="0" y="403.45" width="268.94" height="672.24" />
+      <rect x="403.4" y="0.05" width="268.94" height="268.94" />
+      <rect x="403.4" y="403.45" width="268.94" height="672.24" />
+      <rect x="806.81" y="0.05" width="268.94" height="268.94" />
+      <rect x="806.81" y="403.45" width="268.94" height="672.24" />
     </svg>
   );
 }

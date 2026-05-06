@@ -66,7 +66,7 @@ export default function Hero() {
           </div>
 
           <div className="hidden lg:flex items-center justify-center">
-            <EngineDiagram size={380} />
+            <EngineDiagram size={440} showLabels />
           </div>
         </div>
       </div>
