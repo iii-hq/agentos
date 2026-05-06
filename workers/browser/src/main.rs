@@ -489,7 +489,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let iii_clone = iii.clone();
     iii.register_function(
-        RegisterFunction::new_async("tool::browser_navigate", move |input: Value| {
+        RegisterFunction::new_async("browser::navigate", move |input: Value| {
             let iii = iii_clone.clone();
             async move {
                 let body = input.get("body").cloned().unwrap_or(input.clone());
@@ -525,7 +525,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let iii_clone = iii.clone();
     iii.register_function(
-        RegisterFunction::new_async("tool::browser_click", move |input: Value| {
+        RegisterFunction::new_async("browser::click", move |input: Value| {
             let iii = iii_clone.clone();
             async move {
                 let body = input.get("body").cloned().unwrap_or(input.clone());
@@ -566,7 +566,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let iii_clone = iii.clone();
     iii.register_function(
-        RegisterFunction::new_async("tool::browser_type", move |input: Value| {
+        RegisterFunction::new_async("browser::type", move |input: Value| {
             let iii = iii_clone.clone();
             async move {
                 let body = input.get("body").cloned().unwrap_or(input.clone());
@@ -601,7 +601,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let iii_clone = iii.clone();
     iii.register_function(
-        RegisterFunction::new_async("tool::browser_screenshot", move |input: Value| {
+        RegisterFunction::new_async("browser::screenshot", move |input: Value| {
             let iii = iii_clone.clone();
             async move {
                 let body = input.get("body").cloned().unwrap_or(input.clone());
@@ -642,7 +642,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let iii_clone = iii.clone();
     iii.register_function(
-        RegisterFunction::new_async("tool::browser_read_page", move |input: Value| {
+        RegisterFunction::new_async("browser::read_page", move |input: Value| {
             let iii = iii_clone.clone();
             async move {
                 let body = input.get("body").cloned().unwrap_or(input.clone());
@@ -677,7 +677,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let iii_clone = iii.clone();
     iii.register_function(
-        RegisterFunction::new_async("tool::browser_close", move |input: Value| {
+        RegisterFunction::new_async("browser::close", move |input: Value| {
             let iii = iii_clone.clone();
             async move {
                 let body = input.get("body").cloned().unwrap_or(input.clone());
@@ -721,12 +721,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let triggers = [
         ("browser::create_session", "POST", "api/browser/session"),
         ("browser::list_sessions", "GET", "api/browser/sessions"),
-        ("tool::browser_navigate", "POST", "api/browser/navigate"),
-        ("tool::browser_click", "POST", "api/browser/click"),
-        ("tool::browser_type", "POST", "api/browser/type"),
-        ("tool::browser_screenshot", "POST", "api/browser/screenshot"),
-        ("tool::browser_read_page", "POST", "api/browser/read"),
-        ("tool::browser_close", "POST", "api/browser/close"),
+        ("browser::navigate", "POST", "api/browser/navigate"),
+        ("browser::click", "POST", "api/browser/click"),
+        ("browser::type", "POST", "api/browser/type"),
+        ("browser::screenshot", "POST", "api/browser/screenshot"),
+        ("browser::read_page", "POST", "api/browser/read"),
+        ("browser::close", "POST", "api/browser/close"),
     ];
     for (fid, method, path) in triggers {
         iii.register_trigger(RegisterTriggerInput {

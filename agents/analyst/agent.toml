@@ -9,7 +9,7 @@ model = "claude-sonnet-4-6"
 max_tokens = 4096
 
 [agent.capabilities]
-tools = ["tool::*"]
+functions = ["*"]
 memory_scopes = ["self.*", "shared.*"]
 network_hosts = ["*"]
 

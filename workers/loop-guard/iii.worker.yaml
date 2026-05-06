@@ -4,4 +4,4 @@ language: rust
 deploy: binary
 manifest: Cargo.toml
 bin: agentos-loop-guard
-description: Agent loop guard — iteration cap, ping-pong detection, repeated-tool-call backoff
+description: Agent loop guard — iteration cap, ping-pong detection, repeated-call backoff

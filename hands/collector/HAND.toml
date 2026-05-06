@@ -5,8 +5,8 @@ description = "Autonomously collects, normalizes, and stores data from configure
 enabled = true
 schedule = "*/30 * * * *"
 
-[hand.tools]
-allowed = ["tool::web_fetch", "tool::http_request", "tool::file_write", "tool::file_read", "memory::store"]
+[hand.functions]
+allowed = ["fn::web_fetch", "fn::http_request", "fn::file_write", "fn::file_read", "memory::store"]
 
 [[hand.settings]]
 key = "collection_mode"

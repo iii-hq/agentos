@@ -7,9 +7,9 @@ const cases = [
     body: "A Slack message becomes a Trigger, the agent worker reads memory, llm-router routes the call, the response goes back through the same channel worker.",
   },
   {
-    title: "Sandboxed tool execution",
+    title: "Sandboxed function dispatch",
     flow: ["agent-core", "approval", "wasm-sandbox", "hashline"],
-    body: "Tool calls pass through approval tiers, run in wasmtime with a fuel cap, and append to a hash-chained ledger.",
+    body: "Function calls pass through approval tiers, run in wasmtime with a fuel cap, and append to a hash-chained ledger.",
   },
   {
     title: "Multi-tenant org with budgets",

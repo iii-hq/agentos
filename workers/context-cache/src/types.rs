@@ -30,7 +30,7 @@ pub fn sanitize_id(id: &str) -> String {
 pub fn cacheable(fn_id: &str) -> bool {
     matches!(
         fn_id,
-        "memory::recall" | "memory::user_profile::get" | "agent::list_tools"
+        "memory::recall" | "memory::user_profile::get" | "agent::list_functions"
     )
 }
 
@@ -42,7 +42,7 @@ mod tests {
     fn cacheable_set_matches_ts() {
         assert!(cacheable("memory::recall"));
         assert!(cacheable("memory::user_profile::get"));
-        assert!(cacheable("agent::list_tools"));
+        assert!(cacheable("agent::list_functions"));
         assert!(!cacheable("memory::store"));
     }
 

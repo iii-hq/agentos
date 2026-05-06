@@ -74,7 +74,7 @@ fn load_hands_from_dir(dir: &Path) -> anyhow::Result<HashMap<String, Hand>> {
 
 fn build_kickoff_prompt(hand: &Hand) -> String {
     let now = chrono::Utc::now().to_rfc3339();
-    let tools = hand.tools.allowed.join(", ");
+    let functions = hand.functions.allowed.join(", ");
     let settings_lines = hand
         .settings
         .iter()
@@ -82,8 +82,8 @@ fn build_kickoff_prompt(hand: &Hand) -> String {
         .collect::<Vec<_>>()
         .join("\n");
     format!(
-        "[{} — Autonomous Run — {}]\n\nReview your current task queue and execute pending work.\nAvailable tools: {}\n\n{}",
-        hand.name, now, tools, settings_lines,
+        "[{} — Autonomous Run — {}]\n\nReview your current task queue and execute pending work.\nAvailable functions: {}\n\n{}",
+        hand.name, now, functions, settings_lines,
     )
 }
 
@@ -99,7 +99,7 @@ async fn run_hand(iii: &III, hand: Hand) -> Result<Value, IIIError> {
             payload: json!({
                 "agentId": hand.id,
                 "message": kickoff,
-                "tools": hand.tools.allowed,
+                "functions": hand.functions.allowed,
                 "systemPrompt": hand.agent.system_prompt,
                 "temperature": hand.agent.temperature,
                 "maxIterations": hand.agent.max_iterations,
@@ -390,8 +390,8 @@ name = "Alpha"
 enabled = true
 schedule = "* * * * *"
 
-[hand.tools]
-allowed = ["tool::a"]
+[hand.functions]
+allowed = ["fn::a"]
 
 [hand.agent]
 max_iterations = 5
@@ -440,15 +440,15 @@ name = "Real"
     }
 
     #[test]
-    fn kickoff_prompt_contains_name_and_tools() {
+    fn kickoff_prompt_contains_name_and_functions() {
         let hand = Hand {
             id: "x".into(),
             name: "Watcher".into(),
             description: String::new(),
             enabled: true,
             schedule: "* * * * *".into(),
-            tools: types::HandTools {
-                allowed: vec!["tool::shell_exec".into(), "tool::web_fetch".into()],
+            functions: types::HandFunctions {
+                allowed: vec!["fn::shell_exec".into(), "fn::web_fetch".into()],
             },
             settings: vec![types::HandSetting {
                 key: "target".into(),
@@ -461,7 +461,7 @@ name = "Real"
         };
         let prompt = build_kickoff_prompt(&hand);
         assert!(prompt.contains("Watcher"));
-        assert!(prompt.contains("tool::shell_exec"));
+        assert!(prompt.contains("fn::shell_exec"));
         assert!(prompt.contains("target"));
     }
 

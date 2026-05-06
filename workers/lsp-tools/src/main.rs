@@ -211,7 +211,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let iii = register_worker(&ws_url, InitOptions::default());
 
     iii.register_function(
-        RegisterFunction::new_async("tool::lsp_diagnostics", move |input: Value| async move {
+        RegisterFunction::new_async("lsp::diagnostics", move |input: Value| async move {
             let body = body_or_self(&input);
             let path = body
                 .get("path")
@@ -282,7 +282,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
 
     iii.register_function(
-        RegisterFunction::new_async("tool::lsp_symbols", move |input: Value| async move {
+        RegisterFunction::new_async("lsp::symbols", move |input: Value| async move {
             let body = body_or_self(&input);
             let path = body
                 .get("path")
@@ -308,7 +308,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
 
     iii.register_function(
-        RegisterFunction::new_async("tool::lsp_references", move |input: Value| async move {
+        RegisterFunction::new_async("lsp::references", move |input: Value| async move {
             let body = body_or_self(&input);
             let symbol = body
                 .get("symbol")
@@ -370,7 +370,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
 
     iii.register_function(
-        RegisterFunction::new_async("tool::lsp_rename", move |input: Value| async move {
+        RegisterFunction::new_async("lsp::rename", move |input: Value| async move {
             let body = body_or_self(&input);
             let old_name = body
                 .get("oldName")
@@ -487,7 +487,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
 
     iii.register_function(
-        RegisterFunction::new_async("tool::lsp_goto_definition", move |input: Value| async move {
+        RegisterFunction::new_async("lsp::goto_definition", move |input: Value| async move {
             let body = body_or_self(&input);
             let symbol = body
                 .get("symbol")
@@ -544,31 +544,31 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     iii.register_trigger(RegisterTriggerInput {
         trigger_type: "http".to_string(),
-        function_id: "tool::lsp_diagnostics".to_string(),
+        function_id: "lsp::diagnostics".to_string(),
         config: json!({ "api_path": "api/lsp/diagnostics", "http_method": "POST" }),
         metadata: None,
     })?;
     iii.register_trigger(RegisterTriggerInput {
         trigger_type: "http".to_string(),
-        function_id: "tool::lsp_symbols".to_string(),
+        function_id: "lsp::symbols".to_string(),
         config: json!({ "api_path": "api/lsp/symbols", "http_method": "POST" }),
         metadata: None,
     })?;
     iii.register_trigger(RegisterTriggerInput {
         trigger_type: "http".to_string(),
-        function_id: "tool::lsp_references".to_string(),
+        function_id: "lsp::references".to_string(),
         config: json!({ "api_path": "api/lsp/references", "http_method": "POST" }),
         metadata: None,
     })?;
     iii.register_trigger(RegisterTriggerInput {
         trigger_type: "http".to_string(),
-        function_id: "tool::lsp_rename".to_string(),
+        function_id: "lsp::rename".to_string(),
         config: json!({ "api_path": "api/lsp/rename", "http_method": "POST" }),
         metadata: None,
     })?;
     iii.register_trigger(RegisterTriggerInput {
         trigger_type: "http".to_string(),
-        function_id: "tool::lsp_goto_definition".to_string(),
+        function_id: "lsp::goto_definition".to_string(),
         config: json!({ "api_path": "api/lsp/goto-definition", "http_method": "POST" }),
         metadata: None,
     })?;

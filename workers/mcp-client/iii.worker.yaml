@@ -4,4 +4,4 @@ language: rust
 deploy: binary
 manifest: Cargo.toml
 bin: agentos-mcp-client
-description: MCP client + server bridge — connect/disconnect MCP servers via stdio, list/call tools, and serve agentos functions as MCP tools
+description: MCP client + server bridge — connects to remote MCP servers, surfaces their capabilities as iii functions, and re-exports agentos functions over the MCP wire protocol

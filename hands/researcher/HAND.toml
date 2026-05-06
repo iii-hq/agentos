@@ -5,8 +5,8 @@ description = "Autonomously researches topics across the web, synthesizes findin
 enabled = true
 schedule = "0 */6 * * *"
 
-[hand.tools]
-allowed = ["tool::web_search", "tool::web_fetch", "tool::file_write", "memory::store", "memory::query"]
+[hand.functions]
+allowed = ["fn::web_search", "fn::web_fetch", "fn::file_write", "memory::store", "memory::query"]
 
 [[hand.settings]]
 key = "research_depth"

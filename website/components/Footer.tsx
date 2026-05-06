@@ -34,7 +34,7 @@ export default function Footer() {
               <div className="eyebrow mb-4">Manifesto</div>
               <p className="h-display text-[26px] md:text-[32px]">
                 AgentOS isn't competing with one agent framework. It's competing with{" "}
-                <em>the need to assemble a runtime from category-shaped tools</em> —
+                <em>the need to assemble a runtime from category-shaped pieces</em> —
                 queues, sandboxes, schedulers, observers — every time you ship an agent.
               </p>
             </div>

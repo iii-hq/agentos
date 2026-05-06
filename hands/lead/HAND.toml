@@ -5,8 +5,8 @@ description = "Autonomously discovers, qualifies, and enriches sales leads from 
 enabled = true
 schedule = "0 8 * * 1-5"
 
-[hand.tools]
-allowed = ["tool::web_search", "tool::web_fetch", "tool::http_request", "memory::store", "memory::query", "tool::file_write", "tool::email_draft"]
+[hand.functions]
+allowed = ["fn::web_search", "fn::web_fetch", "fn::http_request", "memory::store", "memory::query", "fn::file_write", "fn::email_draft"]
 
 [[hand.settings]]
 key = "target_industry"

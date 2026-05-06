@@ -888,7 +888,7 @@ async fn feedback_inject_signal(iii: &III, input: Value) -> Result<Value, IIIErr
     tokio::spawn(async move {
         let _ = iii_inner
             .trigger(TriggerRequest {
-                function_id: "tool::agent_send".to_string(),
+                function_id: "fn::agent_send".to_string(),
                 payload: json!({
                     "targetAgentId": target,
                     "message": message,

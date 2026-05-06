@@ -14,25 +14,25 @@ fn auto_tools() -> &'static HashSet<&'static str> {
     static AUTO: OnceLock<HashSet<&'static str>> = OnceLock::new();
     AUTO.get_or_init(|| {
         [
-            "tool::file_read",
-            "tool::file_list",
-            "tool::web_search",
-            "tool::web_fetch",
+            "fn::file_read",
+            "fn::file_list",
+            "fn::web_search",
+            "fn::web_fetch",
             "memory::recall",
             "memory::search",
-            "tool::code_analyze",
-            "tool::code_explain",
-            "tool::uuid_generate",
-            "tool::hash_compute",
-            "tool::json_parse",
-            "tool::json_stringify",
-            "tool::json_query",
-            "tool::csv_parse",
-            "tool::csv_stringify",
-            "tool::yaml_parse",
-            "tool::yaml_stringify",
-            "tool::regex_match",
-            "tool::regex_replace",
+            "fn::code_analyze",
+            "fn::code_explain",
+            "fn::uuid_generate",
+            "fn::hash_compute",
+            "fn::json_parse",
+            "fn::json_stringify",
+            "fn::json_query",
+            "fn::csv_parse",
+            "fn::csv_stringify",
+            "fn::yaml_parse",
+            "fn::yaml_stringify",
+            "fn::regex_match",
+            "fn::regex_replace",
             "skill::list",
             "skill::get",
             "skill::search",
@@ -48,16 +48,16 @@ fn async_tools() -> &'static HashSet<&'static str> {
     static ASYNC: OnceLock<HashSet<&'static str>> = OnceLock::new();
     ASYNC.get_or_init(|| {
         [
-            "tool::file_write",
-            "tool::apply_patch",
-            "tool::code_format",
-            "tool::code_lint",
-            "tool::todo_create",
-            "tool::todo_update",
-            "tool::todo_list",
-            "tool::cron_create",
-            "tool::cron_list",
-            "tool::cron_delete",
+            "fn::file_write",
+            "fn::apply_patch",
+            "fn::code_format",
+            "fn::code_lint",
+            "fn::todo_create",
+            "fn::todo_update",
+            "fn::todo_list",
+            "fn::cron_create",
+            "fn::cron_list",
+            "fn::cron_delete",
             "memory::store",
             "memory::forget",
             "skill::install",
@@ -72,14 +72,14 @@ fn sync_tools() -> &'static HashSet<&'static str> {
     static SYNC: OnceLock<HashSet<&'static str>> = OnceLock::new();
     SYNC.get_or_init(|| {
         [
-            "tool::shell_exec",
-            "tool::agent_spawn",
-            "tool::agent_send",
-            "tool::agent_delegate",
-            "tool::media_download",
-            "tool::network_check",
-            "tool::code_test",
-            "tool::env_get",
+            "fn::shell_exec",
+            "fn::agent_spawn",
+            "fn::agent_send",
+            "fn::agent_delegate",
+            "fn::media_download",
+            "fn::network_check",
+            "fn::code_test",
+            "fn::env_get",
             "agent::create",
             "agent::delete",
             "swarm::create",
@@ -191,7 +191,7 @@ async fn classify(iii: &III, input: Value) -> Result<Value, IIIError> {
         }
     }
 
-    if tool_id == "tool::shell_exec"
+    if tool_id == "fn::shell_exec"
         && tier == ApprovalTier::Sync
         && let Some(command) = input
             .get("args")
@@ -572,19 +572,19 @@ mod tests {
 
     #[test]
     fn classify_known_auto() {
-        assert_eq!(classify_tool("tool::file_read"), ApprovalTier::Auto);
+        assert_eq!(classify_tool("fn::file_read"), ApprovalTier::Auto);
         assert_eq!(classify_tool("memory::recall"), ApprovalTier::Auto);
     }
 
     #[test]
     fn classify_known_async() {
-        assert_eq!(classify_tool("tool::file_write"), ApprovalTier::Async);
+        assert_eq!(classify_tool("fn::file_write"), ApprovalTier::Async);
         assert_eq!(classify_tool("skill::install"), ApprovalTier::Async);
     }
 
     #[test]
     fn classify_known_sync() {
-        assert_eq!(classify_tool("tool::shell_exec"), ApprovalTier::Sync);
+        assert_eq!(classify_tool("fn::shell_exec"), ApprovalTier::Sync);
         assert_eq!(classify_tool("agent::create"), ApprovalTier::Sync);
     }
 

@@ -4,4 +4,4 @@ language: rust
 deploy: binary
 manifest: Cargo.toml
 bin: agentos-core
-description: Agent loop — chat, tool dispatch, multi-iteration ReAct over iii primitives
+description: Agent loop — chat, function dispatch, multi-iteration ReAct over iii primitives

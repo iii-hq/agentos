@@ -5,7 +5,7 @@ use std::time::Instant;
 
 mod types;
 
-use types::{AgentConfig, ChatRequest, ToolCall};
+use types::{AgentConfig, ChatRequest, FunctionCall};
 
 
 
@@ -34,14 +34,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let iii_clone = iii.clone();
     iii.register_function(
-        RegisterFunction::new_async("agent::list_tools", move |input: Value| {
+        RegisterFunction::new_async("agent::list_functions", move |input: Value| {
             let iii = iii_clone.clone();
             async move {
                 let agent_id = input["agentId"].as_str().unwrap_or("default");
-                list_tools(&iii, agent_id).await
+                list_functions(&iii, agent_id).await
             }
         })
-        .description("List tools available to an agent"),
+        .description("List functions available to an agent"),
     );
 
     let iii_clone = iii.clone();
@@ -160,9 +160,9 @@ async fn agent_chat(iii: &III, req: ChatRequest) -> Result<Value, IIIError> {
         .await
         .unwrap_or(json!([]));
 
-    let tools: Value = iii
+    let functions: Value = iii
         .trigger(TriggerRequest {
-            function_id: "agent::list_tools".to_string(),
+            function_id: "agent::list_functions".to_string(),
             payload: json!({ "agentId": &req.agent_id }),
             action: None,
             timeout_ms: None,
@@ -179,7 +179,7 @@ async fn agent_chat(iii: &III, req: ChatRequest) -> Result<Value, IIIError> {
             function_id: "llm::route".to_string(),
             payload: json!({
             "message": &req.message,
-            "toolCount": tools.as_array().map(|a| a.len()).unwrap_or(0),
+            "functionCount": functions.as_array().map(|a| a.len()).unwrap_or(0),
             "config": config.as_ref().and_then(|c| c.model.as_ref()),
         }),
             action: None,
@@ -218,7 +218,7 @@ async fn agent_chat(iii: &III, req: ChatRequest) -> Result<Value, IIIError> {
             "model": model,
             "systemPrompt": system_prompt,
             "messages": messages,
-            "tools": tools,
+            "functions": functions,
         }),
             action: None,
             timeout_ms: None,
@@ -234,7 +234,7 @@ async fn agent_chat(iii: &III, req: ChatRequest) -> Result<Value, IIIError> {
         }
         iterations += 1;
 
-        let calls: Vec<ToolCall> = tool_calls
+        let calls: Vec<FunctionCall> = tool_calls
             .iter()
             .filter_map(|tc| serde_json::from_value(tc.clone()).ok())
             .collect();
@@ -293,7 +293,7 @@ async fn agent_chat(iii: &III, req: ChatRequest) -> Result<Value, IIIError> {
                 "model": model,
                 "systemPrompt": system_prompt,
                 "messages": messages,
-                "tools": tools,
+                "functions": functions,
             }),
                 action: None,
                 timeout_ms: None,
@@ -370,7 +370,7 @@ async fn agent_chat(iii: &III, req: ChatRequest) -> Result<Value, IIIError> {
     }))
 }
 
-async fn list_tools(iii: &III, agent_id: &str) -> Result<Value, IIIError> {
+async fn list_functions(iii: &III, agent_id: &str) -> Result<Value, IIIError> {
     let config: Option<AgentConfig> = iii
         .trigger(TriggerRequest {
             function_id: "state::get".to_string(),
@@ -385,7 +385,7 @@ async fn list_tools(iii: &III, agent_id: &str) -> Result<Value, IIIError> {
     let allowed = config
         .as_ref()
         .and_then(|c| c.capabilities.as_ref())
-        .map(|c| c.tools.clone())
+        .map(|c| c.functions.clone())
         .unwrap_or_else(|| vec!["*".into()]);
 
     let allowed: Vec<String> = allowed
@@ -473,7 +473,7 @@ mod tests {
             "id": "memory::store",
             "arguments": {"content": "test data", "agentId": "agent-1"},
         });
-        let tc: ToolCall = serde_json::from_value(json_val).unwrap();
+        let tc: FunctionCall = serde_json::from_value(json_val).unwrap();
         assert_eq!(tc.call_id, "tc-1");
         assert_eq!(tc.id, "memory::store");
         assert_eq!(tc.arguments["content"], "test data");
@@ -481,7 +481,7 @@ mod tests {
 
     #[test]
     fn test_tool_call_id_split_for_capability() {
-        let tc = ToolCall {
+        let tc = FunctionCall {
             call_id: "c-1".to_string(),
             id: "security::check_capability".to_string(),
             arguments: json!({}),
@@ -492,7 +492,7 @@ mod tests {
 
     #[test]
     fn test_tool_call_id_split_no_separator() {
-        let tc = ToolCall {
+        let tc = FunctionCall {
             call_id: "c-2".to_string(),
             id: "simple_tool".to_string(),
             arguments: json!({}),
@@ -514,7 +514,7 @@ mod tests {
             }),
             system_prompt: Some("Be helpful".to_string()),
             capabilities: Some(Capabilities {
-                tools: vec!["*".to_string()],
+                functions: vec!["*".to_string()],
                 memory_scopes: None,
                 network_hosts: None,
             }),
@@ -524,7 +524,7 @@ mod tests {
             tags: Some(vec!["test".to_string()]),
         };
         assert_eq!(config.name, "Test Agent");
-        assert!(config.capabilities.unwrap().tools.contains(&"*".to_string()));
+        assert!(config.capabilities.unwrap().functions.contains(&"*".to_string()));
     }
 
     #[test]
@@ -738,7 +738,7 @@ mod tests {
             }),
             system_prompt: Some("You are an expert".to_string()),
             capabilities: Some(Capabilities {
-                tools: vec!["file::*".to_string(), "memory::*".to_string(), "network::*".to_string()],
+                functions: vec!["file::*".to_string(), "memory::*".to_string(), "network::*".to_string()],
                 memory_scopes: Some(vec!["personal".to_string(), "shared".to_string()]),
                 network_hosts: Some(vec!["api.anthropic.com".to_string()]),
             }),
@@ -749,7 +749,7 @@ mod tests {
         };
         assert_eq!(config.id, Some("full-agent".to_string()));
         assert_eq!(config.model.as_ref().unwrap().max_tokens, Some(16384));
-        assert_eq!(config.capabilities.as_ref().unwrap().tools.len(), 3);
+        assert_eq!(config.capabilities.as_ref().unwrap().functions.len(), 3);
         assert_eq!(config.tags.as_ref().unwrap().len(), 3);
     }
 
@@ -822,7 +822,7 @@ mod tests {
     fn test_tool_call_parsing_nested_arguments() {
         let json_val = json!({
             "callId": "tc-nested",
-            "id": "tool::complex",
+            "id": "fn::complex",
             "arguments": {
                 "config": {
                     "nested": {
@@ -833,7 +833,7 @@ mod tests {
                 "items": [1, 2, 3],
             },
         });
-        let tc: ToolCall = serde_json::from_value(json_val).unwrap();
+        let tc: FunctionCall = serde_json::from_value(json_val).unwrap();
         assert!(tc.arguments["config"]["nested"]["deep"].as_bool().unwrap());
         assert_eq!(tc.arguments["config"]["nested"]["level"], 3);
         assert_eq!(tc.arguments["items"].as_array().unwrap().len(), 3);
@@ -843,10 +843,10 @@ mod tests {
     fn test_tool_call_parsing_array_arguments() {
         let json_val = json!({
             "callId": "tc-arr",
-            "id": "tool::batch",
+            "id": "fn::batch",
             "arguments": [1, "two", false, null],
         });
-        let tc: ToolCall = serde_json::from_value(json_val).unwrap();
+        let tc: FunctionCall = serde_json::from_value(json_val).unwrap();
         assert!(tc.arguments.is_array());
         assert_eq!(tc.arguments.as_array().unwrap().len(), 4);
     }
@@ -855,10 +855,10 @@ mod tests {
     fn test_tool_call_parsing_empty_arguments() {
         let json_val = json!({
             "callId": "tc-empty",
-            "id": "tool::noop",
+            "id": "fn::noop",
             "arguments": {},
         });
-        let tc: ToolCall = serde_json::from_value(json_val).unwrap();
+        let tc: FunctionCall = serde_json::from_value(json_val).unwrap();
         assert!(tc.arguments.as_object().unwrap().is_empty());
     }
 
@@ -866,10 +866,10 @@ mod tests {
     fn test_tool_call_parsing_null_argument_value() {
         let json_val = json!({
             "callId": "tc-null",
-            "id": "tool::nullarg",
+            "id": "fn::nullarg",
             "arguments": {"key": null},
         });
-        let tc: ToolCall = serde_json::from_value(json_val).unwrap();
+        let tc: FunctionCall = serde_json::from_value(json_val).unwrap();
         assert!(tc.arguments["key"].is_null());
     }
 
@@ -956,10 +956,10 @@ mod tests {
 
     #[test]
     fn test_tool_filter_multiple_prefixes() {
-        let allowed = vec!["file::".to_string(), "memory::".to_string(), "tool::".to_string()];
+        let allowed = vec!["file::".to_string(), "memory::".to_string(), "fn::".to_string()];
         assert!(allowed.iter().any(|a| "file::read".starts_with(a.as_str())));
         assert!(allowed.iter().any(|a| "memory::store".starts_with(a.as_str())));
-        assert!(allowed.iter().any(|a| "tool::web_fetch".starts_with(a.as_str())));
+        assert!(allowed.iter().any(|a| "fn::web_fetch".starts_with(a.as_str())));
         assert!(!allowed.iter().any(|a| "network::send".starts_with(a.as_str())));
         assert!(!allowed.iter().any(|a| "security::scan".starts_with(a.as_str())));
     }
@@ -990,7 +990,7 @@ mod tests {
 
     #[test]
     fn test_tool_call_id_split_multiple_separators() {
-        let tc = ToolCall {
+        let tc = FunctionCall {
             call_id: "c-3".to_string(),
             id: "security::check::deep".to_string(),
             arguments: json!({}),
@@ -1001,7 +1001,7 @@ mod tests {
 
     #[test]
     fn test_tool_call_id_split_empty_string() {
-        let tc = ToolCall {
+        let tc = FunctionCall {
             call_id: "c-4".to_string(),
             id: "".to_string(),
             arguments: json!({}),
@@ -1059,23 +1059,23 @@ mod tests {
     }
 
     #[test]
-    fn test_tool_count_from_empty_tools() {
-        let tools = json!([]);
-        let count = tools.as_array().map(|a| a.len()).unwrap_or(0);
+    fn test_tool_count_from_empty_functions() {
+        let functions = json!([]);
+        let count = functions.as_array().map(|a| a.len()).unwrap_or(0);
         assert_eq!(count, 0);
     }
 
     #[test]
-    fn test_tool_count_from_tools_array() {
-        let tools = json!([{"id": "a"}, {"id": "b"}, {"id": "c"}]);
-        let count = tools.as_array().map(|a| a.len()).unwrap_or(0);
+    fn test_tool_count_from_functions_array() {
+        let functions = json!([{"id": "a"}, {"id": "b"}, {"id": "c"}]);
+        let count = functions.as_array().map(|a| a.len()).unwrap_or(0);
         assert_eq!(count, 3);
     }
 
     #[test]
     fn test_tool_count_from_non_array() {
-        let tools = json!("not an array");
-        let count = tools.as_array().map(|a| a.len()).unwrap_or(0);
+        let functions = json!("not an array");
+        let count = functions.as_array().map(|a| a.len()).unwrap_or(0);
         assert_eq!(count, 0);
     }
 
@@ -1092,7 +1092,7 @@ mod tests {
             }),
             system_prompt: Some("Be helpful".to_string()),
             capabilities: Some(Capabilities {
-                tools: vec!["*".to_string()],
+                functions: vec!["*".to_string()],
                 memory_scopes: None,
                 network_hosts: None,
             }),
@@ -1132,7 +1132,7 @@ mod tests {
             json!({"missing": "fields"}),
             json!({"callId": "3", "id": "another::tool", "arguments": {"k": "v"}}),
         ];
-        let calls: Vec<ToolCall> = tool_calls
+        let calls: Vec<FunctionCall> = tool_calls
             .iter()
             .filter_map(|tc| serde_json::from_value(tc.clone()).ok())
             .collect();
@@ -1148,7 +1148,7 @@ mod tests {
             json!(42),
             json!(null),
         ];
-        let calls: Vec<ToolCall> = tool_calls
+        let calls: Vec<FunctionCall> = tool_calls
             .iter()
             .filter_map(|tc| serde_json::from_value(tc.clone()).ok())
             .collect();
@@ -1285,7 +1285,7 @@ mod tests {
 
     #[test]
     fn test_tool_call_id_split_only_separator() {
-        let tc = ToolCall {
+        let tc = FunctionCall {
             call_id: "c".to_string(),
             id: "::".to_string(),
             arguments: json!({}),

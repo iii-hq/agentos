@@ -5,8 +5,8 @@ description = "Analyzes collected data to identify patterns, forecast trends, an
 enabled = true
 schedule = "0 0 * * *"
 
-[hand.tools]
-allowed = ["memory::query", "memory::store", "tool::file_write", "tool::calculate"]
+[hand.functions]
+allowed = ["memory::query", "memory::store", "fn::file_write", "fn::calculate"]
 
 [[hand.settings]]
 key = "prediction_horizon"

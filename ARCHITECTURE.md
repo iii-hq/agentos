@@ -109,7 +109,7 @@ iii v0.11.4 exposes `state::update` / `stream::update` with `UpdateOp::set`, `Up
 
 These are **declarative config**, not workers:
 
-- `hands/<name>/HAND.toml` — agent persona (system prompt, allowed tools, schedule), consumed by the `hand-runner` worker.
+- `hands/<name>/HAND.toml` — agent persona (system prompt, allowed function ids, schedule), consumed by the `hand-runner` worker.
 - `integrations/<name>.toml` — MCP server connection details (transport, command, OAuth scopes), consumed by the `mcp-client` worker.
 - `agents/<name>/...` — markdown templates for spawning agent personas.
 - `workflows/<name>.yaml` — pre-defined workflow definitions for the `workflow` worker.

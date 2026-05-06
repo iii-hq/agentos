@@ -14,7 +14,7 @@ const BACKOFF_SCHEDULE: &[i64] = &[5000, 10000, 30000, 60000];
 const AGENT_TTL_MS: i64 = 3_600_000;
 
 fn is_poll_tool(tool: &str) -> bool {
-    matches!(tool, "tool::shell_exec" | "tool::web_fetch")
+    matches!(tool, "fn::shell_exec" | "fn::web_fetch")
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -449,51 +449,51 @@ mod tests {
 
     #[test]
     fn hash_call_returns_16_char_hex() {
-        let h = hash_call("tool::test", &json!({ "a": 1 }));
+        let h = hash_call("fn::test", &json!({ "a": 1 }));
         assert_eq!(h.len(), 16);
         assert!(h.chars().all(|c| c.is_ascii_hexdigit()));
     }
 
     #[test]
     fn hash_call_is_deterministic() {
-        let h1 = hash_call("tool::a", &json!({ "x": 1 }));
-        let h2 = hash_call("tool::a", &json!({ "x": 1 }));
+        let h1 = hash_call("fn::a", &json!({ "x": 1 }));
+        let h2 = hash_call("fn::a", &json!({ "x": 1 }));
         assert_eq!(h1, h2);
     }
 
     #[test]
     fn hash_call_differs_by_tool() {
-        let h1 = hash_call("tool::a", &json!({ "x": 1 }));
-        let h2 = hash_call("tool::b", &json!({ "x": 1 }));
+        let h1 = hash_call("fn::a", &json!({ "x": 1 }));
+        let h2 = hash_call("fn::b", &json!({ "x": 1 }));
         assert_ne!(h1, h2);
     }
 
     #[test]
     fn hash_call_differs_by_params() {
-        let h1 = hash_call("tool::a", &json!({ "x": 1 }));
-        let h2 = hash_call("tool::a", &json!({ "x": 2 }));
+        let h1 = hash_call("fn::a", &json!({ "x": 1 }));
+        let h2 = hash_call("fn::a", &json!({ "x": 2 }));
         assert_ne!(h1, h2);
     }
 
     #[test]
     fn hash_call_handles_empty_params() {
-        let h = hash_call("tool::a", &json!({}));
+        let h = hash_call("fn::a", &json!({}));
         assert_eq!(h.len(), 16);
     }
 
     #[test]
     fn hash_call_handles_nested_params() {
-        let h = hash_call("tool::a", &json!({ "nested": { "deep": true } }));
+        let h = hash_call("fn::a", &json!({ "nested": { "deep": true } }));
         assert_eq!(h.len(), 16);
     }
 
     #[test]
     fn ping_pong_under_six_no_detect() {
         let h: Vec<CallRecord> = vec![
-            rec("a", "tool::a", 1),
-            rec("b", "tool::b", 2),
-            rec("a", "tool::a", 3),
-            rec("b", "tool::b", 4),
+            rec("a", "fn::a", 1),
+            rec("b", "fn::b", 2),
+            rec("a", "fn::a", 3),
+            rec("b", "fn::b", 4),
         ];
         assert!(!detect_ping_pong(&h).0);
     }
@@ -504,7 +504,7 @@ mod tests {
         for i in 0..8 {
             h.push(rec(
                 if i % 2 == 0 { "aaa" } else { "bbb" },
-                if i % 2 == 0 { "tool::a" } else { "tool::b" },
+                if i % 2 == 0 { "fn::a" } else { "fn::b" },
                 i,
             ));
         }
@@ -517,7 +517,7 @@ mod tests {
         let mut h = Vec::new();
         for i in 0..9 {
             let hh = hashes[i % 3];
-            h.push(rec(hh, &format!("tool::{hh}"), i as i64));
+            h.push(rec(hh, &format!("fn::{hh}"), i as i64));
         }
         assert!(detect_ping_pong(&h).0);
     }
@@ -527,7 +527,7 @@ mod tests {
         let mut h = Vec::new();
         for i in 0..10 {
             let hh = format!("unique-{i}");
-            h.push(rec(&hh, &format!("tool::{hh}"), i));
+            h.push(rec(&hh, &format!("fn::{hh}"), i));
         }
         assert!(!detect_ping_pong(&h).0);
     }
@@ -538,7 +538,7 @@ mod tests {
         for i in 0..8 {
             h.push(rec(
                 if i % 2 == 0 { "pp1" } else { "pp2" },
-                if i % 2 == 0 { "tool::read" } else { "tool::write" },
+                if i % 2 == 0 { "fn::read" } else { "fn::write" },
                 i,
             ));
         }
@@ -549,9 +549,9 @@ mod tests {
 
     #[test]
     fn poll_tools_recognised() {
-        assert!(is_poll_tool("tool::shell_exec"));
-        assert!(is_poll_tool("tool::web_fetch"));
-        assert!(!is_poll_tool("tool::other"));
+        assert!(is_poll_tool("fn::shell_exec"));
+        assert!(is_poll_tool("fn::web_fetch"));
+        assert!(!is_poll_tool("fn::other"));
     }
 
     #[test]

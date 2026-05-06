@@ -9,7 +9,7 @@ pub struct AgentSkillRef {
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct A2aCapabilities {
-    pub tools: Vec<String>,
+    pub functions: Vec<String>,
     pub streaming: bool,
     #[serde(rename = "pushNotifications")]
     pub push_notifications: bool,
@@ -52,7 +52,7 @@ mod tests {
             description: "test agent".into(),
             url: "http://localhost:3111/api/a2a/agents/x".into(),
             capabilities: A2aCapabilities {
-                tools: vec!["tool::a".into()],
+                functions: vec!["fn::a".into()],
                 streaming: true,
                 push_notifications: false,
             },
@@ -73,7 +73,7 @@ mod tests {
         assert_eq!(val["defaultOutputModes"], json!(["text"]));
         let back: A2aAgentCard = serde_json::from_value(val).unwrap();
         assert_eq!(back.name, "agentos");
-        assert_eq!(back.capabilities.tools, vec!["tool::a"]);
+        assert_eq!(back.capabilities.functions, vec!["fn::a"]);
     }
 
     #[test]

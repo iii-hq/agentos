@@ -12,9 +12,10 @@ export default function Agents() {
               A small surface <em>is the feature</em>.
             </h2>
             <p className="lede text-[16px] mb-6">
-              Agent frameworks teach the model their abstractions — chains, tools,
-              graphs, prompts. AgentOS teaches it three nouns. Every capability —
-              the agent's own and its environment's — is a Function call.
+              Agent frameworks teach the model their abstractions — chains,
+              graphs, prompt templates. AgentOS teaches it three nouns. Every
+              capability — the agent's own and its environment's — is a Function
+              call.
             </p>
             <p className="lede text-[16px]">
               Workers are discoverable at runtime. Functions self-describe. Triggers

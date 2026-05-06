@@ -18,7 +18,7 @@ pub struct Hand {
     #[serde(default)]
     pub schedule: String,
     #[serde(default)]
-    pub tools: HandTools,
+    pub functions: HandFunctions,
     #[serde(default)]
     pub settings: Vec<HandSetting>,
     #[serde(default)]
@@ -33,7 +33,7 @@ fn default_enabled() -> bool {
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct HandTools {
+pub struct HandFunctions {
     #[serde(default)]
     pub allowed: Vec<String>,
 }
@@ -91,7 +91,7 @@ mod tests {
         assert_eq!(parsed.hand.name, "Web Browser Agent");
         assert!(parsed.hand.enabled);
         assert_eq!(parsed.hand.schedule, "0 */2 * * *");
-        assert!(parsed.hand.tools.allowed.contains(&"tool::browser_navigate".to_string()));
+        assert!(parsed.hand.functions.allowed.contains(&"browser::navigate".to_string()));
         assert_eq!(parsed.hand.agent.max_iterations, Some(80));
         assert_eq!(parsed.hand.agent.temperature, Some(0.2));
         assert!(parsed.hand.agent.system_prompt.contains("Phase 1"));
@@ -107,7 +107,7 @@ mod tests {
         let parsed: HandFile = toml::from_str(FIXTURE_MINIMAL).expect("parse minimal fixture");
         assert_eq!(parsed.hand.id, "tiny");
         assert!(parsed.hand.enabled);
-        assert!(parsed.hand.tools.allowed.is_empty());
+        assert!(parsed.hand.functions.allowed.is_empty());
         assert!(parsed.hand.settings.is_empty());
     }
 
@@ -128,6 +128,6 @@ name = "X"
         let json = serde_json::to_value(&parsed.hand).unwrap();
         let back: Hand = serde_json::from_value(json).unwrap();
         assert_eq!(back.id, parsed.hand.id);
-        assert_eq!(back.tools.allowed, parsed.hand.tools.allowed);
+        assert_eq!(back.functions.allowed, parsed.hand.functions.allowed);
     }
 }
