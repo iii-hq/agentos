@@ -179,7 +179,7 @@ async fn transition(iii: &III, input: Value) -> Result<Value, IIIError> {
                     });
                 fire_void(
                     iii,
-                    "tool::agent_send",
+                    "fn::agent_send",
                     json!({ "targetAgentId": agent_id, "message": message }),
                 );
             }

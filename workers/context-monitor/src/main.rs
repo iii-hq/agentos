@@ -809,7 +809,7 @@ mod tests {
             Message {
                 role: "assistant".into(),
                 content: "".into(),
-                tool_calls: Some(json!([{ "callId": "tc1", "id": "tool::read" }])),
+                tool_calls: Some(json!([{ "callId": "tc1", "id": "fn::read" }])),
                 tool_results: None,
                 tool_call_id: None,
                 timestamp: None,
@@ -848,8 +848,8 @@ mod tests {
                 role: "assistant".into(),
                 content: "".into(),
                 tool_calls: Some(json!([
-                    { "callId": "tc1", "id": "tool::read" },
-                    { "callId": "tc2", "id": "tool::write" }
+                    { "callId": "tc1", "id": "fn::read" },
+                    { "callId": "tc2", "id": "fn::write" }
                 ])),
                 tool_results: None,
                 tool_call_id: None,

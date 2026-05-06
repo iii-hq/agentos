@@ -5,8 +5,8 @@ description = "Monitors clipboard for content, automatically categorizes, enrich
 enabled = true
 schedule = "* * * * *"
 
-[hand.tools]
-allowed = ["tool::clipboard_read", "tool::clipboard_write", "tool::web_search", "memory::store", "memory::query", "tool::file_write"]
+[hand.functions]
+allowed = ["fn::clipboard_read", "fn::clipboard_write", "fn::web_search", "memory::store", "memory::query", "fn::file_write"]
 
 [[hand.settings]]
 key = "auto_categorize"

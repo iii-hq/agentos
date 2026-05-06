@@ -48,10 +48,10 @@ async fn state_list(iii: &III, scope: &str) -> Result<Vec<Value>, IIIError> {
     Ok(v.as_array().cloned().unwrap_or_default())
 }
 
-async fn list_agent_tools(iii: &III, agent_id: &str) -> Result<Vec<String>, IIIError> {
+async fn list_agent_functions(iii: &III, agent_id: &str) -> Result<Vec<String>, IIIError> {
     let res = iii
         .trigger(TriggerRequest {
-            function_id: "agent::list_tools".to_string(),
+            function_id: "agent::list_functions".to_string(),
             payload: json!({ "agentId": agent_id }),
             action: None,
             timeout_ms: None,
@@ -106,7 +106,7 @@ async fn generate_card(iii: &III, req: GenerateCardRequest) -> Result<Value, III
         .await?
         .ok_or_else(|| IIIError::Handler(format!("Agent not found: {}", req.agent_id)))?;
 
-    let tool_ids = list_agent_tools(iii, &req.agent_id).await?;
+    let function_ids = list_agent_functions(iii, &req.agent_id).await?;
     let skills = list_skill_entries(iii).await?;
 
     let name = config
@@ -125,7 +125,7 @@ async fn generate_card(iii: &III, req: GenerateCardRequest) -> Result<Value, III
         description,
         url: format!("{}/api/a2a/agents/{}", api_url(), req.agent_id),
         capabilities: A2aCapabilities {
-            tools: tool_ids.into_iter().take(50).collect(),
+            functions: function_ids.into_iter().take(50).collect(),
             streaming: true,
             push_notifications: false,
         },
@@ -171,7 +171,7 @@ async fn well_known(iii: &III) -> Result<Value, IIIError> {
         description: "AI agent operating system with multi-agent orchestration".into(),
         url: format!("{}/api/a2a/agents/orchestrator", api_url()),
         capabilities: A2aCapabilities {
-            tools: vec![],
+            functions: vec![],
             streaming: true,
             push_notifications: false,
         },

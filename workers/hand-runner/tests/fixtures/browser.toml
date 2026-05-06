@@ -5,8 +5,8 @@ description = "Autonomously browses the web to complete multi-step tasks like fo
 enabled = true
 schedule = "0 */2 * * *"
 
-[hand.tools]
-allowed = ["tool::browser_navigate", "tool::browser_click", "tool::browser_type", "tool::browser_screenshot", "tool::web_fetch", "memory::store", "memory::query"]
+[hand.functions]
+allowed = ["browser::navigate", "browser::click", "browser::type", "browser::screenshot", "fn::web_fetch", "memory::store", "memory::query"]
 
 [[hand.settings]]
 key = "headless_mode"

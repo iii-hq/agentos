@@ -13,7 +13,7 @@ const workers: Worker[] = [
   {
     name: "agent-core",
     ns: "agent::*",
-    desc: "ReAct loop. Routes LLM calls, tools, memory recall.",
+    desc: "ReAct loop. Dispatches LLM calls, function calls, memory recall.",
     badge: "FIRST-PARTY",
     snippet: `iii.trigger("agent::chat",
   { message: "review PR #42" })`,
@@ -67,7 +67,7 @@ const workers: Worker[] = [
     badge: "DOCKER",
     snippet: `iii.trigger("mcp::call",
   { server: "github",
-    tool: "list_issues" })`,
+    name: "list_issues" })`,
   },
   {
     name: "hierarchy",

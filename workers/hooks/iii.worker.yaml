@@ -4,4 +4,4 @@ language: rust
 deploy: binary
 manifest: Cargo.toml
 bin: agentos-hooks
-description: Hook registration and firing — agent lifecycle, tool-call interception, prompt mutation
+description: Hook registration and firing — agent lifecycle, function-call interception, prompt mutation

@@ -13,7 +13,7 @@ pub struct ChatRequest {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct ToolCall {
+pub struct FunctionCall {
     #[serde(rename = "callId")]
     pub call_id: String,
     pub id: String,
@@ -42,8 +42,8 @@ pub struct ModelConfig {
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct Capabilities {
-    pub tools: Vec<String>,
+pub struct Capabilities { 
+    pub functions: Vec<String>,
     #[serde(rename = "memoryScopes")]
     pub memory_scopes: Option<Vec<String>>,
     #[serde(rename = "networkHosts")]
@@ -109,7 +109,7 @@ mod tests {
             "id": "memory::recall",
             "arguments": {"query": "test"},
         });
-        let tc: ToolCall = serde_json::from_value(json_val).unwrap();
+        let tc: FunctionCall = serde_json::from_value(json_val).unwrap();
         assert_eq!(tc.call_id, "call-1");
         assert_eq!(tc.id, "memory::recall");
         assert_eq!(tc.arguments["query"], "test");
@@ -117,7 +117,7 @@ mod tests {
 
     #[test]
     fn test_tool_call_serialization() {
-        let tc = ToolCall {
+        let tc = FunctionCall {
             call_id: "c-1".to_string(),
             id: "file::read".to_string(),
             arguments: json!({"path": "/tmp/file.txt"}),
@@ -156,7 +156,7 @@ mod tests {
             },
             "systemPrompt": "Be helpful",
             "capabilities": {
-                "tools": ["file::*", "memory::*"],
+                "functions": ["file::*", "memory::*"],
                 "memoryScopes": ["default"],
                 "networkHosts": ["api.example.com"],
             },
@@ -172,7 +172,7 @@ mod tests {
         assert_eq!(model.provider, Some("anthropic".to_string()));
         assert_eq!(model.max_tokens, Some(4096));
         let caps = config.capabilities.unwrap();
-        assert_eq!(caps.tools, vec!["file::*", "memory::*"]);
+        assert_eq!(caps.functions, vec!["file::*", "memory::*"]);
         assert_eq!(caps.memory_scopes, Some(vec!["default".to_string()]));
         let resources = config.resources.unwrap();
         assert_eq!(resources.max_tokens_per_hour, Some(100000));
@@ -204,10 +204,10 @@ mod tests {
     #[test]
     fn test_capabilities_deserialization() {
         let json_val = json!({
-            "tools": ["*"],
+            "functions": ["*"],
         });
         let caps: Capabilities = serde_json::from_value(json_val).unwrap();
-        assert_eq!(caps.tools, vec!["*"]);
+        assert_eq!(caps.functions, vec!["*"]);
         assert!(caps.memory_scopes.is_none());
         assert!(caps.network_hosts.is_none());
     }
@@ -215,12 +215,12 @@ mod tests {
     #[test]
     fn test_capabilities_with_all_fields() {
         let json_val = json!({
-            "tools": ["file::read", "memory::recall"],
+            "functions": ["file::read", "memory::recall"],
             "memoryScopes": ["personal", "shared"],
             "networkHosts": ["api.anthropic.com"],
         });
         let caps: Capabilities = serde_json::from_value(json_val).unwrap();
-        assert_eq!(caps.tools.len(), 2);
+        assert_eq!(caps.functions.len(), 2);
         assert_eq!(caps.memory_scopes.as_ref().unwrap().len(), 2);
         assert_eq!(caps.network_hosts.as_ref().unwrap().len(), 1);
     }
@@ -279,19 +279,19 @@ mod tests {
             "id": "system::status",
             "arguments": {},
         });
-        let tc: ToolCall = serde_json::from_value(json_val).unwrap();
+        let tc: FunctionCall = serde_json::from_value(json_val).unwrap();
         assert!(tc.arguments.is_object());
         assert!(tc.arguments.as_object().unwrap().is_empty());
     }
 
     #[test]
-    fn test_agent_config_empty_tools() {
+    fn test_agent_config_empty_functions() {
         let json_val = json!({
             "name": "NoTools",
-            "capabilities": { "tools": [] },
+            "capabilities": { "functions": [] },
         });
         let config: AgentConfig = serde_json::from_value(json_val).unwrap();
-        assert!(config.capabilities.unwrap().tools.is_empty());
+        assert!(config.capabilities.unwrap().functions.is_empty());
     }
 
     #[test]
@@ -326,7 +326,7 @@ mod tests {
             }),
             system_prompt: Some("Be precise".to_string()),
             capabilities: Some(Capabilities {
-                tools: vec!["file::*".to_string()],
+                functions: vec!["file::*".to_string()],
                 memory_scopes: Some(vec!["self".to_string()]),
                 network_hosts: Some(vec!["api.openai.com".to_string()]),
             }),
@@ -353,25 +353,25 @@ mod tests {
     fn test_tool_call_nested_arguments() {
         let json_val = json!({
             "callId": "c-nested",
-            "id": "tool::complex",
+            "id": "fn::complex",
             "arguments": {
                 "config": {"nested": true, "depth": 3},
                 "items": [1, 2, 3],
             },
         });
-        let tc: ToolCall = serde_json::from_value(json_val).unwrap();
+        let tc: FunctionCall = serde_json::from_value(json_val).unwrap();
         assert!(tc.arguments["config"]["nested"].as_bool().unwrap());
     }
 
     #[test]
     fn test_tool_call_roundtrip() {
-        let tc = ToolCall {
+        let tc = FunctionCall {
             call_id: "rt-call".to_string(),
             id: "memory::store".to_string(),
             arguments: json!({"agentId": "a1", "content": "data"}),
         };
         let json_str = serde_json::to_string(&tc).unwrap();
-        let rt: ToolCall = serde_json::from_str(&json_str).unwrap();
+        let rt: FunctionCall = serde_json::from_str(&json_str).unwrap();
         assert_eq!(rt.call_id, "rt-call");
         assert_eq!(rt.id, "memory::store");
     }
@@ -390,19 +390,19 @@ mod tests {
     }
 
     #[test]
-    fn test_capabilities_wildcard_tools() {
+    fn test_capabilities_wildcard_functions() {
         let caps = Capabilities {
-            tools: vec!["*".to_string()],
+            functions: vec!["*".to_string()],
             memory_scopes: None,
             network_hosts: None,
         };
-        assert!(caps.tools.contains(&"*".to_string()));
+        assert!(caps.functions.contains(&"*".to_string()));
     }
 
     #[test]
     fn test_capabilities_multiple_network_hosts() {
         let json_val = json!({
-            "tools": ["*"],
+            "functions": ["*"],
             "networkHosts": ["api.anthropic.com", "api.openai.com", "*.example.com"],
         });
         let caps: Capabilities = serde_json::from_value(json_val).unwrap();
@@ -492,10 +492,10 @@ mod tests {
     fn test_tool_call_null_arguments() {
         let json_val = json!({
             "callId": "c-null",
-            "id": "tool::test",
+            "id": "fn::test",
             "arguments": null,
         });
-        let tc: ToolCall = serde_json::from_value(json_val).unwrap();
+        let tc: FunctionCall = serde_json::from_value(json_val).unwrap();
         assert!(tc.arguments.is_null());
     }
 
@@ -503,10 +503,10 @@ mod tests {
     fn test_tool_call_array_arguments() {
         let json_val = json!({
             "callId": "c-arr",
-            "id": "tool::batch",
+            "id": "fn::batch",
             "arguments": [1, "two", false, null, [3, 4]],
         });
-        let tc: ToolCall = serde_json::from_value(json_val).unwrap();
+        let tc: FunctionCall = serde_json::from_value(json_val).unwrap();
         assert!(tc.arguments.is_array());
         assert_eq!(tc.arguments.as_array().unwrap().len(), 5);
     }
@@ -515,12 +515,12 @@ mod tests {
     fn test_tool_call_deeply_nested_arguments() {
         let json_val = json!({
             "callId": "c-deep",
-            "id": "tool::deep",
+            "id": "fn::deep",
             "arguments": {
                 "a": {"b": {"c": {"d": {"e": "bottom"}}}}
             },
         });
-        let tc: ToolCall = serde_json::from_value(json_val).unwrap();
+        let tc: FunctionCall = serde_json::from_value(json_val).unwrap();
         assert_eq!(tc.arguments["a"]["b"]["c"]["d"]["e"], "bottom");
     }
 
@@ -555,7 +555,7 @@ mod tests {
             }),
             system_prompt: Some("sp".to_string()),
             capabilities: Some(Capabilities {
-                tools: vec!["t".to_string()],
+                functions: vec!["t".to_string()],
                 memory_scopes: Some(vec!["s".to_string()]),
                 network_hosts: Some(vec!["h".to_string()]),
             }),
@@ -620,24 +620,24 @@ mod tests {
     #[test]
     fn test_capabilities_wildcard_and_specific() {
         let caps = Capabilities {
-            tools: vec!["*".to_string(), "file::read".to_string()],
+            functions: vec!["*".to_string(), "file::read".to_string()],
             memory_scopes: None,
             network_hosts: None,
         };
-        assert!(caps.tools.contains(&"*".to_string()));
-        assert!(caps.tools.contains(&"file::read".to_string()));
-        assert_eq!(caps.tools.len(), 2);
+        assert!(caps.functions.contains(&"*".to_string()));
+        assert!(caps.functions.contains(&"file::read".to_string()));
+        assert_eq!(caps.functions.len(), 2);
     }
 
     #[test]
-    fn test_capabilities_empty_tools_serialization() {
+    fn test_capabilities_empty_functions_serialization() {
         let caps = Capabilities {
-            tools: vec![],
+            functions: vec![],
             memory_scopes: Some(vec![]),
             network_hosts: Some(vec![]),
         };
         let val = serde_json::to_value(&caps).unwrap();
-        assert!(val["tools"].as_array().unwrap().is_empty());
+        assert!(val["functions"].as_array().unwrap().is_empty());
         assert!(val["memoryScopes"].as_array().unwrap().is_empty());
         assert!(val["networkHosts"].as_array().unwrap().is_empty());
     }

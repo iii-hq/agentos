@@ -6,7 +6,7 @@ mod types;
 
 use types::{EvalResult, EvalScores, EvalSuite, EvalTestCase};
 
-const ALLOWED_SCORER_PREFIXES: &[&str] = &["evolved::", "eval::", "tool::"];
+const ALLOWED_SCORER_PREFIXES: &[&str] = &["evolved::", "eval::", "fn::"];
 
 const W_CORRECTNESS: f64 = 0.5;
 const W_LATENCY: f64 = 0.15;

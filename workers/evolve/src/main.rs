@@ -172,7 +172,7 @@ async fn evolve_generate(iii: &III, input: Value) -> Result<Value, IIIError> {
     let function_id = format!("evolved::{safe_name}_v{next_version}");
 
     let prompt = format!(
-        "Write a JavaScript function that accomplishes the following goal. Return ONLY the function body as an arrow function expression. Do not include markdown, explanations, or code fences.\n\nGoal: {goal}\n{}\n\nThe function receives a single `input` parameter (any type) and must return a result.\nIt has access to: JSON, Math, Date, Array, Object, String, Number, Boolean, Map, Set, Promise, parseInt, parseFloat.\nIt can call `await trigger({{ function_id: fnId, payload: data }})` to invoke other functions (only evolved::, tool::, llm:: prefixes).\nIt CANNOT use: fetch, fs, process, require, setTimeout, eval, Function constructor.\n\nExample: async (input) => {{ return {{ result: input.value * 2 }}; }}",
+        "Write a JavaScript function that accomplishes the following goal. Return ONLY the function body as an arrow function expression. Do not include markdown, explanations, or code fences.\n\nGoal: {goal}\n{}\n\nThe function receives a single `input` parameter (any type) and must return a result.\nIt has access to: JSON, Math, Date, Array, Object, String, Number, Boolean, Map, Set, Promise, parseInt, parseFloat.\nIt can call `await trigger({{ function_id: fnId, payload: data }})` to invoke other functions (only evolved::, fn::, llm:: prefixes).\nIt CANNOT use: fetch, fs, process, require, setTimeout, eval, Function constructor.\n\nExample: async (input) => {{ return {{ result: input.value * 2 }}; }}",
         if spec.is_empty() {
             String::new()
         } else {
@@ -439,7 +439,7 @@ async fn evolve_fork(iii: &III, input: Value) -> Result<Value, IIIError> {
     let function_id = format!("evolved::{safe_name}_v{next_version}");
 
     let prompt = format!(
-        "Improve the following JavaScript function based on the goal below. Return ONLY the function body as an arrow function expression. Do not include markdown, explanations, or code fences.\n\nCurrent code:\n{}\n\nCurrent description: {}\n\nImprovement goal: {goal}\n\nThe function receives a single `input` parameter and must return a result.\nIt has access to: JSON, Math, Date, Array, Object, String, Number, Boolean, Map, Set, Promise.\nIt can call `await trigger({{ function_id: fnId, payload: data }})` for evolved::, tool::, llm:: prefixes.",
+        "Improve the following JavaScript function based on the goal below. Return ONLY the function body as an arrow function expression. Do not include markdown, explanations, or code fences.\n\nCurrent code:\n{}\n\nCurrent description: {}\n\nImprovement goal: {goal}\n\nThe function receives a single `input` parameter and must return a result.\nIt has access to: JSON, Math, Date, Array, Object, String, Number, Boolean, Map, Set, Promise.\nIt can call `await trigger({{ function_id: fnId, payload: data }})` for evolved::, fn::, llm:: prefixes.",
         source.code,
         source.description,
     );

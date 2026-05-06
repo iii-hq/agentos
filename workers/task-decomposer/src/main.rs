@@ -445,7 +445,7 @@ async fn spawn_workers(iii: &III, input: Value) -> Result<Value, IIIError> {
         tokio::spawn(async move {
             let _ = iii_clone
                 .trigger(TriggerRequest {
-                    function_id: "tool::agent_spawn".to_string(),
+                    function_id: "fn::agent_spawn".to_string(),
                     payload,
                     action: None,
                     timeout_ms: None,

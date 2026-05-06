@@ -285,10 +285,10 @@ mod tests {
 
     #[test]
     fn test_policy_rule_serialization_roundtrip() {
-        let rule = allow_rule("tool::*");
+        let rule = allow_rule("fn::*");
         let serialized = serde_json::to_string(&rule).unwrap();
         let deserialized: PolicyRule = serde_json::from_str(&serialized).unwrap();
-        assert_eq!(deserialized.pattern, "tool::*");
+        assert_eq!(deserialized.pattern, "fn::*");
     }
 
     #[test]
@@ -439,8 +439,8 @@ mod tests {
 
     #[test]
     fn test_glob_matches_special_chars_colons() {
-        assert!(glob_matches("ns::tool::v2", "ns::tool::v2"));
-        assert!(!glob_matches("ns::tool::v2", "ns::tool::v3"));
+        assert!(glob_matches("ns::fn::v2", "ns::fn::v2"));
+        assert!(!glob_matches("ns::fn::v2", "ns::fn::v3"));
     }
 
     #[test]
@@ -491,7 +491,7 @@ mod tests {
     fn test_policy_config_large_rule_set() {
         let rules: Vec<PolicyRule> = (0..1000)
             .map(|i| PolicyRule {
-                pattern: format!("tool::category{}::*", i),
+                pattern: format!("fn::category{}::*", i),
                 action: if i % 2 == 0 { PolicyAction::Allow } else { PolicyAction::Deny },
                 scope: PolicyScope::Agent,
             })

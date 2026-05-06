@@ -5,8 +5,8 @@ description = "Monitors Twitter/X for mentions, trends, and conversations, then 
 enabled = true
 schedule = "*/15 * * * *"
 
-[hand.tools]
-allowed = ["tool::web_search", "tool::web_fetch", "tool::http_request", "memory::store", "memory::query", "tool::file_write"]
+[hand.functions]
+allowed = ["fn::web_search", "fn::web_fetch", "fn::http_request", "memory::store", "memory::query", "fn::file_write"]
 
 [[hand.settings]]
 key = "track_keywords"

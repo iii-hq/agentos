@@ -273,7 +273,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let iii_ref = iii.clone();
     iii.register_function(
-        RegisterFunction::new_async("tool::hashline_read", move |input: Value| {
+        RegisterFunction::new_async("hashline::read", move |input: Value| {
             let _iii = iii_ref.clone();
             async move {
                 let body = extract_body(&input);
@@ -306,7 +306,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     payload: json!({
                         "name": "tool_execution_total",
                         "value": 1,
-                        "labels": { "toolId": "tool::hashline_read", "status": "success" }
+                        "labels": { "toolId": "hashline::read", "status": "success" }
                     }),
                     action: None,
                     timeout_ms: None,
@@ -327,7 +327,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let iii_ref = iii.clone();
     iii.register_function(
-        RegisterFunction::new_async("tool::hashline_edit", move |input: Value| {
+        RegisterFunction::new_async("hashline::edit", move |input: Value| {
             let _iii = iii_ref.clone();
             async move {
                 let body = extract_body(&input);
@@ -385,7 +385,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     payload: json!({
                         "name": "tool_execution_total",
                         "value": 1,
-                        "labels": { "toolId": "tool::hashline_edit", "status": "success" }
+                        "labels": { "toolId": "hashline::edit", "status": "success" }
                     }),
                     action: None,
                     timeout_ms: None,
@@ -405,7 +405,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let iii_ref = iii.clone();
     iii.register_function(
-        RegisterFunction::new_async("tool::hashline_diff", move |input: Value| {
+        RegisterFunction::new_async("hashline::diff", move |input: Value| {
             let _iii = iii_ref.clone();
             async move {
                 let body = extract_body(&input);
@@ -455,7 +455,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     payload: json!({
                         "name": "tool_execution_total",
                         "value": 1,
-                        "labels": { "toolId": "tool::hashline_diff", "status": "success" }
+                        "labels": { "toolId": "hashline::diff", "status": "success" }
                     }),
                     action: None,
                     timeout_ms: None,
@@ -475,19 +475,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     iii.register_trigger(RegisterTriggerInput {
         trigger_type: "http".to_string(),
-        function_id: "tool::hashline_read".to_string(),
+        function_id: "hashline::read".to_string(),
         config: json!({ "api_path": "api/hashline/read", "http_method": "POST" }),
         metadata: None,
     })?;
     iii.register_trigger(RegisterTriggerInput {
         trigger_type: "http".to_string(),
-        function_id: "tool::hashline_edit".to_string(),
+        function_id: "hashline::edit".to_string(),
         config: json!({ "api_path": "api/hashline/edit", "http_method": "POST" }),
         metadata: None,
     })?;
     iii.register_trigger(RegisterTriggerInput {
         trigger_type: "http".to_string(),
-        function_id: "tool::hashline_diff".to_string(),
+        function_id: "hashline::diff".to_string(),
         config: json!({ "api_path": "api/hashline/diff", "http_method": "POST" }),
         metadata: None,
     })?;

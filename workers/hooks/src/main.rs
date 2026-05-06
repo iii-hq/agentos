@@ -587,7 +587,7 @@ mod tests {
             function_id: "fn::x".into(),
             enabled: true,
             agent_id: Some("agent-1".into()),
-            filter: Some(json!({ "toolIds": ["tool::a"] })),
+            filter: Some(json!({ "toolIds": ["fn::a"] })),
             created_at: 12345,
         };
         let v = serde_json::to_value(&h).unwrap();
@@ -689,12 +689,12 @@ mod tests {
             function_id: "fn".into(),
             enabled: true,
             agent_id: None,
-            filter: Some(json!({ "toolIds": ["tool::a", "tool::b"] })),
+            filter: Some(json!({ "toolIds": ["fn::a", "fn::b"] })),
             created_at: 0,
         };
         let allowed = match &hook.filter {
             Some(f) => match f.get("toolIds").and_then(|v| v.as_array()) {
-                Some(ids) => ids.iter().any(|x| x.as_str() == Some("tool::a")),
+                Some(ids) => ids.iter().any(|x| x.as_str() == Some("fn::a")),
                 None => true,
             },
             None => true,
@@ -703,7 +703,7 @@ mod tests {
 
         let not_allowed = match &hook.filter {
             Some(f) => match f.get("toolIds").and_then(|v| v.as_array()) {
-                Some(ids) => ids.iter().any(|x| x.as_str() == Some("tool::z")),
+                Some(ids) => ids.iter().any(|x| x.as_str() == Some("fn::z")),
                 None => true,
             },
             None => true,

@@ -281,9 +281,6 @@ async fn execute_wasm(iii: &III, cache: &ModuleCache, input: Value) -> Result<Va
         const WASM_ALLOWED_FUNCTIONS: &[&str] = &[
             "memory::recall",
             "memory::store",
-            "tool::web_fetch",
-            "tool::file_read",
-            "tool::file_list",
             "security::scan_injection",
             "embedding::generate",
         ];
@@ -562,13 +559,10 @@ mod tests {
         const WASM_ALLOWED_FUNCTIONS: &[&str] = &[
             "memory::recall",
             "memory::store",
-            "tool::web_fetch",
-            "tool::file_read",
-            "tool::file_list",
             "security::scan_injection",
             "embedding::generate",
         ];
-        assert_eq!(WASM_ALLOWED_FUNCTIONS.len(), 7);
+        assert_eq!(WASM_ALLOWED_FUNCTIONS.len(), 4);
         assert!(WASM_ALLOWED_FUNCTIONS.contains(&"memory::recall"));
         assert!(WASM_ALLOWED_FUNCTIONS.contains(&"memory::store"));
         assert!(!WASM_ALLOWED_FUNCTIONS.contains(&"file::delete"));
@@ -842,13 +836,10 @@ mod tests {
         const WASM_ALLOWED_FUNCTIONS: &[&str] = &[
             "memory::recall",
             "memory::store",
-            "tool::web_fetch",
-            "tool::file_read",
-            "tool::file_list",
             "security::scan_injection",
             "embedding::generate",
         ];
-        assert_eq!(WASM_ALLOWED_FUNCTIONS.len(), 7);
+        assert_eq!(WASM_ALLOWED_FUNCTIONS.len(), 4);
     }
 
     #[test]
@@ -856,9 +847,6 @@ mod tests {
         const WASM_ALLOWED_FUNCTIONS: &[&str] = &[
             "memory::recall",
             "memory::store",
-            "tool::web_fetch",
-            "tool::file_read",
-            "tool::file_list",
             "security::scan_injection",
             "embedding::generate",
         ];
@@ -866,7 +854,6 @@ mod tests {
             "file::delete",
             "network::send",
             "system::exec",
-            "tool::file_write",
             "memory::delete",
             "agent::create",
             "security::check_capability",
@@ -881,18 +868,12 @@ mod tests {
         const WASM_ALLOWED_FUNCTIONS: &[&str] = &[
             "memory::recall",
             "memory::store",
-            "tool::web_fetch",
-            "tool::file_read",
-            "tool::file_list",
             "security::scan_injection",
             "embedding::generate",
         ];
         let expected = [
             "memory::recall",
             "memory::store",
-            "tool::web_fetch",
-            "tool::file_read",
-            "tool::file_list",
             "security::scan_injection",
             "embedding::generate",
         ];
@@ -1196,8 +1177,7 @@ mod tests {
     #[test]
     fn test_wasm_allowed_functions_memory_recall_present() {
         const WASM_ALLOWED_FUNCTIONS: &[&str] = &[
-            "memory::recall", "memory::store", "tool::web_fetch",
-            "tool::file_read", "tool::file_list",
+            "memory::recall", "memory::store",
             "security::scan_injection", "embedding::generate",
         ];
         assert!(WASM_ALLOWED_FUNCTIONS.contains(&"memory::recall"));
@@ -1206,8 +1186,7 @@ mod tests {
     #[test]
     fn test_wasm_allowed_functions_embedding_generate_present() {
         const WASM_ALLOWED_FUNCTIONS: &[&str] = &[
-            "memory::recall", "memory::store", "tool::web_fetch",
-            "tool::file_read", "tool::file_list",
+            "memory::recall", "memory::store",
             "security::scan_injection", "embedding::generate",
         ];
         assert!(WASM_ALLOWED_FUNCTIONS.contains(&"embedding::generate"));
@@ -1216,12 +1195,11 @@ mod tests {
     #[test]
     fn test_wasm_allowed_functions_no_write_operations() {
         const WASM_ALLOWED_FUNCTIONS: &[&str] = &[
-            "memory::recall", "memory::store", "tool::web_fetch",
-            "tool::file_read", "tool::file_list",
+            "memory::recall", "memory::store",
             "security::scan_injection", "embedding::generate",
         ];
-        assert!(!WASM_ALLOWED_FUNCTIONS.contains(&"tool::file_write"));
-        assert!(!WASM_ALLOWED_FUNCTIONS.contains(&"tool::file_delete"));
+        assert!(!WASM_ALLOWED_FUNCTIONS.contains(&"fs::write"));
+        assert!(!WASM_ALLOWED_FUNCTIONS.contains(&"fs::delete"));
         assert!(!WASM_ALLOWED_FUNCTIONS.contains(&"system::exec"));
     }
 
