@@ -8,7 +8,7 @@
     "test:e2e:smoke": "AGENTOS_E2E=1 vitest --run --config vitest.e2e.config.ts --testNamePattern=\"health|chat_completions\""
   },
   "dependencies": {
-    "iii-sdk": "0.11.4-next.4"
+    "iii-sdk": "0.11.6"
   },
   "devDependencies": {
     "@types/node": "^25.3.2",

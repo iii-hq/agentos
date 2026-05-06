@@ -90,7 +90,7 @@ jobs:
         run: |
           set -e
           if grep -rn '"sandbox::' workers/ crates/ 2>/dev/null; then
-            echo "::error::workers must not register sandbox::* — that namespace is reserved for the builtin iii-sandbox worker (iii v0.11.4-next.4). Use wasm:: instead."
+            echo "::error::workers must not register sandbox::* — that namespace is reserved for the builtin iii-sandbox worker (iii v0.11.6). Use wasm:: instead."
             exit 1
           fi
           echo "ok: no sandbox::* registrations in agentos workers"
@@ -180,7 +180,7 @@ jobs:
           # if iii-sandbox were enabled, sandbox::create would also appear without
           # colliding with our wasm::* names.
           if grep -q 'Function sandbox::execute' engine.log; then
-            echo "::error::sandbox::execute is reserved for builtin iii-sandbox (iii v0.11.4-next.4)"
+            echo "::error::sandbox::execute is reserved for builtin iii-sandbox (iii v0.11.6)"
             exit 1
           fi
           echo "ok: wasm:: registered, no agentos worker shadows sandbox::*"

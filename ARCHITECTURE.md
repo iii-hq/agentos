@@ -55,7 +55,7 @@ CI's `validate iii.worker.yaml` job enforces this on every PR.
 
 ## Engine boot
 
-`config.yaml` (iii v0.11.4 schema) declares the seven baseline modules the engine spawns: `iii-http`, `iii-state`, `iii-stream`, `iii-queue`, `iii-pubsub`, `iii-cron`, `iii-observability`. AgentOS workers spawn alongside as separate processes — each connects to the engine WebSocket via `register_worker("ws://localhost:49134", ...)` and stays resident.
+`config.yaml` (iii v0.11.6 schema) declares the seven baseline modules the engine spawns: `iii-http`, `iii-state`, `iii-stream`, `iii-queue`, `iii-pubsub`, `iii-cron`, `iii-observability`. AgentOS workers spawn alongside as separate processes — each connects to the engine WebSocket via `register_worker("ws://localhost:49134", ...)` and stays resident.
 
 The engine WebSocket port is configurable via `III_WS_URL` (default `ws://localhost:49134`).
 
@@ -90,14 +90,14 @@ This is the only inter-worker contract. There is no shared in-process state.
 
 | namespace | worker | semantics |
 |---|---|---|
-| `sandbox::create` / `sandbox::exec` / `sandbox::list` / `sandbox::stop` | **builtin** iii-sandbox (v0.11.4-next.4) | Ephemeral microVMs from OCI rootfs (Python, Node presets). Full Linux. |
+| `sandbox::create` / `sandbox::exec` / `sandbox::list` / `sandbox::stop` | **builtin** iii-sandbox (v0.11.6) | Ephemeral microVMs from OCI rootfs (Python, Node presets). Full Linux. |
 | `wasm::execute` / `wasm::validate` / `wasm::list_modules` | agentos `wasm-sandbox` | wasmtime, fuel-metered, sub-millisecond cold start. |
 
 CI's `no sandbox::* clash with builtin` job greps the workspace to ensure no agentos worker registers `sandbox::*`.
 
 ## Atomic state ops
 
-iii v0.11.4 exposes `state::update` / `stream::update` with `UpdateOp::set`, `UpdateOp::increment`, `UpdateOp::append`, plus nested shallow-merge paths. Workers prefer these over `state::list + state::set` race patterns when mutating lists or counters.
+iii v0.11.6 exposes `state::update` / `stream::update` with `UpdateOp::set`, `UpdateOp::increment`, `UpdateOp::append`, plus nested shallow-merge paths. Workers prefer these over `state::list + state::set` race patterns when mutating lists or counters.
 
 `council::activity` still uses a manual hash-chain on `state::list + state::set` — a separate refactor will move it onto `UpdateOp::append` once the chain protocol tolerates concurrent appends without compare-and-swap.
 
@@ -118,10 +118,10 @@ None ship as registered functions; they configure workers that do.
 
 ## Versioning
 
-- iii engine: **v0.11.4-next.4**
-- iii-sdk (Rust): **=0.11.4-next.4** in workspace `Cargo.toml`
-- iii-sdk (Node): **0.11.4-next.4** in root `package.json` (e2e tests only)
-- iii-sdk (Python): **>=0.11.3** in `workers/embedding/pyproject.toml`
+- iii engine: **v0.11.6**
+- iii-sdk (Rust): **=0.11.6** in workspace `Cargo.toml`
+- iii-sdk (Node): **0.11.6** in root `package.json` (e2e tests only)
+- iii-sdk (Python): **>=0.11.6** in `workers/embedding/pyproject.toml`
 - agentos workspace: `version = "0.0.1"` (reserved for behavioral proof against live infra, not feature completeness)
 
 ## CI
@@ -140,7 +140,7 @@ Plus `.github/workflows/vercel-deploy.yml`: pushes to `main` touching `website/*
 
 ## Dependencies (declarative chain-install)
 
-iii v0.11.4-next.4 added a `dependencies:` map in `iii.worker.yaml` that lets `iii worker add ./workers/agent-core` chain-install `llm-router`, `memory`, `security` from the registry. AgentOS workers do not yet declare deps because they aren't published to the registry — once publishing lands, agent-core gets:
+iii v0.11.6 added a `dependencies:` map in `iii.worker.yaml` that lets `iii worker add ./workers/agent-core` chain-install `llm-router`, `memory`, `security` from the registry. AgentOS workers do not yet declare deps because they aren't published to the registry — once publishing lands, agent-core gets:
 
 ```yaml
 dependencies:
