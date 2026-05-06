@@ -13,43 +13,4 @@
     <text x="60" y="232">built as <tspan font-style="italic" fill="#d96e2e">narrow workers</tspan></text>
     <text x="60" y="304">on iii primitives.</text>
   </g>
-
-  <g stroke="#0c0b0a" stroke-opacity="0.32" stroke-width="1" stroke-dasharray="3 4" fill="none">
-    <circle cx="945" cy="186" r="40" fill="#f2ede1" stroke="#d96e2e" stroke-opacity="1" stroke-dasharray="0" stroke-width="1.6"/>
-  </g>
-
-  <g transform="translate(913, 154)">
-    <g transform="scale(0.06)">
-      <rect x="0" y="0.05" width="268.94" height="268.94" fill="#0c0b0a"/>
-      <rect x="0" y="403.45" width="268.94" height="672.24" fill="#0c0b0a"/>
-      <rect x="403.4" y="0.05" width="268.94" height="268.94" fill="#0c0b0a"/>
-      <rect x="403.4" y="403.45" width="268.94" height="672.24" fill="#0c0b0a"/>
-      <rect x="806.81" y="0.05" width="268.94" height="268.94" fill="#0c0b0a"/>
-      <rect x="806.81" y="403.45" width="268.94" height="672.24" fill="#d96e2e"/>
-    </g>
-  </g>
-  <g stroke="#0c0b0a" stroke-opacity="0.32" stroke-width="1" stroke-dasharray="3 4">
-    <line x1="945" y1="146" x2="945" y2="60"/>
-    <line x1="945" y1="226" x2="945" y2="312"/>
-    <line x1="905" y1="186" x2="820" y2="186"/>
-    <line x1="985" y1="186" x2="1070" y2="186"/>
-    <line x1="918" y1="159" x2="868" y2="109"/>
-    <line x1="972" y1="159" x2="1022" y2="109"/>
-    <line x1="918" y1="213" x2="868" y2="263"/>
-    <line x1="972" y1="213" x2="1022" y2="263"/>
-  </g>
-  <g fill="#0c0b0a">
-    <circle cx="945" cy="60" r="3.5"/>
-    <circle cx="945" cy="312" r="3.5"/>
-    <circle cx="820" cy="186" r="3.5"/>
-    <circle cx="1070" cy="186" r="3.5"/>
-    <circle cx="868" cy="109" r="3.5"/>
-    <circle cx="1022" cy="109" r="3.5"/>
-    <circle cx="868" cy="263" r="3.5"/>
-    <circle cx="1022" cy="263" r="3.5"/>
-  </g>
-
-  <g font-family="JetBrains Mono, ui-monospace, monospace" font-size="11" fill="#6b6660" letter-spacing="1.98">
-    <text x="60" y="304" text-anchor="start" opacity="0">.</text>
-  </g>
 </svg>
