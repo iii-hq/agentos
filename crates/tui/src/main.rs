@@ -333,13 +333,15 @@ impl App {
                 self.worker_count = self.worker_count.max(1);
                 self.status = "● engine ready".into();
             }
-            Ok(resp) => {
-                self.healthy = false;
-                self.status = format!("○ engine HTTP {}", resp.status().as_u16());
-                self.last_error = Some(format!("Engine returned HTTP {}", resp.status()));
+            Ok(_) => {
+                self.healthy = true;
+                self.worker_count = 0;
+                self.status = "◐ engine up · no workers".into();
+                self.last_error = Some("Engine is reachable but realm worker is not running. Run: bash scripts/dev-up.sh".into());
             }
             Err(e) => {
                 self.healthy = false;
+                self.worker_count = 0;
                 self.status = "○ Engine offline".into();
                 self.last_error = Some(format!("Connection failed: {}", e));
             }
@@ -885,7 +887,8 @@ async fn main() -> Result<()> {
     while app.running {
         terminal.draw(|f| draw(f, &app))?;
 
-        if last_health.elapsed() > std::time::Duration::from_secs(10) {
+        let refresh_interval = if app.show_first_run { 2 } else { 10 };
+        if last_health.elapsed() > std::time::Duration::from_secs(refresh_interval) {
             app.refresh_health().await;
             app.refresh_registry().await;
             if first_run::detect(app.healthy, app.worker_count) == first_run::HealthState::Ready {
