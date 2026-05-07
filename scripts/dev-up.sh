@@ -67,9 +67,14 @@ if [[ -z "${ANTHROPIC_API_KEY:-}" ]]; then
 fi
 
 current_fd=$(ulimit -n 2>/dev/null || echo 256)
-if [[ "$current_fd" -lt 4096 ]]; then
-    echo "warning: file-descriptor limit is $current_fd. 62 workers need ~1500."
-    echo "  bump it before spawning:  ulimit -n 8192"
+if [[ "$current_fd" -lt 8192 ]]; then
+    if ulimit -n 8192 2>/dev/null; then
+        echo "▸ raised FD limit: $current_fd → 8192"
+    else
+        echo "warning: could not raise FD limit (currently $current_fd)."
+        echo "  workers will likely crash. Bump system limit:"
+        echo "    sudo launchctl limit maxfiles 65536 unlimited"
+    fi
 fi
 
 > "$PIDFILE"

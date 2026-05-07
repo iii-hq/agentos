@@ -59,8 +59,9 @@ $EDITOR .env   # set ANTHROPIC_API_KEY=sk-ant-…
 # 3. build the workspace
 cargo build --workspace --release
 
-# 4. boot engine + workers (in two terminals, or one with `&`)
-iii --config config.yaml &
+# 4. boot engine + workers (each script raises ulimit -n to 8192 first;
+#    macOS defaults to 256, which is below what 62 workers need)
+bash scripts/engine-up.sh --background
 bash scripts/dev-up.sh
 
 # 5. open the chat
