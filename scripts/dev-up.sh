@@ -50,8 +50,26 @@ if [[ ! -d "$RELEASE_DIR" ]]; then
     exit 1
 fi
 
+if [[ -f "$PIDFILE" ]]; then
+    live=0
+    while read -r pid; do
+        kill -0 "$pid" 2>/dev/null && live=$((live + 1)) || true
+    done < "$PIDFILE"
+    if [[ $live -gt 0 ]]; then
+        echo "$live workers already running from a prior dev-up. Stop first:"
+        echo "  bash scripts/dev-up.sh stop"
+        exit 1
+    fi
+fi
+
 if [[ -z "${ANTHROPIC_API_KEY:-}" ]]; then
     echo "warning: ANTHROPIC_API_KEY not set — llm-router will fall through to mocks"
+fi
+
+current_fd=$(ulimit -n 2>/dev/null || echo 256)
+if [[ "$current_fd" -lt 4096 ]]; then
+    echo "warning: file-descriptor limit is $current_fd. 62 workers need ~1500."
+    echo "  bump it before spawning:  ulimit -n 8192"
 fi
 
 > "$PIDFILE"
