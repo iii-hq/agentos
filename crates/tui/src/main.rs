@@ -290,10 +290,9 @@ impl App {
         let client = Self::client();
         if let Ok(resp) = client.get(format!("{}/api/metrics/summary", API_BASE)).send().await
             && let Ok(data) = resp.json::<Value>().await
+            && let Some(n) = data["workers"].as_u64().or_else(|| data["worker_count"].as_u64())
         {
-            self.worker_count = data["workers"].as_u64()
-                .or_else(|| data["worker_count"].as_u64())
-                .unwrap_or(0) as usize;
+            self.worker_count = n as usize;
         }
         self.registry_fns = slash::BUILTIN_REGISTRY_FNS
             .iter()
