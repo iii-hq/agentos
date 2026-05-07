@@ -711,9 +711,10 @@ impl App {
 
         let client = Self::client();
         let body = serde_json::json!({
-            "messages": [{"role": "user", "content": msg}],
+            "message": msg,
             "agentId": agent_id,
             "realm": self.chat_realm,
+            "sessionId": "tui-session",
         });
 
         let send_result = client.post(format!("{}/api/chat/stream", API_BASE))
@@ -734,11 +735,20 @@ impl App {
             Ok(resp) => {
                 let status = resp.status().as_u16();
                 let body = resp.text().await.unwrap_or_default();
-                let hint = match status {
-                    401 | 403 => "Anthropic rejected the request. Check ANTHROPIC_API_KEY in agentos/.env.",
-                    404 => "Endpoint not registered. Is the streaming worker running?",
-                    500..=599 => "Engine returned a server error. Check llm-router + streaming worker logs.",
-                    _ => "Unexpected response.",
+                let body_low = body.to_lowercase();
+                let upstream_auth = body_low.contains("401")
+                    || body_low.contains("unauthorized")
+                    || body_low.contains("invalid api key")
+                    || body_low.contains("authentication");
+                let hint = if upstream_auth {
+                    "Anthropic rejected the request. Set ANTHROPIC_API_KEY in agentos/.env, then restart workers (bash scripts/dev-up.sh stop && bash scripts/dev-up.sh)."
+                } else {
+                    match status {
+                        401 | 403 => "Anthropic rejected the request. Check ANTHROPIC_API_KEY in agentos/.env.",
+                        404 => "Endpoint not registered. Is the streaming worker running?",
+                        500..=599 => "Engine returned a server error. Check llm-router + streaming worker logs.",
+                        _ => "Unexpected response.",
+                    }
                 };
                 let snippet = body.chars().take(160).collect::<String>();
                 if let Some(last) = self.chat_messages.last_mut() {

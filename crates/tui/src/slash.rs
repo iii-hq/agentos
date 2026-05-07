@@ -82,7 +82,13 @@ pub fn parse(input: &str) -> Parsed {
             name: name.to_string(),
             args: rest.trim().to_string(),
         },
-        None => Parsed::Incomplete { partial: body.to_string() },
+        None => {
+            if BUILTINS.iter().any(|s| s.name == body) {
+                Parsed::Cmd { name: body.to_string(), args: String::new() }
+            } else {
+                Parsed::Incomplete { partial: body.to_string() }
+            }
+        }
     }
 }
 
@@ -186,6 +192,21 @@ mod tests {
     #[test]
     fn parses_incomplete() {
         assert_eq!(parse("/age"), Parsed::Incomplete { partial: "age".into() });
+    }
+
+    #[test]
+    fn bare_builtin_is_cmd_not_incomplete() {
+        match parse("/help") {
+            Parsed::Cmd { name, args } => {
+                assert_eq!(name, "help");
+                assert_eq!(args, "");
+            }
+            other => panic!("expected Cmd, got {:?}", other),
+        }
+        match parse("/quit") {
+            Parsed::Cmd { name, .. } => assert_eq!(name, "quit"),
+            other => panic!("expected Cmd, got {:?}", other),
+        }
     }
 
     #[test]
