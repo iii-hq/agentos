@@ -153,15 +153,35 @@ website/         agentsos.sh — design.md aesthetic, three themes
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for the full primitive flow and worker manifest spec.
 
-## § 09 · Build and test
+## § 09 · TUI
+
+Chat-first terminal UI lives in `crates/tui`:
+
+```bash
+cargo run --release -p agentos-tui
+```
+
+| Key | Action |
+|---|---|
+| `/` | Slash command (`/agent`, `/memory`, `/worker`, `/realm`, `/skill`, `/hand`, `/help`, `/quit`) |
+| `Tab` | Autocomplete current slash command against the live function registry |
+| `?` | Toggle keymap overlay |
+| `Ctrl+P` | Command palette (fuzzy-jump to any pane) |
+| `Ctrl+W` | Worker picker — browse + install workers without leaving the TUI |
+| `Esc` | Close overlay or clear input |
+| `1-9 0` | Direct pane switch (Dashboard / Agents / Chat / Channels / …) |
+
+If the engine is offline or no workers are connected, the TUI shows a first-run overlay with copy-paste commands instead of an empty list. Slash completions pull from `GET /iii/functions` so anything a worker registers is immediately discoverable.
+
+## § 10 · Build and test
 
 ```bash
 cargo build --workspace --release   # all 64 Rust workers
-cargo test --workspace --release    # 1,281 tests
+cargo test --workspace --release    # 1,316 tests
 npm install && npm run test:e2e     # live engine + workers (requires AGENTOS_API_KEY)
 ```
 
-## § 10 · Versioning
+## § 11 · Versioning
 
 | | version |
 |---|---|
@@ -171,6 +191,6 @@ npm install && npm run test:e2e     # live engine + workers (requires AGENTOS_AP
 | iii-sdk (Python) | `>=0.11.6` for the embedding worker |
 | agentos | `0.0.1` — pre-1.0; reserved for behavioral proof against live infra, not feature completeness |
 
-## § 11 · License
+## § 12 · License
 
 Apache-2.0. Same family as `iii-sdk` and the rest of the iii ecosystem.
