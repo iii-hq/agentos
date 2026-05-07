@@ -17,3 +17,6 @@ yarn.lock
 
 .gstack/
 .vercel
+
+.agentos-*.log
+.agentos-dev.pids

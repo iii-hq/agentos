@@ -48,14 +48,28 @@ That's the whole protocol. Workers stay narrow; everything else lives in the eng
 ## § 03 · Quickstart
 
 ```bash
+# 1. install the iii engine binary
 curl -fsSL https://install.iii.dev/iii/main/install.sh | sh
+
+# 2. clone + add your model key (workers auto-load this on connect)
 git clone https://github.com/iii-experimental/agentos && cd agentos
+cp .env.example .env
+$EDITOR .env   # set ANTHROPIC_API_KEY=sk-ant-…
+
+# 3. build the workspace
 cargo build --workspace --release
+
+# 4. boot engine + workers (in two terminals, or one with `&`)
 iii --config config.yaml &
-for w in target/release/agentos-*; do "./$w" & done
+bash scripts/dev-up.sh
+
+# 5. open the chat
+cargo run --release -p agentos-tui
 ```
 
-Engine boots on port 49134. 64 Rust workers connect. 257 functions register. Then:
+Engine boots on port 49134. 64 Rust workers connect. 257 functions register. The TUI opens on Chat — type a message, hit Enter, the agent replies. `/help` shows the full keymap. `Ctrl+W` browses the worker catalog.
+
+Prefer driving by HTTP? Same thing without the TUI:
 
 ```bash
 curl -X POST http://127.0.0.1:3111/v1/realms \

@@ -288,30 +288,21 @@ impl App {
 
     async fn refresh_registry(&mut self) {
         let client = Self::client();
-        if let Ok(resp) = client.get(format!("{}/iii/functions", API_BASE)).send().await
+        if let Ok(resp) = client.get(format!("{}/api/metrics/summary", API_BASE)).send().await
             && let Ok(data) = resp.json::<Value>().await
         {
-            self.registry_fns = slash::extract_function_names(&data);
+            self.worker_count = data["workers"].as_u64()
+                .or_else(|| data["worker_count"].as_u64())
+                .unwrap_or(0) as usize;
         }
-        if let Ok(resp) = client.get(format!("{}/iii/workers", API_BASE)).send().await
-            && let Ok(data) = resp.json::<Value>().await
-        {
-            self.worker_count = data.as_array().map(|a| a.len()).unwrap_or(0);
-        }
+        self.registry_fns = slash::BUILTIN_REGISTRY_FNS
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
     }
 
     async fn refresh_worker_catalog(&mut self) {
-        let client = Self::client();
-        if let Ok(resp) = client.get(format!("{}/api/workers/catalog", API_BASE)).send().await
-            && let Ok(data) = resp.json::<Value>().await
-        {
-            let installed: Vec<String> = self
-                .agents
-                .iter()
-                .filter_map(|a| a["worker"].as_str().map(String::from))
-                .collect();
-            self.worker_catalog = worker_picker::parse_catalog(&data, &installed);
-        }
+        self.worker_catalog = worker_picker::builtin_catalog();
     }
 
     fn palette_items(&self) -> Vec<PaletteItem> {
@@ -334,29 +325,18 @@ impl App {
 
     async fn refresh_health(&mut self) {
         let client = Self::client();
-        match client.get(format!("{}/api/dashboard/stats", API_BASE)).send().await {
+        match client.get(format!("{}/api/realms", API_BASE)).send().await {
+            Ok(resp) if resp.status().is_success() => {
+                self.healthy = true;
+                self.last_error = None;
+                self.dashboard_stats = resp.json::<Value>().await.unwrap_or(Value::Null);
+                self.worker_count = self.worker_count.max(1);
+                self.status = "● engine ready".into();
+            }
             Ok(resp) => {
-                if let Ok(data) = resp.json::<Value>().await {
-                    self.healthy = true;
-                    self.last_error = None;
-                    self.dashboard_stats = data.clone();
-
-                    let status_str = data["status"].as_str().unwrap_or("unknown");
-                    let agent_count = data["agents"].as_u64().unwrap_or(0);
-                    let skill_count = data["skills"].as_u64().unwrap_or(0);
-                    self.status = format!("● {} | {} agents | {} skills", status_str, agent_count, skill_count);
-
-                    if let Some(arr) = data["agentList"].as_array() {
-                        self.agents = arr.clone();
-                    }
-                    if let Some(arr) = data["skillList"].as_array() {
-                        self.skills = arr.clone();
-                    }
-                } else {
-                    self.healthy = false;
-                    self.status = "○ Engine offline".into();
-                    self.last_error = Some("Failed to parse health response".into());
-                }
+                self.healthy = false;
+                self.status = format!("○ engine HTTP {}", resp.status().as_u16());
+                self.last_error = Some(format!("Engine returned HTTP {}", resp.status()));
             }
             Err(e) => {
                 self.healthy = false;
@@ -389,10 +369,12 @@ impl App {
                 }
             }
             Screen::Channels => {
-                if let Ok(resp) = client.get(format!("{}/api/channels", API_BASE)).send().await
+                if let Ok(resp) = client.get(format!("{}/api/coord/channels", API_BASE)).send().await
                     && let Ok(data) = resp.json::<Value>().await
                 {
-                    self.channels = data.as_array().cloned().unwrap_or_default();
+                    self.channels = data["channels"].as_array().cloned()
+                        .or_else(|| data.as_array().cloned())
+                        .unwrap_or_default();
                 }
             }
             Screen::Hands => {
@@ -417,10 +399,13 @@ impl App {
                 }
             }
             Screen::Approvals => {
-                if let Ok(resp) = client.get(format!("{}/api/approvals", API_BASE)).send().await
+                if let Ok(resp) = client.get(format!("{}/api/approvals/pending", API_BASE)).send().await
                     && let Ok(data) = resp.json::<Value>().await
                 {
-                    self.approvals = data.as_array().cloned().unwrap_or_default();
+                    self.approvals = data["pending"].as_array().cloned()
+                        .or_else(|| data["approvals"].as_array().cloned())
+                        .or_else(|| data.as_array().cloned())
+                        .unwrap_or_default();
                 }
             }
             Screen::Logs => {
@@ -431,10 +416,12 @@ impl App {
                 }
             }
             Screen::Memory => {
-                if let Ok(resp) = client.get(format!("{}/api/memory", API_BASE)).send().await
+                if let Ok(resp) = client.get(format!("{}/agentmemory/memories", API_BASE)).send().await
                     && let Ok(data) = resp.json::<Value>().await
                 {
-                    self.memories = data.as_array().cloned().unwrap_or_default();
+                    self.memories = data["memories"].as_array().cloned()
+                        .or_else(|| data.as_array().cloned())
+                        .unwrap_or_default();
                 }
             }
             Screen::Audit => {
@@ -486,7 +473,7 @@ impl App {
                 }
             }
             Screen::Usage => {
-                if let Ok(resp) = client.get(format!("{}/api/dashboard/stats", API_BASE)).send().await
+                if let Ok(resp) = client.get(format!("{}/api/metrics/summary", API_BASE)).send().await
                     && let Ok(data) = resp.json::<Value>().await
                 {
                     self.usage_data = data;
@@ -622,21 +609,44 @@ impl App {
             }
             "memory" => {
                 let client = Self::client();
-                let body = serde_json::json!({"namespace": self.chat_realm, "query": args});
-                match client.post(format!("{}/api/memory/recall", API_BASE)).json(&body).send().await {
-                    Ok(resp) => match resp.json::<Value>().await {
-                        Ok(v) => self.chat_messages.push(("assistant".into(), v.to_string())),
+                let body = serde_json::json!({
+                    "query": args,
+                    "userId": self.chat_realm,
+                    "limit": 10,
+                });
+                match client.post(format!("{}/agentmemory/search", API_BASE)).json(&body).send().await {
+                    Ok(resp) if resp.status().is_success() => match resp.json::<Value>().await {
+                        Ok(v) => {
+                            let display = v["memories"].as_array()
+                                .or_else(|| v["results"].as_array())
+                                .map(|arr| {
+                                    arr.iter().take(5)
+                                        .filter_map(|m| m["content"].as_str().or_else(|| m["text"].as_str()))
+                                        .collect::<Vec<_>>()
+                                        .join("\n  • ")
+                                })
+                                .filter(|s| !s.is_empty())
+                                .map(|s| format!("Memories:\n  • {}", s))
+                                .unwrap_or_else(|| "No memories matched.".into());
+                            self.chat_messages.push(("assistant".into(), display));
+                        }
                         Err(e) => self.chat_messages.push(("system".into(), format!("recall parse error: {}", e))),
                     },
-                    Err(e) => self.chat_messages.push(("system".into(), format!("recall failed: {}", e))),
+                    Ok(resp) => self.chat_messages.push(("system".into(), format!("recall HTTP {}", resp.status()))),
+                    Err(e) => self.chat_messages.push(("system".into(), format!("recall failed: {}. Is the memory worker running?", e))),
                 }
             }
             "remember" => {
                 let client = Self::client();
-                let body = serde_json::json!({"namespace": self.chat_realm, "content": args});
-                match client.post(format!("{}/api/memory/store", API_BASE)).json(&body).send().await {
-                    Ok(_) => self.chat_messages.push(("system".into(), "stored".into())),
-                    Err(e) => self.chat_messages.push(("system".into(), format!("store failed: {}", e))),
+                let body = serde_json::json!({
+                    "content": args,
+                    "userId": self.chat_realm,
+                    "sessionId": "tui-session",
+                });
+                match client.post(format!("{}/agentmemory/remember", API_BASE)).json(&body).send().await {
+                    Ok(resp) if resp.status().is_success() => self.chat_messages.push(("system".into(), "stored".into())),
+                    Ok(resp) => self.chat_messages.push(("system".into(), format!("store HTTP {}", resp.status()))),
+                    Err(e) => self.chat_messages.push(("system".into(), format!("store failed: {}. Is the memory worker running?", e))),
                 }
             }
             "hand" => {
@@ -699,35 +709,50 @@ impl App {
 
         let client = Self::client();
         let body = serde_json::json!({
+            "messages": [{"role": "user", "content": msg}],
             "agentId": agent_id,
-            "message": msg,
+            "realm": self.chat_realm,
         });
 
-        match client.post(format!("{}/api/agents/{}/message", API_BASE, agent_id))
+        let send_result = client.post(format!("{}/api/chat/stream", API_BASE))
             .json(&body)
             .timeout(std::time::Duration::from_secs(120))
             .send()
-            .await
-        {
+            .await;
+
+        match send_result {
+            Ok(resp) if resp.status().is_success() => {
+                let text = resp.text().await.unwrap_or_default();
+                let content = parse_chat_response(&text);
+                self.streaming_tokens = content.len() / 4;
+                if let Some(last) = self.chat_messages.last_mut() {
+                    *last = ("assistant".into(), content);
+                }
+            }
             Ok(resp) => {
-                if let Ok(data) = resp.json::<Value>().await {
-                    let content = data["content"].as_str()
-                        .or(data["response"].as_str())
-                        .or(data["message"].as_str())
-                        .unwrap_or("(no response)");
-                    self.streaming_tokens = content.len() / 4;
-                    if let Some(last) = self.chat_messages.last_mut() {
-                        *last = ("assistant".into(), content.to_string());
-                    }
-                } else {
-                    if let Some(last) = self.chat_messages.last_mut() {
-                        *last = ("system".into(), "Failed to parse response".into());
-                    }
+                let status = resp.status().as_u16();
+                let body = resp.text().await.unwrap_or_default();
+                let hint = match status {
+                    401 | 403 => "Anthropic rejected the request. Check ANTHROPIC_API_KEY in agentos/.env.",
+                    404 => "Endpoint not registered. Is the streaming worker running?",
+                    500..=599 => "Engine returned a server error. Check llm-router + streaming worker logs.",
+                    _ => "Unexpected response.",
+                };
+                let snippet = body.chars().take(160).collect::<String>();
+                if let Some(last) = self.chat_messages.last_mut() {
+                    *last = ("system".into(), format!("HTTP {}: {} ({})", status, hint, snippet));
                 }
             }
             Err(e) => {
+                let hint = if e.is_connect() {
+                    "Engine not reachable. Run: iii --config config.yaml"
+                } else if e.is_timeout() {
+                    "Request timed out. Engine or llm-router may be hung."
+                } else {
+                    "Network error."
+                };
                 if let Some(last) = self.chat_messages.last_mut() {
-                    *last = ("system".into(), format!("Error: {}", e));
+                    *last = ("system".into(), format!("{}: {}", hint, e));
                 }
             }
         }
@@ -800,6 +825,37 @@ impl App {
             Screen::Orchestrator => self.orchestrator_plans.len(),
             _ => 0,
         }
+    }
+}
+
+fn parse_chat_response(body: &str) -> String {
+    if let Ok(json) = serde_json::from_str::<Value>(body) {
+        if let Some(s) = json["content"].as_str().or_else(|| json["response"].as_str()).or_else(|| json["message"].as_str()) {
+            return s.to_string();
+        }
+    }
+    let mut out = String::new();
+    for line in body.split('\n') {
+        if let Some(rest) = line.strip_prefix("data:") {
+            let trimmed = rest.trim();
+            if trimmed.is_empty() || trimmed == "[DONE]" {
+                continue;
+            }
+            if let Ok(v) = serde_json::from_str::<Value>(trimmed) {
+                if let Some(delta) = v["choices"][0]["delta"]["content"].as_str() {
+                    out.push_str(delta);
+                } else if let Some(text) = v["text"].as_str().or_else(|| v["content"].as_str()) {
+                    out.push_str(text);
+                }
+            } else {
+                out.push_str(trimmed);
+            }
+        }
+    }
+    if out.is_empty() {
+        body.chars().take(500).collect()
+    } else {
+        out
     }
 }
 
@@ -2915,6 +2971,69 @@ mod tests {
     #[test]
     fn test_workflow_builder_label_fits_nav() {
         assert!(Screen::WorkflowBuilder.label().len() <= 16);
+    }
+
+    #[test]
+    fn test_parse_chat_response_json_object() {
+        let s = parse_chat_response(r#"{"content":"hello world"}"#);
+        assert_eq!(s, "hello world");
+    }
+
+    #[test]
+    fn test_parse_chat_response_sse_deltas() {
+        let frames = "data: {\"choices\":[{\"delta\":{\"content\":\"foo\"}}]}\n\ndata: {\"choices\":[{\"delta\":{\"content\":\" bar\"}}]}\n\ndata: [DONE]\n\n";
+        assert_eq!(parse_chat_response(frames), "foo bar");
+    }
+
+    #[test]
+    fn test_parse_chat_response_falls_back_to_raw() {
+        let s = parse_chat_response("plain text response");
+        assert!(s.starts_with("plain text"));
+    }
+
+    #[test]
+    fn test_builtin_registry_fns_includes_core_namespaces() {
+        assert!(slash::BUILTIN_REGISTRY_FNS.contains(&"agent::chat"));
+        assert!(slash::BUILTIN_REGISTRY_FNS.contains(&"memory::recall"));
+        assert!(slash::BUILTIN_REGISTRY_FNS.contains(&"approval::decide"));
+    }
+
+    #[test]
+    fn test_builtin_catalog_has_every_workspace_worker() {
+        let cards = worker_picker::builtin_catalog();
+        assert!(cards.len() >= 60, "catalog should cover ~64 narrow workers, got {}", cards.len());
+        let names: std::collections::HashSet<_> = cards.iter().map(|c| c.name.as_str()).collect();
+        for required in ["memory", "browser", "llm-router", "agent-core", "approval"] {
+            assert!(names.contains(required), "missing {}", required);
+        }
+    }
+
+    #[tokio::test]
+    #[ignore = "requires live iii engine on :3111"]
+    async fn live_refresh_health_against_engine() {
+        if std::env::var("AGENTOS_LIVE_TEST").is_err() {
+            return;
+        }
+        let mut app = App::new();
+        app.refresh_health().await;
+        assert!(app.healthy, "refresh_health failed: status={}, err={:?}", app.status, app.last_error);
+        assert!(app.worker_count >= 1);
+    }
+
+    #[tokio::test]
+    #[ignore = "requires live iii engine + memory worker"]
+    async fn live_remember_then_recall() {
+        if std::env::var("AGENTOS_LIVE_TEST").is_err() {
+            return;
+        }
+        let mut app = App::new();
+        app.chat_realm = format!("tui-test-{}", std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH).unwrap().as_millis());
+        app.handle_slash(slash::Parsed::Cmd { name: "remember".into(), args: "the sky is blue".into() }).await;
+        app.handle_slash(slash::Parsed::Cmd { name: "memory".into(), args: "sky".into() }).await;
+        let last = app.chat_messages.last().expect("expected at least one chat message");
+        assert!(last.0 == "assistant" || last.0 == "system",
+            "unexpected role {:?}, msg {:?}", last.0, last.1);
     }
 
     #[test]
