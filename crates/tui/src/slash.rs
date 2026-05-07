@@ -147,6 +147,7 @@ pub fn complete(partial: &str, registry_fns: &[String]) -> Vec<(String, String)>
     out.into_iter().map(|(n, h, _)| (n, h)).collect()
 }
 
+#[allow(dead_code)]
 pub fn extract_function_names(functions_json: &Value) -> Vec<String> {
     let arr = match functions_json.as_array() {
         Some(a) => a,

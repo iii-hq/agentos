@@ -1365,34 +1365,11 @@ fn draw(f: &mut Frame, app: &App) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(3),
+            Constraint::Length(1),
             Constraint::Min(0),
-            Constraint::Length(3),
+            Constraint::Length(1),
         ])
         .split(f.area());
-
-    let title = Block::default()
-        .borders(Borders::ALL)
-        .title(" AgentOS ")
-        .title_alignment(Alignment::Center)
-        .border_style(Style::default().fg(Color::Cyan));
-
-    let status_color = if app.healthy { Color::Green } else { Color::Red };
-    let mut header_spans = vec![
-        Span::raw("  "),
-        Span::styled(&app.status, Style::default().fg(status_color)),
-    ];
-    if app.spinner_active {
-        header_spans.push(Span::raw("  "));
-        header_spans.push(Span::styled(
-            SPINNER_FRAMES[app.spinner_frame],
-            Style::default().fg(Color::Cyan),
-        ));
-        header_spans.push(Span::raw(format!(" {}", app.spinner_verb)));
-    }
-    let header_text = Line::from(header_spans);
-
-    f.render_widget(Paragraph::new(header_text).block(title), chunks[0]);
 
     let body_chunks = Layout::default()
         .direction(Direction::Horizontal)
@@ -1450,7 +1427,6 @@ fn draw(f: &mut Frame, app: &App) {
         Screen::Orchestrator => draw_orchestrator(f, app, content_block, body_chunks[1]),
     }
 
-    let footer = Block::default().borders(Borders::ALL);
     let help = match app.screen {
         Screen::Chat => {
             if app.pending_chord.is_some() {
@@ -1458,7 +1434,7 @@ fn draw(f: &mut Frame, app: &App) {
             } else {
                 match app.vim_mode {
                     VimMode::Normal => " [NORMAL] i:Insert a:Append dd:Clear 1-9:Nav q:Quit Ctrl+X:Chord ",
-                    VimMode::Insert => " [INSERT] Esc:Normal Enter:Send Tab:Next Ctrl+X:Chord ",
+                    VimMode::Insert => " [INSERT] Esc:Normal Enter:Send Tab:Autocomplete  Ctrl+P:palette  Ctrl+W:workers ",
                 }
             }
         }
@@ -1471,9 +1447,7 @@ fn draw(f: &mut Frame, app: &App) {
         _ => " q:Quit  Tab:Next  1-0:Screen  m/a/s/p/e/t/u:More  r:Refresh  Ctrl+X:Chord  Up/Down:Select ",
     };
     f.render_widget(
-        Paragraph::new(help)
-            .style(Style::default().fg(Color::DarkGray))
-            .block(footer),
+        Paragraph::new(help).style(theme::eyebrow()),
         chunks[2],
     );
 
@@ -1486,13 +1460,7 @@ fn draw(f: &mut Frame, app: &App) {
         pending_approvals: app.approvals.len(),
         hint: "?:help  Ctrl+P:palette  Ctrl+W:workers",
     };
-    let status_area = Rect {
-        x: chunks[0].x + 1,
-        y: chunks[0].y + 1,
-        width: chunks[0].width.saturating_sub(2),
-        height: 1,
-    };
-    status::draw(f, status_area, &status_input);
+    status::draw(f, chunks[0], &status_input);
 
     let area = f.area();
     if app.show_first_run {
