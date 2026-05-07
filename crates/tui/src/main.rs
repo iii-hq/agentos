@@ -1,3 +1,13 @@
+mod first_run;
+mod help_overlay;
+mod markdown;
+mod palette;
+mod slash;
+mod sse;
+mod status;
+mod theme;
+mod worker_picker;
+
 use anyhow::Result;
 use crossterm::{
     event::{self, Event, KeyCode, KeyEventKind, KeyModifiers},
@@ -10,6 +20,8 @@ use ratatui::{
 };
 use serde_json::Value;
 use std::io::stdout;
+
+use crate::palette::PaletteItem;
 
 const API_BASE: &str = "http://localhost:3111";
 const SPINNER_FRAMES: &[&str] = &["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
@@ -178,12 +190,25 @@ struct App {
     approval_mode: bool,
     pending_chord: Option<char>,
     chord_timeout: Option<std::time::Instant>,
+    show_help: bool,
+    show_palette: bool,
+    show_worker_picker: bool,
+    show_first_run: bool,
+    palette_query: String,
+    palette_selected: usize,
+    slash_completions: Vec<(String, String)>,
+    slash_selected: usize,
+    registry_fns: Vec<String>,
+    chat_realm: String,
+    worker_count: usize,
+    worker_catalog: Vec<worker_picker::WorkerCard>,
+    worker_picker_selected: usize,
 }
 
 impl App {
     fn new() -> Self {
         Self {
-            screen: Screen::Dashboard,
+            screen: Screen::Chat,
             selected: 0,
             status: "Connecting...".into(),
             healthy: false,
@@ -231,7 +256,73 @@ impl App {
             approval_mode: false,
             pending_chord: None,
             chord_timeout: None,
+            show_help: false,
+            show_palette: false,
+            show_worker_picker: false,
+            show_first_run: true,
+            palette_query: String::new(),
+            palette_selected: 0,
+            slash_completions: vec![],
+            slash_selected: 0,
+            registry_fns: vec![],
+            chat_realm: "default".into(),
+            worker_count: 0,
+            worker_catalog: vec![],
+            worker_picker_selected: 0,
         }
+    }
+
+    fn refresh_slash_completions(&mut self) {
+        if self.chat_input.starts_with('/') {
+            let body = &self.chat_input[1..];
+            let partial = body.split_whitespace().next().unwrap_or("");
+            self.slash_completions = slash::complete(partial, &self.registry_fns);
+            if self.slash_selected >= self.slash_completions.len() {
+                self.slash_selected = 0;
+            }
+        } else {
+            self.slash_completions.clear();
+            self.slash_selected = 0;
+        }
+    }
+
+    async fn refresh_registry(&mut self) {
+        let client = Self::client();
+        if let Ok(resp) = client.get(format!("{}/iii/functions", API_BASE)).send().await
+            && let Ok(data) = resp.json::<Value>().await
+        {
+            self.registry_fns = slash::extract_function_names(&data);
+        }
+        if let Ok(resp) = client.get(format!("{}/iii/workers", API_BASE)).send().await
+            && let Ok(data) = resp.json::<Value>().await
+        {
+            self.worker_count = data.as_array().map(|a| a.len()).unwrap_or(0);
+        }
+    }
+
+    async fn refresh_worker_catalog(&mut self) {
+        let client = Self::client();
+        if let Ok(resp) = client.get(format!("{}/api/workers/catalog", API_BASE)).send().await
+            && let Ok(data) = resp.json::<Value>().await
+        {
+            let installed: Vec<String> = self
+                .agents
+                .iter()
+                .filter_map(|a| a["worker"].as_str().map(String::from))
+                .collect();
+            self.worker_catalog = worker_picker::parse_catalog(&data, &installed);
+        }
+    }
+
+    fn palette_items(&self) -> Vec<PaletteItem> {
+        Screen::all()
+            .iter()
+            .map(|s| PaletteItem {
+                label: s.label().to_string(),
+                hint: format!("Switch to {}", s.label()),
+                action_key: s.key().to_string(),
+            })
+            .collect()
     }
 
     fn client() -> reqwest::Client {
@@ -506,6 +597,81 @@ impl App {
         }
     }
 
+    async fn handle_slash(&mut self, parsed: slash::Parsed) {
+        let (name, args) = match parsed {
+            slash::Parsed::Cmd { name, args } => (name, args),
+            slash::Parsed::Incomplete { partial } => {
+                self.chat_messages
+                    .push(("system".into(), format!("Incomplete command: /{}", partial)));
+                return;
+            }
+            slash::Parsed::Plain(_) => return,
+        };
+        match name.as_str() {
+            "agent" => {
+                if args.is_empty() {
+                    self.chat_messages.push(("system".into(), format!("agent: {}", self.chat_agent)));
+                } else {
+                    self.chat_agent = args.clone();
+                    self.chat_messages.push(("system".into(), format!("Switched to agent {}", args)));
+                }
+            }
+            "realm" => {
+                self.chat_realm = args.clone();
+                self.chat_messages.push(("system".into(), format!("Realm: {}", args)));
+            }
+            "memory" => {
+                let client = Self::client();
+                let body = serde_json::json!({"namespace": self.chat_realm, "query": args});
+                match client.post(format!("{}/api/memory/recall", API_BASE)).json(&body).send().await {
+                    Ok(resp) => match resp.json::<Value>().await {
+                        Ok(v) => self.chat_messages.push(("assistant".into(), v.to_string())),
+                        Err(e) => self.chat_messages.push(("system".into(), format!("recall parse error: {}", e))),
+                    },
+                    Err(e) => self.chat_messages.push(("system".into(), format!("recall failed: {}", e))),
+                }
+            }
+            "remember" => {
+                let client = Self::client();
+                let body = serde_json::json!({"namespace": self.chat_realm, "content": args});
+                match client.post(format!("{}/api/memory/store", API_BASE)).json(&body).send().await {
+                    Ok(_) => self.chat_messages.push(("system".into(), "stored".into())),
+                    Err(e) => self.chat_messages.push(("system".into(), format!("store failed: {}", e))),
+                }
+            }
+            "hand" => {
+                self.chat_messages.push(("system".into(), format!("Hand invoke not yet wired: {}", args)));
+            }
+            "skill" => {
+                self.chat_messages.push(("system".into(), format!("Skill invoke not yet wired: {}", args)));
+            }
+            "worker" => {
+                self.refresh_worker_catalog().await;
+                self.show_worker_picker = true;
+                self.worker_picker_selected = 0;
+            }
+            "channel" => {
+                self.chat_messages.push(("system".into(), format!("Channel send not yet wired: {}", args)));
+            }
+            "approve" | "deny" => {
+                self.chat_messages.push(("system".into(), format!("{}: {}", name, args)));
+            }
+            "clear" => {
+                self.chat_messages.clear();
+            }
+            "help" => {
+                self.show_help = true;
+            }
+            "quit" => {
+                self.running = false;
+            }
+            other => {
+                self.chat_messages
+                    .push(("system".into(), format!("Unknown command: /{}", other)));
+            }
+        }
+    }
+
     async fn send_chat(&mut self) {
         if self.chat_input.trim().is_empty() {
             return;
@@ -653,6 +819,10 @@ async fn main() -> Result<()> {
     let mut terminal = Terminal::new(CrosstermBackend::new(stdout()))?;
     let mut app = App::new();
     app.refresh_health().await;
+    app.refresh_registry().await;
+    if first_run::detect(app.healthy, app.worker_count) == first_run::HealthState::Ready {
+        app.show_first_run = false;
+    }
 
     let mut last_health = std::time::Instant::now();
 
@@ -661,6 +831,10 @@ async fn main() -> Result<()> {
 
         if last_health.elapsed() > std::time::Duration::from_secs(10) {
             app.refresh_health().await;
+            app.refresh_registry().await;
+            if first_run::detect(app.healthy, app.worker_count) == first_run::HealthState::Ready {
+                app.show_first_run = false;
+            }
             last_health = std::time::Instant::now();
         }
 
@@ -680,6 +854,113 @@ async fn main() -> Result<()> {
                 && matches!(key.code, KeyCode::Char('c'));
             if ctrl_c {
                 app.running = false;
+                continue;
+            }
+
+            if app.show_help {
+                if matches!(key.code, KeyCode::Esc | KeyCode::Char('?') | KeyCode::Char('q')) {
+                    app.show_help = false;
+                }
+                continue;
+            }
+
+            if app.show_palette {
+                match key.code {
+                    KeyCode::Esc => {
+                        app.show_palette = false;
+                        app.palette_query.clear();
+                        app.palette_selected = 0;
+                    }
+                    KeyCode::Backspace => {
+                        app.palette_query.pop();
+                        app.palette_selected = 0;
+                    }
+                    KeyCode::Up => {
+                        app.palette_selected = app.palette_selected.saturating_sub(1);
+                    }
+                    KeyCode::Down => {
+                        app.palette_selected = app.palette_selected.saturating_add(1);
+                    }
+                    KeyCode::Enter => {
+                        let items = app.palette_items();
+                        let ranked = palette::rank(&items, &app.palette_query);
+                        if let Some((idx, _)) = ranked.get(app.palette_selected) {
+                            let target = items[*idx].action_key.clone();
+                            for s in Screen::all() {
+                                if s.key() == target {
+                                    navigate_to(&mut app, *s);
+                                    app.refresh_screen().await;
+                                    break;
+                                }
+                            }
+                        }
+                        app.show_palette = false;
+                        app.palette_query.clear();
+                        app.palette_selected = 0;
+                    }
+                    KeyCode::Char(c) => {
+                        app.palette_query.push(c);
+                        app.palette_selected = 0;
+                    }
+                    _ => {}
+                }
+                continue;
+            }
+
+            if app.show_worker_picker {
+                match key.code {
+                    KeyCode::Esc | KeyCode::Char('q') => {
+                        app.show_worker_picker = false;
+                    }
+                    KeyCode::Up | KeyCode::Char('k') => {
+                        app.worker_picker_selected = app.worker_picker_selected.saturating_sub(1);
+                    }
+                    KeyCode::Down | KeyCode::Char('j') => {
+                        if app.worker_picker_selected + 1 < app.worker_catalog.len() {
+                            app.worker_picker_selected += 1;
+                        }
+                    }
+                    KeyCode::Enter => {
+                        if let Some(card) = app.worker_catalog.get(app.worker_picker_selected) {
+                            app.status = worker_picker::install_command(card);
+                        }
+                    }
+                    _ => {}
+                }
+                continue;
+            }
+
+            if app.show_first_run {
+                if matches!(key.code, KeyCode::Esc) {
+                    app.show_first_run = false;
+                } else if matches!(key.code, KeyCode::Char('q')) {
+                    app.running = false;
+                }
+                continue;
+            }
+
+            if matches!(key.code, KeyCode::Char('?'))
+                && !matches!(app.screen, Screen::Chat)
+            {
+                app.show_help = true;
+                continue;
+            }
+
+            let ctrl_p = key.modifiers.contains(KeyModifiers::CONTROL)
+                && matches!(key.code, KeyCode::Char('p'));
+            if ctrl_p {
+                app.show_palette = true;
+                app.palette_query.clear();
+                app.palette_selected = 0;
+                continue;
+            }
+
+            let ctrl_w = key.modifiers.contains(KeyModifiers::CONTROL)
+                && matches!(key.code, KeyCode::Char('w'));
+            if ctrl_w {
+                app.refresh_worker_catalog().await;
+                app.show_worker_picker = true;
+                app.worker_picker_selected = 0;
                 continue;
             }
 
@@ -799,21 +1080,51 @@ async fn main() -> Result<()> {
                     VimMode::Insert => {
                         match key.code {
                             KeyCode::Esc => {
-                                app.vim_mode = VimMode::Normal;
+                                if app.chat_input.is_empty() {
+                                    app.vim_mode = VimMode::Normal;
+                                } else {
+                                    app.chat_input.clear();
+                                    app.slash_completions.clear();
+                                }
                             }
                             KeyCode::Enter => {
-                                app.send_chat().await;
+                                if app.chat_input.starts_with('/') {
+                                    let parsed = slash::parse(&app.chat_input);
+                                    app.handle_slash(parsed).await;
+                                } else {
+                                    app.send_chat().await;
+                                }
+                                app.chat_input.clear();
+                                app.slash_completions.clear();
                             }
                             KeyCode::Backspace => {
                                 app.chat_input.pop();
+                                app.refresh_slash_completions();
                             }
                             KeyCode::Tab => {
-                                let screens = Screen::all();
-                                let idx = screens.iter().position(|s| *s == app.screen).unwrap_or(0);
-                                navigate_to(&mut app, screens[(idx + 1) % screens.len()]);
+                                if !app.slash_completions.is_empty() {
+                                    let pick = &app.slash_completions[app.slash_selected].0;
+                                    app.chat_input = format!("/{} ", pick);
+                                    app.refresh_slash_completions();
+                                } else {
+                                    let screens = Screen::all();
+                                    let idx = screens.iter().position(|s| *s == app.screen).unwrap_or(0);
+                                    navigate_to(&mut app, screens[(idx + 1) % screens.len()]);
+                                }
+                            }
+                            KeyCode::Up => {
+                                if app.slash_selected > 0 {
+                                    app.slash_selected -= 1;
+                                }
+                            }
+                            KeyCode::Down => {
+                                if app.slash_selected + 1 < app.slash_completions.len() {
+                                    app.slash_selected += 1;
+                                }
                             }
                             KeyCode::Char(c) => {
                                 app.chat_input.push(c);
+                                app.refresh_slash_completions();
                             }
                             _ => {}
                         }
@@ -1109,6 +1420,131 @@ fn draw(f: &mut Frame, app: &App) {
             .block(footer),
         chunks[2],
     );
+
+    let status_input = status::StatusInput {
+        engine_healthy: app.healthy,
+        worker_count: app.worker_count,
+        agent: if app.chat_agent.is_empty() { "default" } else { &app.chat_agent },
+        realm: &app.chat_realm,
+        session_active: app.chat_streaming,
+        pending_approvals: app.approvals.len(),
+        hint: "?:help  Ctrl+P:palette  Ctrl+W:workers",
+    };
+    let status_area = Rect {
+        x: chunks[0].x + 1,
+        y: chunks[0].y + 1,
+        width: chunks[0].width.saturating_sub(2),
+        height: 1,
+    };
+    status::draw(f, status_area, &status_input);
+
+    let area = f.area();
+    if app.show_first_run {
+        let hs = first_run::detect(app.healthy, app.worker_count);
+        match hs {
+            first_run::HealthState::EngineDown => first_run::draw_engine_down(f, area),
+            first_run::HealthState::EngineUpNoWorkers => first_run::draw_no_workers(f, area),
+            first_run::HealthState::Ready => {}
+        }
+    }
+    if app.show_help {
+        help_overlay::draw(f, area);
+    }
+    if app.show_palette {
+        let items = app.palette_items();
+        palette::draw(f, area, &app.palette_query, &items, app.palette_selected);
+    }
+    if app.show_worker_picker {
+        draw_worker_picker(f, app, area);
+    }
+    if !app.slash_completions.is_empty() && app.screen == Screen::Chat {
+        draw_slash_completions(f, app, area);
+    }
+}
+
+fn draw_slash_completions(f: &mut Frame, app: &App, area: Rect) {
+    let h = (app.slash_completions.len() as u16 + 2).min(12);
+    let popup = Rect {
+        x: area.x + 4,
+        y: area.bottom().saturating_sub(h + 5),
+        width: area.width.saturating_sub(8),
+        height: h,
+    };
+    f.render_widget(Clear, popup);
+    let mut lines: Vec<Line> = Vec::new();
+    for (i, (name, hint)) in app.slash_completions.iter().enumerate() {
+        let style = if i == app.slash_selected {
+            Style::default().bg(theme::EMBER).fg(theme::PAPER).add_modifier(Modifier::BOLD)
+        } else {
+            Style::default()
+        };
+        lines.push(Line::from(vec![
+            Span::styled(format!("  /{:<16}", name), style),
+            Span::styled(format!("  {}", hint), theme::dim()),
+        ]));
+    }
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(theme::dim())
+        .title(Span::styled(" Tab to complete ", theme::eyebrow()));
+    f.render_widget(Paragraph::new(lines).block(block), popup);
+}
+
+fn draw_worker_picker(f: &mut Frame, app: &App, area: Rect) {
+    let popup = help_overlay::centered_rect(70, 70, area);
+    f.render_widget(Clear, popup);
+    let mut lines: Vec<Line> = vec![
+        Line::from(Span::styled("AGENTOS · WORKER PICKER", theme::eyebrow())),
+        Line::raw(""),
+    ];
+    if app.worker_catalog.is_empty() {
+        lines.push(Line::from(Span::styled(
+            "  No catalog available. Engine must expose /api/workers/catalog.",
+            theme::dim(),
+        )));
+        lines.push(Line::raw(""));
+        lines.push(Line::from(Span::styled(
+            "  Manual install: cargo build --release -p <worker-name>",
+            theme::accent(),
+        )));
+    } else {
+        for (i, card) in app.worker_catalog.iter().enumerate() {
+            let style = if i == app.worker_picker_selected {
+                Style::default().bg(theme::EMBER).fg(theme::PAPER).add_modifier(Modifier::BOLD)
+            } else {
+                Style::default()
+            };
+            let badge = if card.installed { "● installed" } else { "○ available" };
+            let badge_style = if card.installed { theme::ok() } else { theme::dim() };
+            lines.push(Line::from(vec![
+                Span::styled(format!("  {:<24}", card.name), style),
+                Span::styled(format!("  {}", badge), badge_style),
+                Span::styled(format!("  {}", card.description), theme::dim()),
+            ]));
+        }
+        lines.push(Line::raw(""));
+        if let Some(card) = app.worker_catalog.get(app.worker_picker_selected) {
+            lines.push(Line::from(Span::styled(
+                format!("  Functions: {}", card.functions.join(", ")),
+                theme::dim(),
+            )));
+            lines.push(Line::raw(""));
+            lines.push(Line::from(Span::styled(
+                format!("  Enter: {}", worker_picker::install_command(card)),
+                theme::accent(),
+            )));
+        }
+    }
+    lines.push(Line::raw(""));
+    lines.push(Line::from(Span::styled(
+        "  Esc to close · ↑↓ to pick · Enter to copy install command",
+        theme::dim(),
+    )));
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(theme::accent())
+        .title(Span::styled(" Workers ", theme::title()));
+    f.render_widget(Paragraph::new(lines).block(block).wrap(Wrap { trim: false }), popup);
 }
 
 fn draw_dashboard(f: &mut Frame, app: &App, block: Block, area: Rect) {
@@ -1242,34 +1678,60 @@ fn draw_chat(f: &mut Frame, app: &App, area: Rect) {
     let mut messages: Vec<Line> = vec![];
     for (idx, (role, msg)) in app.chat_messages.iter().enumerate() {
         let (prefix, color) = match role.as_str() {
-            "user" => ("You: ", Color::Cyan),
-            "assistant" => ("Agent: ", Color::Green),
-            _ => ("System: ", Color::Yellow),
+            "user" => ("you  ", theme::EMBER),
+            "assistant" => ("agent  ", theme::INK),
+            _ => ("·  ", theme::MUTED),
         };
 
         let is_last = idx == app.chat_messages.len() - 1;
         let is_streaming_msg = is_last && app.chat_streaming && msg == "(thinking...)";
 
+        messages.push(Line::from(Span::styled(
+            prefix,
+            Style::default().fg(color).add_modifier(Modifier::BOLD),
+        )));
+
         if is_streaming_msg {
             messages.push(Line::from(vec![
-                Span::styled(prefix, Style::default().fg(color).add_modifier(Modifier::BOLD)),
+                Span::raw("  "),
                 Span::styled(
                     format!("{} thinking...", SPINNER_FRAMES[app.spinner_frame]),
-                    Style::default().fg(Color::Cyan),
+                    theme::dim(),
                 ),
             ]));
+        } else if role == "assistant" {
+            for line in markdown::render(msg) {
+                let mut spans: Vec<Span> = vec![Span::raw("  ")];
+                spans.extend(line.spans);
+                messages.push(Line::from(spans));
+            }
         } else {
-            messages.push(Line::from(vec![
-                Span::styled(prefix, Style::default().fg(color).add_modifier(Modifier::BOLD)),
-                Span::raw(msg.as_str()),
-            ]));
+            messages.push(Line::from(vec![Span::raw("  "), Span::raw(msg.clone())]));
         }
+        messages.push(Line::raw(""));
     }
 
     if messages.is_empty() {
         messages.push(Line::from(Span::styled(
-            "  No messages yet. Type a message and press Enter.",
-            Style::default().fg(Color::DarkGray),
+            "AGENTOS · CHAT",
+            theme::eyebrow(),
+        )));
+        messages.push(Line::raw(""));
+        messages.push(Line::from(Span::styled(
+            "  Type a message — or a slash command:",
+            theme::dim(),
+        )));
+        messages.push(Line::raw(""));
+        for spec in slash::BUILTINS.iter().take(7) {
+            messages.push(Line::from(vec![
+                Span::styled(format!("    /{:<10}", spec.name), theme::accent()),
+                Span::styled(format!("  {}", spec.help), theme::dim()),
+            ]));
+        }
+        messages.push(Line::raw(""));
+        messages.push(Line::from(Span::styled(
+            "  Press ? for full keymap, Ctrl+W to browse workers.",
+            theme::dim(),
         )));
     }
 
@@ -1283,20 +1745,26 @@ fn draw_chat(f: &mut Frame, app: &App, area: Rect) {
 
     let msg_block = Block::default()
         .borders(Borders::ALL)
-        .title(format!(" Chat -> {} ", agent_label));
+        .border_style(theme::dim())
+        .title(Span::styled(
+            format!(" chat · {} · {} ", agent_label, app.chat_realm),
+            theme::eyebrow(),
+        ));
     f.render_widget(Paragraph::new(messages).block(msg_block).wrap(Wrap { trim: false }), chat_chunks[0]);
 
     let mode_label = match app.vim_mode {
-        VimMode::Normal => Span::styled(" [NORMAL] ", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
-        VimMode::Insert => Span::styled(" [INSERT] ", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
+        VimMode::Normal => Span::styled(" NORMAL ", theme::warn()),
+        VimMode::Insert => Span::styled(" INSERT ", theme::accent()),
     };
 
+    let border_color = if app.chat_input.starts_with('/') { theme::EMBER } else { theme::INK };
     let input_block = Block::default()
         .borders(Borders::ALL)
         .title(mode_label)
-        .border_style(Style::default().fg(if app.vim_mode == VimMode::Insert { Color::Cyan } else { Color::Yellow }));
-    let cursor_char = if app.vim_mode == VimMode::Insert { "_" } else { "\u{2588}" };
-    let cursor_text = format!("{}{}", app.chat_input, cursor_char);
+        .border_style(Style::default().fg(border_color));
+    let cursor_char = if app.vim_mode == VimMode::Insert { "▎" } else { "█" };
+    let prefix = if app.chat_input.starts_with('/') { "" } else { "> " };
+    let cursor_text = format!("{}{}{}", prefix, app.chat_input, cursor_char);
     f.render_widget(Paragraph::new(cursor_text).block(input_block), chat_chunks[1]);
 
     let mut status_spans = vec![];
@@ -2408,7 +2876,7 @@ mod tests {
     #[test]
     fn test_app_new_defaults() {
         let app = App::new();
-        assert_eq!(app.screen, Screen::Dashboard);
+        assert_eq!(app.screen, Screen::Chat);
         assert_eq!(app.selected, 0);
         assert!(!app.healthy);
         assert!(app.agents.is_empty());
@@ -2421,6 +2889,22 @@ mod tests {
         assert!(app.orchestrator_plans.is_empty());
         assert!(!app.approval_mode);
         assert!(app.pending_chord.is_none());
+        assert!(app.show_first_run);
+        assert!(!app.show_help);
+        assert!(!app.show_palette);
+    }
+
+    #[test]
+    fn test_chat_realm_default() {
+        let app = App::new();
+        assert_eq!(app.chat_realm, "default");
+    }
+
+    #[test]
+    fn test_palette_items_cover_all_screens() {
+        let app = App::new();
+        let items = app.palette_items();
+        assert_eq!(items.len(), Screen::all().len());
     }
 
     #[test]
