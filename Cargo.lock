@@ -560,6 +560,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "agentos-gate"
+version = "0.0.1"
+dependencies = [
+ "anyhow",
+ "dashmap",
+ "iii-sdk",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "agentos-hand-runner"
 version = "0.0.1"
 dependencies = [
