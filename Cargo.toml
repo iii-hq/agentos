@@ -65,6 +65,7 @@ members = [
     "workers/task-decomposer",
     "workers/wasm-sandbox",
     "workers/workflow",
+    "workers/gate",
 ]
 
 [workspace.package]
